@@ -613,10 +613,14 @@
             shareKeyValue.textContent = status.shareKey;
             shareKeyBox.classList.add('visible');
           }
+
+          // Update workspace display from orchestrator data
+          updateWorkspaceDisplay(status.workspaceIds || []);
         } else {
           statusDot.className = 'status-dot';
           statusText.textContent = 'Offline';
           shareKeyBox.classList.remove('visible');
+          workspaceList.innerHTML = '<div class="workspace-empty">Start node to see assigned workspaces</div>';
         }
       });
 
@@ -812,55 +816,29 @@
         }
       });
 
-      // Workspaces
+      // Workspaces - shows assigned workspaces from orchestrator
       const workspaceList = document.getElementById('workspace-list');
-      let selectedWorkspaces = new Set();
-      let allWorkspaces = [];
 
-      async function loadWorkspaces() {
-        try {
-          const data = await window.electronAPI.getWorkspaces();
-          allWorkspaces = data.workspaces || [];
-
-          if (allWorkspaces.length === 0) {
-            workspaceList.innerHTML = '<div class="workspace-empty">No workspaces available. Create one on the dashboard.</div>';
-            return;
-          }
-
-          workspaceList.innerHTML = allWorkspaces.map(ws => `
-            <div class="workspace-item" data-id="${ws.id}">
-              <div class="workspace-checkbox">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="2">
-                  <polyline points="2 6 5 9 10 3"/>
-                </svg>
-              </div>
-              <span class="workspace-name">${ws.name}</span>
-            </div>
-          `).join('');
-
-          // Add click handlers
-          workspaceList.querySelectorAll('.workspace-item').forEach(item => {
-            item.addEventListener('click', () => {
-              const id = item.dataset.id;
-              if (selectedWorkspaces.has(id)) {
-                selectedWorkspaces.delete(id);
-                item.classList.remove('selected');
-              } else {
-                selectedWorkspaces.add(id);
-                item.classList.add('selected');
-              }
-              addLog(`Selected ${selectedWorkspaces.size} workspace(s)`, 'info');
-            });
-          });
-
-        } catch (err) {
-          workspaceList.innerHTML = '<div class="workspace-empty">Failed to load workspaces</div>';
-          addLog('Failed to load workspaces: ' + err, 'error');
+      function updateWorkspaceDisplay(workspaceIds) {
+        if (!workspaceIds || workspaceIds.length === 0) {
+          workspaceList.innerHTML = '<div class="workspace-empty">Not assigned to any workspaces yet.<br>Use the Share Key to add this node to a workspace.</div>';
+          return;
         }
+
+        workspaceList.innerHTML = workspaceIds.map(id => `
+          <div class="workspace-item selected">
+            <div class="workspace-checkbox">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="2">
+                <polyline points="2 6 5 9 10 3"/>
+              </svg>
+            </div>
+            <span class="workspace-name">${id}</span>
+          </div>
+        `).join('');
       }
 
-      // Load workspaces on startup
-      loadWorkspaces();
+      // Initial state
+      workspaceList.innerHTML = '<div class="workspace-empty">Start node to see assigned workspaces</div>';
 
       // Open Dashboard button
       document.getElementById('open-dashboard-btn').addEventListener('click', () => {

@@ -220,6 +220,13 @@ export class NodeService extends EventEmitter {
               // Server confirms our registration - keep using our local nodeId and shareKey
               this.log(`Registered as node ${this.nodeId}`, 'success');
               this.log(`Share Key: ${this.shareKey} (use this to add node to workspaces)`, 'success');
+              // Update workspace assignments from server
+              if (msg.workspace_ids && Array.isArray(msg.workspace_ids)) {
+                this.workspaceIds = msg.workspace_ids;
+                if (this.workspaceIds.length > 0) {
+                  this.log(`Assigned to ${this.workspaceIds.length} workspace(s)`, 'success');
+                }
+              }
               this.emit('statusChange');
               break;
 

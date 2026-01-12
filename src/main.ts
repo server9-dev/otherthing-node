@@ -166,6 +166,7 @@ app.whenReady().then(async () => {
       connected: nodeService?.isConnected(),
       nodeId: nodeService?.getNodeId(),
       shareKey: nodeService?.getShareKey(),
+      workspaceIds: nodeService?.getWorkspaceIds() ?? [],
     });
   });
 
