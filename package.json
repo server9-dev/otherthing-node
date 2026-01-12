@@ -6,14 +6,15 @@
   "author": "OtherThing",
   "license": "MIT",
   "scripts": {
-    "start": "tsc && electron .",
-    "dev": "tsc && electron .",
-    "build": "tsc",
-    "pack": "tsc && electron-builder --dir",
-    "dist": "tsc && electron-builder",
-    "dist:win": "tsc && electron-builder --win",
-    "dist:mac": "tsc && electron-builder --mac",
-    "dist:linux": "tsc && electron-builder --linux"
+    "copy-html": "node -e \"require('fs').copyFileSync('src/index.html', 'dist/index.html')\"",
+    "start": "tsc && npm run copy-html && electron .",
+    "dev": "tsc && npm run copy-html && electron .",
+    "build": "tsc && npm run copy-html",
+    "pack": "tsc && npm run copy-html && electron-builder --dir",
+    "dist": "tsc && npm run copy-html && electron-builder",
+    "dist:win": "tsc && npm run copy-html && electron-builder --win",
+    "dist:mac": "tsc && npm run copy-html && electron-builder --mac",
+    "dist:linux": "tsc && npm run copy-html && electron-builder --linux"
   },
   "build": {
     "appId": "com.otherthing.node",
