@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src *;">
+  <title>OtherThing Node</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0a0a0f;
+      color: #fff;
+      height: 100vh;
+      padding: 20px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .title { font-size: 1.5rem; color: #00d4ff; }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #666;
+    }
+    .status-dot.online { background: #00ff41; }
+    .status-dot.connecting { background: #ffaa00; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    .card {
+      background: #12121a;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: #606070;
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+    }
+    .hw-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    .hw-item label {
+      font-size: 0.7rem;
+      color: #606070;
+      text-transform: uppercase;
+    }
+    .hw-item .value {
+      font-size: 1.1rem;
+      color: #00d4ff;
+      font-family: 'Consolas', monospace;
+      margin-top: 4px;
+    }
+    .gpu-list { margin-top: 12px; }
+    .gpu-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: rgba(255,0,255,0.05);
+      border: 1px solid rgba(255,0,255,0.2);
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .gpu-item .name { color: #ff00ff; flex: 1; }
+    .gpu-item .vram { color: #00d4ff; font-family: monospace; }
+
+    .btn {
+      padding: 14px 28px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 8px;
+    }
+    .btn-start {
+      background: linear-gradient(135deg, #00ff41, #00aa2a);
+      color: #000;
+    }
+    .btn-stop {
+      background: linear-gradient(135deg, #ff3366, #aa0022);
+      color: #fff;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .log {
+      background: #000;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'Consolas', monospace;
+      font-size: 0.75rem;
+      height: 120px;
+      overflow-y: auto;
+    }
+    .log-entry { padding: 2px 0; color: #a0a0b0; }
+    .log-entry.success { color: #00ff41; }
+    .log-entry.error { color: #ff3366; }
+
+    .loading { text-align: center; color: #606070; padding: 20px; }
+
+    /* Window Controls */
+    .window-controls {
+      display: flex;
+      gap: 8px;
+      -webkit-app-region: no-drag;
+    }
+    .window-btn {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.05);
+      color: #808090;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .window-btn:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+    .window-btn.close:hover {
+      background: rgba(255,0,0,0.6);
+      color: #fff;
+    }
+    .title-bar {
+      -webkit-app-region: drag;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: #08080c;
+      margin: -20px -20px 16px -20px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .title-bar-title {
+      font-size: 0.85rem;
+      color: #606070;
+      font-weight: 500;
+    }
+
+    .share-key-box {
+      display: none;
+      background: linear-gradient(135deg, rgba(0,212,255,0.1), rgba(255,0,255,0.1));
+      border: 2px solid rgba(0,212,255,0.3);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+    }
+    .share-key-box.visible { display: block; }
+    .share-key-label {
+      font-size: 0.7rem;
+      color: #606070;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+    .share-key-value {
+      font-family: 'Consolas', monospace;
+      font-size: 2rem;
+      font-weight: bold;
+      color: #00d4ff;
+      letter-spacing: 4px;
+      margin-bottom: 8px;
+    }
+    .share-key-hint {
+      font-size: 0.7rem;
+      color: #606070;
+      margin-bottom: 12px;
+    }
+    .btn-copy {
+      padding: 8px 16px;
+      background: rgba(0,212,255,0.2);
+      border: 1px solid rgba(0,212,255,0.4);
+      border-radius: 6px;
+      color: #00d4ff;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-copy:hover {
+      background: rgba(0,212,255,0.3);
+    }
+    .btn-copy.copied {
+      background: rgba(0,255,65,0.2);
+      border-color: rgba(0,255,65,0.4);
+      color: #00ff41;
+    }
+
+    /* Resource Limits Styles */
+    .limits-section { margin-top: 8px; }
+    .limit-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .limit-row:last-child { border-bottom: none; }
+    .limit-label {
+      font-size: 0.8rem;
+      color: #a0a0b0;
+      min-width: 80px;
+    }
+    .limit-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: #1a1a25;
+      outline: none;
+    }
+    .limit-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #00d4ff, #00a0c0);
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(0,212,255,0.4);
+    }
+    .limit-slider::-webkit-slider-thumb:hover {
+      box-shadow: 0 0 12px rgba(0,212,255,0.6);
+    }
+    .limit-value {
+      font-family: 'Consolas', monospace;
+      font-size: 0.85rem;
+      color: #00d4ff;
+      min-width: 70px;
+      text-align: right;
+    }
+    .limit-max {
+      font-size: 0.7rem;
+      color: #606070;
+    }
+    .btn-save-limits {
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #00d4ff, #0088aa);
+      border: none;
+      border-radius: 6px;
+      color: #000;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 12px;
+      width: 100%;
+      transition: all 0.2s;
+    }
+    .btn-save-limits:hover {
+      box-shadow: 0 0 15px rgba(0,212,255,0.4);
+    }
+    .btn-save-limits:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .limits-saved {
+      background: linear-gradient(135deg, #00ff41, #00aa2a) !important;
+    }
+
+    /* Toggle Switch */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-info {
+      flex: 1;
+    }
+    .toggle-label {
+      font-size: 0.9rem;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    .toggle-desc {
+      font-size: 0.75rem;
+      color: #606070;
+    }
+    .toggle-switch {
+      position: relative;
+      width: 48px;
+      height: 26px;
+      background: #1a1a25;
+      border-radius: 13px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle-switch.active {
+      background: linear-gradient(135deg, #00d4ff, #00a0c0);
+    }
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 20px;
+      height: 20px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle-switch.active::after {
+      transform: translateX(22px);
+    }
+
+    /* Workspace Styles */
+    .workspace-list {
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    .workspace-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .workspace-item:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(0,212,255,0.3);
+    }
+    .workspace-item.selected {
+      background: rgba(0,212,255,0.1);
+      border-color: rgba(0,212,255,0.4);
+    }
+    .workspace-checkbox {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #404050;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .workspace-item.selected .workspace-checkbox {
+      background: linear-gradient(135deg, #00d4ff, #00a0c0);
+      border-color: #00d4ff;
+    }
+    .workspace-checkbox svg {
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .workspace-item.selected .workspace-checkbox svg {
+      opacity: 1;
+    }
+    .workspace-name {
+      flex: 1;
+      font-size: 0.9rem;
+      color: #fff;
+    }
+    .workspace-empty {
+      text-align: center;
+      padding: 20px;
+      color: #606070;
+      font-size: 0.85rem;
+    }
+
+    /* Dashboard Button */
+    .btn-dashboard {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 20px;
+      background: linear-gradient(135deg, rgba(255,0,255,0.2), rgba(0,212,255,0.2));
+      border: 1px solid rgba(255,0,255,0.3);
+      border-radius: 8px;
+      color: #ff00ff;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 12px;
+      width: 100%;
+    }
+    .btn-dashboard:hover {
+      background: linear-gradient(135deg, rgba(255,0,255,0.3), rgba(0,212,255,0.3));
+      border-color: rgba(255,0,255,0.5);
+      box-shadow: 0 0 15px rgba(255,0,255,0.3);
+    }
+
+    /* Scrollable body */
+    body {
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <!-- Custom Title Bar with Window Controls -->
+  <div class="title-bar">
+    <div class="title-bar-title">OtherThing Node</div>
+    <div class="window-controls">
+      <button id="min-btn" class="window-btn" title="Minimize">
+        <svg width="12" height="12" viewBox="0 0 12 12"><rect y="5" width="12" height="2" fill="currentColor"/></svg>
+      </button>
+      <button id="max-btn" class="window-btn" title="Maximize">
+        <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+      </button>
+      <button id="close-btn" class="window-btn close" title="Close">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M1 1L11 11M11 1L1 11" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="header">
+    <div class="title">OtherThing Node</div>
+    <div class="status">
+      <div id="status-dot" class="status-dot"></div>
+      <span id="status-text">Offline</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Hardware</div>
+    <div id="hardware-info" class="loading">Detecting hardware...</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Control</div>
+    <button id="start-btn" class="btn btn-start" disabled>Start Node</button>
+    <button id="stop-btn" class="btn btn-stop" style="display:none;">Stop Node</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Resource Limits</div>
+    <div class="limits-section" id="limits-section">
+      <div class="limit-row">
+        <span class="limit-label">CPU Cores</span>
+        <input type="range" class="limit-slider" id="cpu-slider" min="1" max="16" value="16">
+        <span class="limit-value"><span id="cpu-value">All</span> <span class="limit-max">/ <span id="cpu-max">16</span></span></span>
+      </div>
+      <div class="limit-row">
+        <span class="limit-label">RAM</span>
+        <input type="range" class="limit-slider" id="ram-slider" min="10" max="100" value="100" step="5">
+        <span class="limit-value"><span id="ram-value">100</span>%</span>
+      </div>
+      <div class="limit-row">
+        <span class="limit-label">Storage</span>
+        <input type="range" class="limit-slider" id="storage-slider" min="10" max="500" value="500" step="10">
+        <span class="limit-value"><span id="storage-value">All</span> <span class="limit-max">/ <span id="storage-max">500</span> GB</span></span>
+      </div>
+      <div class="limit-row" id="gpu-row" style="display:none;">
+        <span class="limit-label">GPU VRAM</span>
+        <input type="range" class="limit-slider" id="gpu-slider" min="10" max="100" value="100" step="5">
+        <span class="limit-value"><span id="gpu-value">100</span>%</span>
+      </div>
+      <button id="save-limits-btn" class="btn-save-limits">Save Limits</button>
+    </div>
+  </div>
+
+  <div id="share-key-box" class="card share-key-box">
+    <div class="share-key-label">Share Key</div>
+    <div id="share-key-value" class="share-key-value">--------</div>
+    <div class="share-key-hint">Enter this key in a workspace to add this node</div>
+    <button id="copy-key-btn" class="btn-copy">Copy to Clipboard</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Workspaces</div>
+    <div id="workspace-list" class="workspace-list">
+      <div class="workspace-empty">Loading workspaces...</div>
+    </div>
+    <button id="open-dashboard-btn" class="btn-dashboard">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        <polyline points="15 3 21 3 21 9"/>
+        <line x1="10" y1="14" x2="21" y2="3"/>
+      </svg>
+      Open Web Dashboard
+    </button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Settings</div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="toggle-label">Remote Control</div>
+        <div class="toggle-desc">Allow workspace admins to manage this node from the dashboard</div>
+      </div>
+      <div id="remote-toggle" class="toggle-switch"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Log</div>
+    <div id="log" class="log"></div>
+  </div>
+
+  <script>
+    // Check if electronAPI exists
+    if (typeof window.electronAPI === 'undefined') {
+      document.getElementById('hardware-info').innerHTML = '<div style="color:#ff3366">Error: electronAPI not available. Preload script may have failed.</div>';
+      console.error('electronAPI not found on window object');
+    } else {
+      const log = document.getElementById('log');
+      const hwInfo = document.getElementById('hardware-info');
+      const startBtn = document.getElementById('start-btn');
+      const stopBtn = document.getElementById('stop-btn');
+      const statusDot = document.getElementById('status-dot');
+      const statusText = document.getElementById('status-text');
+      const shareKeyBox = document.getElementById('share-key-box');
+      const shareKeyValue = document.getElementById('share-key-value');
+      const copyKeyBtn = document.getElementById('copy-key-btn');
+
+      function addLog(msg, type = 'info') {
+        const entry = document.createElement('div');
+        entry.className = 'log-entry ' + type;
+        entry.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+        log.insertBefore(entry, log.firstChild);
+      }
+
+      // Detect hardware on load
+      addLog('Detecting hardware...');
+      window.electronAPI.getHardware().then(hw => {
+        console.log('Hardware detected:', hw);
+        addLog('Hardware detected', 'success');
+
+        let html = '<div class="hw-grid">';
+        html += '<div class="hw-item"><label>CPU</label><div class="value">' + hw.cpu.model + '</div></div>';
+        html += '<div class="hw-item"><label>Cores</label><div class="value">' + hw.cpu.cores + ' / ' + hw.cpu.threads + ' threads</div></div>';
+        html += '<div class="hw-item"><label>RAM</label><div class="value">' + (hw.memory.total_mb / 1024).toFixed(1) + ' GB</div></div>';
+        html += '<div class="hw-item"><label>Storage</label><div class="value">' + hw.storage.total_gb + ' GB</div></div>';
+        html += '</div>';
+
+        if (hw.gpus && hw.gpus.length > 0) {
+          html += '<div class="gpu-list">';
+          hw.gpus.forEach((gpu, i) => {
+            html += '<div class="gpu-item">';
+            html += '<span class="name">' + gpu.model + '</span>';
+            html += '<span class="vram">' + (gpu.vram_mb / 1024).toFixed(0) + ' GB</span>';
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+
+        hwInfo.innerHTML = html;
+        startBtn.disabled = false;
+      }).catch(err => {
+        console.error('Hardware detection failed:', err);
+        addLog('Hardware detection failed: ' + err, 'error');
+        hwInfo.innerHTML = '<div style="color:#ff3366">Failed to detect hardware</div>';
+      });
+
+      // Start node
+      startBtn.addEventListener('click', async () => {
+        startBtn.disabled = true;
+        addLog('Starting node...');
+        try {
+          const result = await window.electronAPI.startNode({ workspaceIds: [] });
+          if (result.success) {
+            addLog('Node started', 'success');
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'block';
+          } else {
+            addLog('Failed: ' + result.error, 'error');
+            startBtn.disabled = false;
+          }
+        } catch (err) {
+          addLog('Error: ' + err, 'error');
+          startBtn.disabled = false;
+        }
+      });
+
+      // Stop node
+      stopBtn.addEventListener('click', async () => {
+        stopBtn.disabled = true;
+        addLog('Stopping node...');
+        await window.electronAPI.stopNode();
+        addLog('Node stopped');
+        stopBtn.style.display = 'none';
+        startBtn.style.display = 'block';
+        startBtn.disabled = false;
+        stopBtn.disabled = false;
+      });
+
+      // Listen for status updates
+      window.electronAPI.onNodeStatus(status => {
+        if (status.running) {
+          statusDot.className = 'status-dot ' + (status.connected ? 'online' : 'connecting');
+          statusText.textContent = status.connected ? 'Connected' : 'Connecting...';
+
+          // Show share key when connected
+          if (status.shareKey) {
+            shareKeyValue.textContent = status.shareKey;
+            shareKeyBox.classList.add('visible');
+          }
+        } else {
+          statusDot.className = 'status-dot';
+          statusText.textContent = 'Offline';
+          shareKeyBox.classList.remove('visible');
+        }
+      });
+
+      // Copy share key to clipboard
+      copyKeyBtn.addEventListener('click', async () => {
+        const key = shareKeyValue.textContent;
+        if (key && key !== '--------') {
+          try {
+            await navigator.clipboard.writeText(key);
+            copyKeyBtn.textContent = 'Copied!';
+            copyKeyBtn.classList.add('copied');
+            setTimeout(() => {
+              copyKeyBtn.textContent = 'Copy to Clipboard';
+              copyKeyBtn.classList.remove('copied');
+            }, 2000);
+          } catch (err) {
+            addLog('Failed to copy: ' + err, 'error');
+          }
+        }
+      });
+
+      window.electronAPI.onNodeLog(entry => {
+        addLog(entry.message, entry.type);
+      });
+
+      // Resource Limits
+      const cpuSlider = document.getElementById('cpu-slider');
+      const cpuValue = document.getElementById('cpu-value');
+      const cpuMax = document.getElementById('cpu-max');
+      const ramSlider = document.getElementById('ram-slider');
+      const ramValue = document.getElementById('ram-value');
+      const storageSlider = document.getElementById('storage-slider');
+      const storageValue = document.getElementById('storage-value');
+      const storageMax = document.getElementById('storage-max');
+      const gpuRow = document.getElementById('gpu-row');
+      const gpuSlider = document.getElementById('gpu-slider');
+      const gpuValue = document.getElementById('gpu-value');
+      const saveLimitsBtn = document.getElementById('save-limits-btn');
+
+      let detectedHardware = null;
+
+      // Initialize sliders based on hardware
+      window.electronAPI.getHardware().then(hw => {
+        detectedHardware = hw;
+
+        // Set CPU slider max
+        cpuSlider.max = hw.cpu.cores;
+        cpuSlider.value = hw.cpu.cores;
+        cpuMax.textContent = hw.cpu.cores;
+
+        // Set storage slider max
+        const maxStorage = Math.round(hw.storage.available_gb);
+        storageSlider.max = maxStorage;
+        storageSlider.value = maxStorage;
+        storageMax.textContent = maxStorage;
+
+        // Show GPU row if GPUs detected
+        if (hw.gpus && hw.gpus.length > 0) {
+          gpuRow.style.display = 'flex';
+        }
+
+        // Load saved limits
+        return window.electronAPI.getResourceLimits();
+      }).then(limits => {
+        if (limits) {
+          if (limits.cpuCores) {
+            cpuSlider.value = limits.cpuCores;
+            cpuValue.textContent = limits.cpuCores;
+          }
+          if (limits.ramPercent) {
+            ramSlider.value = limits.ramPercent;
+            ramValue.textContent = limits.ramPercent;
+          }
+          if (limits.storageGb) {
+            storageSlider.value = limits.storageGb;
+            storageValue.textContent = limits.storageGb;
+          }
+          if (limits.gpuVramPercent && limits.gpuVramPercent[0]) {
+            gpuSlider.value = limits.gpuVramPercent[0];
+            gpuValue.textContent = limits.gpuVramPercent[0];
+          }
+        }
+        updateSliderDisplays();
+      });
+
+      function updateSliderDisplays() {
+        const cpuVal = parseInt(cpuSlider.value);
+        cpuValue.textContent = cpuVal >= parseInt(cpuSlider.max) ? 'All' : cpuVal;
+
+        ramValue.textContent = ramSlider.value;
+
+        const storageVal = parseInt(storageSlider.value);
+        storageValue.textContent = storageVal >= parseInt(storageSlider.max) ? 'All' : storageVal;
+
+        gpuValue.textContent = gpuSlider.value;
+      }
+
+      cpuSlider.addEventListener('input', updateSliderDisplays);
+      ramSlider.addEventListener('input', updateSliderDisplays);
+      storageSlider.addEventListener('input', updateSliderDisplays);
+      gpuSlider.addEventListener('input', updateSliderDisplays);
+
+      saveLimitsBtn.addEventListener('click', async () => {
+        saveLimitsBtn.disabled = true;
+        saveLimitsBtn.textContent = 'Saving...';
+
+        const limits = {
+          cpuCores: parseInt(cpuSlider.value) >= parseInt(cpuSlider.max) ? undefined : parseInt(cpuSlider.value),
+          ramPercent: parseInt(ramSlider.value) >= 100 ? undefined : parseInt(ramSlider.value),
+          storageGb: parseInt(storageSlider.value) >= parseInt(storageSlider.max) ? undefined : parseInt(storageSlider.value),
+          gpuVramPercent: parseInt(gpuSlider.value) >= 100 ? undefined : [parseInt(gpuSlider.value)]
+        };
+
+        try {
+          const result = await window.electronAPI.setResourceLimits(limits);
+          if (result.success) {
+            saveLimitsBtn.textContent = 'Saved!';
+            saveLimitsBtn.classList.add('limits-saved');
+            setTimeout(() => {
+              saveLimitsBtn.textContent = 'Save Limits';
+              saveLimitsBtn.classList.remove('limits-saved');
+              saveLimitsBtn.disabled = false;
+            }, 1500);
+          } else {
+            addLog('Failed to save limits: ' + result.error, 'error');
+            saveLimitsBtn.textContent = 'Save Limits';
+            saveLimitsBtn.disabled = false;
+          }
+        } catch (err) {
+          addLog('Error saving limits: ' + err, 'error');
+          saveLimitsBtn.textContent = 'Save Limits';
+          saveLimitsBtn.disabled = false;
+        }
+      });
+
+      // Listen for limits changes from backend
+      window.electronAPI.onLimitsChange(limits => {
+        if (limits.cpuCores) {
+          cpuSlider.value = limits.cpuCores;
+        }
+        if (limits.ramPercent) {
+          ramSlider.value = limits.ramPercent;
+        }
+        if (limits.storageGb) {
+          storageSlider.value = limits.storageGb;
+        }
+        if (limits.gpuVramPercent && limits.gpuVramPercent[0]) {
+          gpuSlider.value = limits.gpuVramPercent[0];
+        }
+        updateSliderDisplays();
+      });
+
+      // Window Controls
+      document.getElementById('min-btn').addEventListener('click', () => {
+        window.electronAPI.minimizeWindow();
+      });
+      document.getElementById('max-btn').addEventListener('click', () => {
+        window.electronAPI.maximizeWindow();
+      });
+      document.getElementById('close-btn').addEventListener('click', () => {
+        window.electronAPI.closeWindow();
+      });
+
+      // Remote Control Toggle
+      const remoteToggle = document.getElementById('remote-toggle');
+
+      // Load initial state
+      window.electronAPI.getRemoteControlEnabled().then(enabled => {
+        if (enabled) {
+          remoteToggle.classList.add('active');
+        }
+      });
+
+      remoteToggle.addEventListener('click', async () => {
+        const isActive = remoteToggle.classList.contains('active');
+        const newState = !isActive;
+
+        try {
+          const result = await window.electronAPI.setRemoteControlEnabled(newState);
+          if (result.success) {
+            if (newState) {
+              remoteToggle.classList.add('active');
+              addLog('Remote control enabled', 'success');
+            } else {
+              remoteToggle.classList.remove('active');
+              addLog('Remote control disabled', 'info');
+            }
+          } else {
+            addLog('Failed to update remote control: ' + result.error, 'error');
+          }
+        } catch (err) {
+          addLog('Error updating remote control: ' + err, 'error');
+        }
+      });
+
+      // Workspaces
+      const workspaceList = document.getElementById('workspace-list');
+      let selectedWorkspaces = new Set();
+      let allWorkspaces = [];
+
+      async function loadWorkspaces() {
+        try {
+          const data = await window.electronAPI.getWorkspaces();
+          allWorkspaces = data.workspaces || [];
+
+          if (allWorkspaces.length === 0) {
+            workspaceList.innerHTML = '<div class="workspace-empty">No workspaces available. Create one on the dashboard.</div>';
+            return;
+          }
+
+          workspaceList.innerHTML = allWorkspaces.map(ws => `
+            <div class="workspace-item" data-id="${ws.id}">
+              <div class="workspace-checkbox">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="2">
+                  <polyline points="2 6 5 9 10 3"/>
+                </svg>
+              </div>
+              <span class="workspace-name">${ws.name}</span>
+            </div>
+          `).join('');
+
+          // Add click handlers
+          workspaceList.querySelectorAll('.workspace-item').forEach(item => {
+            item.addEventListener('click', () => {
+              const id = item.dataset.id;
+              if (selectedWorkspaces.has(id)) {
+                selectedWorkspaces.delete(id);
+                item.classList.remove('selected');
+              } else {
+                selectedWorkspaces.add(id);
+                item.classList.add('selected');
+              }
+              addLog(`Selected ${selectedWorkspaces.size} workspace(s)`, 'info');
+            });
+          });
+
+        } catch (err) {
+          workspaceList.innerHTML = '<div class="workspace-empty">Failed to load workspaces</div>';
+          addLog('Failed to load workspaces: ' + err, 'error');
+        }
+      }
+
+      // Load workspaces on startup
+      loadWorkspaces();
+
+      // Open Dashboard button
+      document.getElementById('open-dashboard-btn').addEventListener('click', () => {
+        window.electronAPI.openDashboard();
+        addLog('Opening dashboard in browser...', 'info');
+      });
+    }
+  </script>
+</body>
+</html>

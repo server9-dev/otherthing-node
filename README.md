@@ -1,103 +1,43 @@
-# RhizOS Node Agent
+# OtherThing Node
 
-A lightweight agent that shares your compute resources (CPU/GPU) with the RhizOS network.
+Desktop application to share your compute with OtherThing workspaces.
 
 ## Features
 
-- **GPU Detection**: Automatically detects NVIDIA GPUs via `nvidia-smi`
-- **Hardware Monitoring**: Reports CPU, RAM, and GPU utilization
-- **Job Execution**: Runs containerized workloads via Docker
-- **Auto-reconnect**: Maintains connection to orchestrator
+- **Hardware Detection** - Automatically detects CPU, RAM, Storage, and GPUs
+- **Resource Limits** - Control how much of your hardware to share (CPU cores, RAM %, Storage GB, GPU VRAM %)
+- **Workspace Integration** - Connect to workspaces and contribute compute
+- **Share Key** - Simple 8-character key to add your node to workspaces
+- **Remote Control** - Opt-in to allow workspace admins to manage your node from the dashboard
 
-## Quick Install
+## Download
 
-### Linux
+- **Windows**: [OtherThing-Node-Setup.exe](https://github.com/Huck-dev/rhizos-node/releases/latest)
+- **Linux**: [OtherThing-Node.AppImage](https://github.com/Huck-dev/rhizos-node/releases/latest)
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Huck-dev/rhizos-node/main/install.sh | bash
-```
-
-Or manually:
+## Development
 
 ```bash
-# Download binary
-wget https://github.com/Huck-dev/rhizos-node/releases/latest/download/rhizos-node-linux-amd64
-chmod +x rhizos-node-linux-amd64
-sudo mv rhizos-node-linux-amd64 /usr/local/bin/rhizos-node
+# Install dependencies
+npm install
 
-# Run
-rhizos-node --orchestrator http://ORCHESTRATOR_IP:8080
+# Run in development
+npm start
+
+# Build for Windows
+npm run dist:win
+
+# Build for Linux
+npm run dist:linux
 ```
 
-### Windows
+## How It Works
 
-Download from [Releases](https://github.com/Huck-dev/rhizos-node/releases) or use PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/Huck-dev/rhizos-node/main/install.ps1 | iex
-```
-
-### Docker
-
-```bash
-docker run -d \
-  --gpus all \
-  --name rhizos-node \
-  -e ORCHESTRATOR_URL=http://ORCHESTRATOR_IP:8080 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/huck-dev/rhizos-node:latest
-```
-
-## Building from Source
-
-Requires Rust 1.75+:
-
-```bash
-git clone https://github.com/Huck-dev/rhizos-node.git
-cd rhizos-node
-cargo build --release
-./target/release/rhizos-node --help
-```
-
-## Usage
-
-```bash
-# Connect to local orchestrator
-rhizos-node --orchestrator http://localhost:8080
-
-# Connect to remote orchestrator
-rhizos-node --orchestrator http://192.168.1.100:8080
-
-# Custom node name
-rhizos-node --orchestrator http://localhost:8080 --name "my-gpu-rig"
-
-# Show hardware info only
-rhizos-node info
-```
-
-## Configuration
-
-Create `~/.rhizos/config.toml`:
-
-```toml
-[node]
-name = "my-node"
-orchestrator_url = "http://localhost:8080"
-
-[hardware]
-max_memory_percent = 80
-max_gpu_percent = 90
-
-[docker]
-enabled = true
-```
-
-## Requirements
-
-- **CPU**: 4+ cores recommended
-- **RAM**: 8GB minimum
-- **GPU**: Optional - NVIDIA with CUDA 11.8+ for GPU workloads
-- **Docker**: Required for running containerized jobs
+1. Download and install the node app
+2. Launch and click "Start Node" to connect to the network
+3. Your **Share Key** appears - give this to workspace admins to add your node
+4. Optionally enable **Remote Control** in Settings to allow dashboard management
+5. Adjust **Resource Limits** to control how much you share
 
 ## License
 

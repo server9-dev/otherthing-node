@@ -1,6 +1,8 @@
-# Rust
-/target/
-**/*.rs.bk
+node_modules/
+dist/
+release/
+*.log
+.env
 
 # IDE
 .idea/
@@ -11,7 +13,3 @@
 # OS
 .DS_Store
 Thumbs.db
-
-# Config (local)
-config.toml
-.env
