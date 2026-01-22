@@ -12,8 +12,8 @@ Desktop application to share your compute with OtherThing workspaces.
 
 ## Download
 
-- **Windows**: [OtherThing-Node-Setup.exe](https://github.com/Huck-dev/rhizos-node/releases/latest)
-- **Linux**: [OtherThing-Node.AppImage](https://github.com/Huck-dev/rhizos-node/releases/latest)
+- **Windows**: [OtherThing-Node-Setup.exe](https://github.com/server9-dev/otherthing-node/releases/latest)
+- **Linux**: [OtherThing-Node.AppImage](https://github.com/server9-dev/otherthing-node/releases/latest)
 
 ## Development
 
