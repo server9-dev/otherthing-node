@@ -507,6 +507,52 @@ app.whenReady().then(async () => {
     return result.canceled ? null : result.filePaths[0];
   });
 
+  // Sandbox operations
+  ipcMain.handle('sandbox-has', () => {
+    if (!nodeService) return false;
+    return nodeService.hasSandbox();
+  });
+
+  ipcMain.handle('sandbox-write-file', async (_, workspaceId: string, relativePath: string, content: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    return nodeService.sandboxWriteFile(workspaceId, relativePath, content);
+  });
+
+  ipcMain.handle('sandbox-read-file', async (_, workspaceId: string, relativePath: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    return nodeService.sandboxReadFile(workspaceId, relativePath);
+  });
+
+  ipcMain.handle('sandbox-list-files', async (_, workspaceId: string, relativePath?: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    return nodeService.sandboxListFiles(workspaceId, relativePath);
+  });
+
+  ipcMain.handle('sandbox-delete-file', async (_, workspaceId: string, relativePath: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    return nodeService.sandboxDeleteFile(workspaceId, relativePath);
+  });
+
+  ipcMain.handle('sandbox-execute', async (_, workspaceId: string, command: string, timeout?: number) => {
+    if (!nodeService) return { success: false, stdout: '', stderr: '', exitCode: -1, error: 'Node service not initialized' };
+    return nodeService.sandboxExecute(workspaceId, command, timeout);
+  });
+
+  ipcMain.handle('sandbox-sync-to-ipfs', async (_, workspaceId: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    return nodeService.sandboxSyncToIPFS(workspaceId);
+  });
+
+  ipcMain.handle('sandbox-sync-from-ipfs', async (_, workspaceId: string, cid: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    return nodeService.sandboxSyncFromIPFS(workspaceId, cid);
+  });
+
+  ipcMain.handle('sandbox-get-size', async (_, workspaceId: string) => {
+    if (!nodeService) return 0;
+    return nodeService.sandboxGetSize(workspaceId);
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();

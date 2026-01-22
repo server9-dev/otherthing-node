@@ -95,6 +95,50 @@ contextBridge.exposeInMainWorld('electronAPI', {
   browseForFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }): Promise<string | null> =>
     ipcRenderer.invoke('browse-for-file', options || {}),
 
+  // Sandbox operations
+  hasSandbox: (): Promise<boolean> =>
+    ipcRenderer.invoke('sandbox-has'),
+  sandboxWriteFile: (
+    workspaceId: string,
+    relativePath: string,
+    content: string
+  ): Promise<{ success: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke('sandbox-write-file', workspaceId, relativePath, content),
+  sandboxReadFile: (
+    workspaceId: string,
+    relativePath: string
+  ): Promise<{ success: boolean; content?: string; error?: string }> =>
+    ipcRenderer.invoke('sandbox-read-file', workspaceId, relativePath),
+  sandboxListFiles: (
+    workspaceId: string,
+    relativePath?: string
+  ): Promise<{ success: boolean; files?: any[]; error?: string }> =>
+    ipcRenderer.invoke('sandbox-list-files', workspaceId, relativePath),
+  sandboxDeleteFile: (
+    workspaceId: string,
+    relativePath: string
+  ): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('sandbox-delete-file', workspaceId, relativePath),
+  sandboxExecute: (
+    workspaceId: string,
+    command: string,
+    timeout?: number
+  ): Promise<{ success: boolean; stdout: string; stderr: string; exitCode: number; error?: string }> =>
+    ipcRenderer.invoke('sandbox-execute', workspaceId, command, timeout),
+  sandboxSyncToIPFS: (
+    workspaceId: string
+  ): Promise<{ success: boolean; cid?: string; error?: string }> =>
+    ipcRenderer.invoke('sandbox-sync-to-ipfs', workspaceId),
+  sandboxSyncFromIPFS: (
+    workspaceId: string,
+    cid: string
+  ): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('sandbox-sync-from-ipfs', workspaceId, cid),
+  sandboxGetSize: (
+    workspaceId: string
+  ): Promise<number> =>
+    ipcRenderer.invoke('sandbox-get-size', workspaceId),
+
   // Window controls
   minimizeWindow: () => ipcRenderer.invoke('window-minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window-maximize'),

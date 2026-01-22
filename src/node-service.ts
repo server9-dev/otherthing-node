@@ -3,6 +3,7 @@ import WebSocket from 'ws';
 import { HardwareDetector, HardwareInfo } from './hardware';
 import { IPFSManager, IPFSStats } from './ipfs-manager';
 import { OllamaManager, OllamaStatus, OllamaModel } from './ollama-manager';
+import { SandboxManager, FileInfo, ExecutionResult } from './sandbox-manager';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -64,6 +65,7 @@ export class NodeService extends EventEmitter {
   private ipfsManager: IPFSManager | null = null;
   private ipfsEnabled = false;
   private ollamaManager: OllamaManager;
+  private sandboxManager: SandboxManager | null = null;
   private joinedWorkspaces: Set<string> = new Set(); // Track workspaces we've joined to avoid duplicate processing
 
   constructor(defaultOrchestratorUrl: string) {
@@ -79,9 +81,10 @@ export class NodeService extends EventEmitter {
     this.remoteControlEnabled = config.remoteControlEnabled;
     this.storagePath = config.storagePath;
 
-    // Initialize IPFS manager if storage path is set
+    // Initialize IPFS manager and Sandbox manager if storage path is set
     if (this.storagePath) {
       this.initIPFS(this.storagePath);
+      this.initSandbox(this.storagePath);
     }
 
     // Initialize Ollama manager
@@ -111,6 +114,20 @@ export class NodeService extends EventEmitter {
       this.ipfsEnabled = false;
       this.emit('ipfsStatusChange', { running: false, peerId: null });
     });
+  }
+
+  private initSandbox(storagePath: string): void {
+    this.sandboxManager = new SandboxManager(storagePath);
+
+    // Forward Sandbox logs to our log handler
+    this.sandboxManager.on('log', (entry) => {
+      this.log(entry.message, entry.type);
+    });
+
+    // Connect sandbox to IPFS if available
+    if (this.ipfsManager) {
+      this.sandboxManager.setIPFSManager(this.ipfsManager);
+    }
   }
 
   private loadOrCreateConfig(): NodeConfig {
@@ -433,6 +450,259 @@ export class NodeService extends EventEmitter {
                 }));
               }
               break;
+
+            // ============ Sandbox Operations ============
+
+            case 'sandbox_write_file':
+              // Write a file to workspace sandbox
+              if (!this.sandboxManager) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_write_file_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: 'Sandbox not configured (no storage path)',
+                }));
+                break;
+              }
+              try {
+                const result = await this.sandboxManager.writeFile(
+                  msg.workspace_id,
+                  msg.path,
+                  msg.content
+                );
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_write_file_result',
+                  request_id: msg.request_id,
+                  ...result,
+                }));
+              } catch (err) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_write_file_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: String(err),
+                }));
+              }
+              break;
+
+            case 'sandbox_read_file':
+              // Read a file from workspace sandbox
+              if (!this.sandboxManager) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_read_file_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: 'Sandbox not configured (no storage path)',
+                }));
+                break;
+              }
+              try {
+                const result = await this.sandboxManager.readFile(
+                  msg.workspace_id,
+                  msg.path
+                );
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_read_file_result',
+                  request_id: msg.request_id,
+                  ...result,
+                }));
+              } catch (err) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_read_file_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: String(err),
+                }));
+              }
+              break;
+
+            case 'sandbox_list_files':
+              // List files in workspace sandbox
+              if (!this.sandboxManager) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_list_files_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: 'Sandbox not configured (no storage path)',
+                }));
+                break;
+              }
+              try {
+                const result = await this.sandboxManager.listFiles(
+                  msg.workspace_id,
+                  msg.path || '.'
+                );
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_list_files_result',
+                  request_id: msg.request_id,
+                  ...result,
+                }));
+              } catch (err) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_list_files_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: String(err),
+                }));
+              }
+              break;
+
+            case 'sandbox_delete_file':
+              // Delete a file from workspace sandbox
+              if (!this.sandboxManager) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_delete_file_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: 'Sandbox not configured (no storage path)',
+                }));
+                break;
+              }
+              try {
+                const result = await this.sandboxManager.deleteFile(
+                  msg.workspace_id,
+                  msg.path
+                );
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_delete_file_result',
+                  request_id: msg.request_id,
+                  ...result,
+                }));
+              } catch (err) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_delete_file_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: String(err),
+                }));
+              }
+              break;
+
+            case 'sandbox_execute':
+              // Execute a command in workspace sandbox
+              if (!this.sandboxManager) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_execute_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  stdout: '',
+                  stderr: '',
+                  exitCode: -1,
+                  error: 'Sandbox not configured (no storage path)',
+                }));
+                break;
+              }
+              try {
+                const result = await this.sandboxManager.execute(
+                  msg.workspace_id,
+                  msg.command,
+                  msg.timeout || 30000
+                );
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_execute_result',
+                  request_id: msg.request_id,
+                  ...result,
+                }));
+              } catch (err) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_execute_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  stdout: '',
+                  stderr: '',
+                  exitCode: -1,
+                  error: String(err),
+                }));
+              }
+              break;
+
+            case 'sandbox_sync_ipfs':
+              // Sync workspace sandbox to IPFS
+              if (!this.sandboxManager) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_sync_ipfs_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: 'Sandbox not configured (no storage path)',
+                }));
+                break;
+              }
+              try {
+                const result = await this.sandboxManager.syncToIPFS(msg.workspace_id);
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_sync_ipfs_result',
+                  request_id: msg.request_id,
+                  ...result,
+                }));
+              } catch (err) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_sync_ipfs_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: String(err),
+                }));
+              }
+              break;
+
+            case 'sandbox_restore_ipfs':
+              // Restore workspace sandbox from IPFS
+              if (!this.sandboxManager) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_restore_ipfs_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: 'Sandbox not configured (no storage path)',
+                }));
+                break;
+              }
+              try {
+                const result = await this.sandboxManager.syncFromIPFS(
+                  msg.workspace_id,
+                  msg.cid
+                );
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_restore_ipfs_result',
+                  request_id: msg.request_id,
+                  ...result,
+                }));
+              } catch (err) {
+                this.ws?.send(JSON.stringify({
+                  type: 'sandbox_restore_ipfs_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: String(err),
+                }));
+              }
+              break;
+
+            case 'pull_model':
+              // Pull an Ollama model
+              try {
+                this.log(`Pulling model: ${msg.model}`, 'info');
+                await this.ollamaManager.pullModel(msg.model, (status, percent) => {
+                  this.ws?.send(JSON.stringify({
+                    type: 'pull_model_progress',
+                    request_id: msg.request_id,
+                    model: msg.model,
+                    status,
+                    percent,
+                  }));
+                });
+                this.ws?.send(JSON.stringify({
+                  type: 'pull_model_result',
+                  request_id: msg.request_id,
+                  success: true,
+                  model: msg.model,
+                }));
+              } catch (err) {
+                this.ws?.send(JSON.stringify({
+                  type: 'pull_model_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: String(err),
+                }));
+              }
+              break;
           }
         } catch (err) {
           console.error('Failed to parse message:', err);
@@ -635,11 +905,13 @@ export class NodeService extends EventEmitter {
     this.storagePath = newPath;
     this.saveConfig();
 
-    // Reinitialize IPFS manager with new path
+    // Reinitialize IPFS manager and Sandbox manager with new path
     if (newPath) {
       this.initIPFS(newPath);
+      this.initSandbox(newPath);
     } else {
       this.ipfsManager = null;
+      this.sandboxManager = null;
     }
 
     this.log(`Storage path set to: ${newPath || 'not selected'}`, 'success');
@@ -809,5 +1081,88 @@ export class NodeService extends EventEmitter {
 
   getOllamaPath(): string | null {
     return this.ollamaManager.getOllamaPath();
+  }
+
+  // Sandbox Methods (for local UI access)
+  hasSandbox(): boolean {
+    return this.sandboxManager !== null;
+  }
+
+  async sandboxWriteFile(
+    workspaceId: string,
+    relativePath: string,
+    content: string
+  ): Promise<{ success: boolean; path?: string; error?: string }> {
+    if (!this.sandboxManager) {
+      return { success: false, error: 'Sandbox not configured (no storage path)' };
+    }
+    return this.sandboxManager.writeFile(workspaceId, relativePath, content);
+  }
+
+  async sandboxReadFile(
+    workspaceId: string,
+    relativePath: string
+  ): Promise<{ success: boolean; content?: string; error?: string }> {
+    if (!this.sandboxManager) {
+      return { success: false, error: 'Sandbox not configured (no storage path)' };
+    }
+    return this.sandboxManager.readFile(workspaceId, relativePath);
+  }
+
+  async sandboxListFiles(
+    workspaceId: string,
+    relativePath?: string
+  ): Promise<{ success: boolean; files?: FileInfo[]; error?: string }> {
+    if (!this.sandboxManager) {
+      return { success: false, error: 'Sandbox not configured (no storage path)' };
+    }
+    return this.sandboxManager.listFiles(workspaceId, relativePath);
+  }
+
+  async sandboxDeleteFile(
+    workspaceId: string,
+    relativePath: string
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.sandboxManager) {
+      return { success: false, error: 'Sandbox not configured (no storage path)' };
+    }
+    return this.sandboxManager.deleteFile(workspaceId, relativePath);
+  }
+
+  async sandboxExecute(
+    workspaceId: string,
+    command: string,
+    timeout?: number
+  ): Promise<ExecutionResult> {
+    if (!this.sandboxManager) {
+      return { success: false, stdout: '', stderr: '', exitCode: -1, error: 'Sandbox not configured (no storage path)' };
+    }
+    return this.sandboxManager.execute(workspaceId, command, timeout);
+  }
+
+  async sandboxSyncToIPFS(
+    workspaceId: string
+  ): Promise<{ success: boolean; cid?: string; error?: string }> {
+    if (!this.sandboxManager) {
+      return { success: false, error: 'Sandbox not configured (no storage path)' };
+    }
+    return this.sandboxManager.syncToIPFS(workspaceId);
+  }
+
+  async sandboxSyncFromIPFS(
+    workspaceId: string,
+    cid: string
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.sandboxManager) {
+      return { success: false, error: 'Sandbox not configured (no storage path)' };
+    }
+    return this.sandboxManager.syncFromIPFS(workspaceId, cid);
+  }
+
+  async sandboxGetSize(workspaceId: string): Promise<number> {
+    if (!this.sandboxManager) {
+      return 0;
+    }
+    return this.sandboxManager.getSandboxSize(workspaceId);
   }
 }
