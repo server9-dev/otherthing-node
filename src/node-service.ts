@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { HardwareDetector, HardwareInfo } from './hardware';
 import { IPFSManager, IPFSStats } from './ipfs-manager';
+import { OllamaManager, OllamaStatus, OllamaModel } from './ollama-manager';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -62,6 +63,7 @@ export class NodeService extends EventEmitter {
   private configPath: string;
   private ipfsManager: IPFSManager | null = null;
   private ipfsEnabled = false;
+  private ollamaManager: OllamaManager;
 
   constructor(defaultOrchestratorUrl: string) {
     super();
@@ -80,6 +82,15 @@ export class NodeService extends EventEmitter {
     if (this.storagePath) {
       this.initIPFS(this.storagePath);
     }
+
+    // Initialize Ollama manager
+    this.ollamaManager = new OllamaManager();
+    this.ollamaManager.on('log', (entry) => {
+      this.log(`[Ollama] ${entry.message}`, entry.type);
+    });
+    this.ollamaManager.on('pullProgress', (data) => {
+      this.emit('ollamaPullProgress', data);
+    });
   }
 
   private initIPFS(storagePath: string): void {
@@ -712,5 +723,64 @@ export class NodeService extends EventEmitter {
       throw new Error('IPFS not running');
     }
     await this.ipfsManager.unpin(cid);
+  }
+
+  async setIPFSStorageLimit(limitGb: number): Promise<void> {
+    if (!this.ipfsManager) {
+      throw new Error('IPFS not initialized');
+    }
+    await this.ipfsManager.setStorageLimit(limitGb);
+  }
+
+  async getIPFSStorageLimit(): Promise<number | null> {
+    if (!this.ipfsManager) {
+      return null;
+    }
+    return await this.ipfsManager.getStorageLimit();
+  }
+
+  // Ollama Methods
+  async getOllamaStatus(): Promise<OllamaStatus> {
+    return await this.ollamaManager.getStatus();
+  }
+
+  isOllamaInstalled(): boolean {
+    return this.ollamaManager.isInstalled();
+  }
+
+  async installOllama(onProgress?: (percent: number) => void): Promise<void> {
+    await this.ollamaManager.install(onProgress);
+  }
+
+  async startOllama(): Promise<void> {
+    await this.ollamaManager.start();
+    this.emit('ollamaStatusChange', await this.ollamaManager.getStatus());
+  }
+
+  async stopOllama(): Promise<void> {
+    await this.ollamaManager.stop();
+    this.emit('ollamaStatusChange', await this.ollamaManager.getStatus());
+  }
+
+  async pullOllamaModel(modelName: string, onProgress?: (status: string, percent?: number) => void): Promise<void> {
+    await this.ollamaManager.pullModel(modelName, onProgress);
+    this.emit('ollamaStatusChange', await this.ollamaManager.getStatus());
+  }
+
+  async deleteOllamaModel(modelName: string): Promise<void> {
+    await this.ollamaManager.deleteModel(modelName);
+    this.emit('ollamaStatusChange', await this.ollamaManager.getStatus());
+  }
+
+  async getOllamaModels(): Promise<OllamaModel[]> {
+    return await this.ollamaManager.getModels();
+  }
+
+  setOllamaPath(ollamaPath: string): boolean {
+    return this.ollamaManager.setOllamaPath(ollamaPath);
+  }
+
+  getOllamaPath(): string | null {
+    return this.ollamaManager.getOllamaPath();
   }
 }

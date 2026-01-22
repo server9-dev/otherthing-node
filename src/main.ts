@@ -182,6 +182,14 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send('ipfs-status', status);
   });
 
+  nodeService.on('ollamaStatusChange', (status) => {
+    mainWindow?.webContents.send('ollama-status-change', status);
+  });
+
+  nodeService.on('ollamaPullProgress', (data) => {
+    mainWindow?.webContents.send('ollama-pull-progress', data);
+  });
+
   // IPC handlers
   ipcMain.handle('get-hardware', async () => {
     return await HardwareDetector.detect();
@@ -396,6 +404,107 @@ app.whenReady().then(async () => {
     } catch (error) {
       return { success: false, error: String(error) };
     }
+  });
+
+  ipcMain.handle('ipfs-set-storage-limit', async (_, limitGb: number) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.setIPFSStorageLimit(limitGb);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ipfs-get-storage-limit', async () => {
+    if (!nodeService) return null;
+    return await nodeService.getIPFSStorageLimit();
+  });
+
+  // Ollama handlers
+  ipcMain.handle('ollama-status', async () => {
+    if (!nodeService) return { installed: false, running: false, models: [] };
+    return await nodeService.getOllamaStatus();
+  });
+
+  ipcMain.handle('ollama-install', async () => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.installOllama((percent: number) => {
+        mainWindow?.webContents.send('ollama-install-progress', percent);
+      });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ollama-start', async () => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.startOllama();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ollama-stop', async () => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.stopOllama();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ollama-pull-model', async (_, modelName: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.pullOllamaModel(modelName, (status: string, percent?: number) => {
+        mainWindow?.webContents.send('ollama-pull-progress', { model: modelName, status, percent });
+      });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ollama-delete-model', async (_, modelName: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.deleteOllamaModel(modelName);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ollama-models', async () => {
+    if (!nodeService) return [];
+    return await nodeService.getOllamaModels();
+  });
+
+  ipcMain.handle('ollama-set-path', (_, ollamaPath: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    const success = nodeService.setOllamaPath(ollamaPath);
+    return { success, error: success ? undefined : 'Invalid path - file not found' };
+  });
+
+  ipcMain.handle('ollama-get-path', () => {
+    if (!nodeService) return null;
+    return nodeService.getOllamaPath();
+  });
+
+  ipcMain.handle('browse-for-file', async (_, options: { title?: string; filters?: { name: string; extensions: string[] }[] }) => {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: options.title || 'Select File',
+      filters: options.filters || [{ name: 'Executable', extensions: ['exe'] }],
+      properties: ['openFile']
+    });
+    return result.canceled ? null : result.filePaths[0];
   });
 
   app.on('activate', () => {

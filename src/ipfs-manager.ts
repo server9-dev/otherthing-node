@@ -265,6 +265,50 @@ export class IPFSManager extends EventEmitter {
   }
 
   /**
+   * Set storage limit for IPFS datastore
+   * @param limitGb Storage limit in gigabytes
+   */
+  async setStorageLimit(limitGb: number): Promise<void> {
+    if (!this.hasBinary()) {
+      throw new Error('IPFS binary not found');
+    }
+
+    const limitStr = `${limitGb}GB`;
+    await this.runCommand(['config', 'Datastore.StorageMax', limitStr]);
+    this.emit('log', { message: `IPFS storage limit set to ${limitStr}`, type: 'success' });
+  }
+
+  /**
+   * Get current storage limit
+   */
+  async getStorageLimit(): Promise<number | null> {
+    if (!this.hasBinary()) {
+      return null;
+    }
+
+    try {
+      const result = await this.runCommand(['config', 'Datastore.StorageMax']);
+      const limitStr = result.trim();
+      // Parse "10GB" format
+      const match = limitStr.match(/^(\d+(?:\.\d+)?)\s*([KMGT]?B)?$/i);
+      if (match) {
+        const value = parseFloat(match[1]);
+        const unit = (match[2] || 'B').toUpperCase();
+        switch (unit) {
+          case 'KB': return value / (1024 * 1024);
+          case 'MB': return value / 1024;
+          case 'GB': return value;
+          case 'TB': return value * 1024;
+          default: return value / (1024 * 1024 * 1024);
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Set the swarm key for workspace isolation
    */
   async setSwarmKey(key: string): Promise<void> {

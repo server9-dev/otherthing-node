@@ -710,6 +710,159 @@
     .spin { animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
+    /* Ollama Models */
+    .ollama-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      background: var(--bg-elevated);
+      border-radius: var(--radius-sm);
+      margin-bottom: 12px;
+    }
+    .ollama-status.running {
+      background: linear-gradient(135deg, rgba(118,185,0,0.1), rgba(118,185,0,0.05));
+      border: 1px solid rgba(118,185,0,0.3);
+    }
+    .ollama-status-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .ollama-status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+    .ollama-status-dot.online {
+      background: #76b900;
+      box-shadow: 0 0 8px #76b900;
+    }
+    .ollama-status-text h4 {
+      font-size: 0.85rem;
+      margin-bottom: 2px;
+    }
+    .ollama-status-text p {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+    .model-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .model-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      background: var(--bg-elevated);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+    }
+    .model-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .model-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #76b900;
+    }
+    .model-size {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+    .model-delete-btn {
+      padding: 6px 12px;
+      background: transparent;
+      border: 1px solid var(--error);
+      border-radius: var(--radius-sm);
+      color: var(--error);
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .model-delete-btn:hover {
+      background: rgba(255,51,102,0.1);
+    }
+    .model-add-section {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .model-select {
+      flex: 1;
+      padding: 10px 12px;
+      background: var(--bg-dark);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-size: 0.85rem;
+    }
+    .model-select:focus {
+      outline: none;
+      border-color: #76b900;
+    }
+    .model-pull-btn {
+      padding: 10px 16px;
+      background: linear-gradient(135deg, #76b900, #5a8f00);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .model-pull-btn:hover {
+      box-shadow: 0 0 15px rgba(118,185,0,0.4);
+    }
+    .model-pull-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .model-progress {
+      margin-top: 12px;
+      padding: 12px;
+      background: var(--bg-elevated);
+      border-radius: var(--radius-sm);
+      display: none;
+    }
+    .model-progress.visible {
+      display: block;
+    }
+    .model-progress-text {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .model-progress-bar {
+      height: 6px;
+      background: var(--bg-dark);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .model-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #76b900, #9be22d);
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .empty-models {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: var(--bg-dark); }
@@ -961,32 +1114,46 @@
   <div id="setup-wizard-overlay" class="modal-overlay">
     <div class="modal">
       <div class="modal-header">
-        <h2>IPFS Setup</h2>
-        <p>Configure distributed storage for your node</p>
+        <h2>Node Setup</h2>
+        <p>Configure your compute node for OtherThing</p>
       </div>
       <div class="modal-body">
         <div class="wizard-step-indicator">
           <div id="wizard-dot-1" class="wizard-dot active"></div>
           <div id="wizard-dot-2" class="wizard-dot"></div>
           <div id="wizard-dot-3" class="wizard-dot"></div>
+          <div id="wizard-dot-4" class="wizard-dot"></div>
+          <div id="wizard-dot-5" class="wizard-dot"></div>
         </div>
 
-        <!-- Step 1: Download IPFS -->
+        <!-- Step 1: Welcome -->
         <div id="wizard-step-1" class="wizard-step active">
           <div class="wizard-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+              <line x1="9" y1="9" x2="9.01" y2="9"/>
+              <line x1="15" y1="9" x2="15.01" y2="9"/>
             </svg>
           </div>
-          <h3 class="wizard-title">Download IPFS</h3>
-          <p class="wizard-desc">IPFS enables distributed file storage across your workspace. We'll download the IPFS binary (~50MB) to get started.</p>
-          <div id="download-progress" class="progress-container" style="display:none;">
-            <div class="progress-bar">
-              <div id="download-progress-fill" class="progress-fill"></div>
+          <h3 class="wizard-title">Welcome to OtherThing Node</h3>
+          <p class="wizard-desc">Let's set up your node to contribute compute power to workspaces. This wizard will configure storage and AI capabilities.</p>
+          <div class="storage-info" style="margin-top:20px;">
+            <div class="storage-info-row">
+              <span class="storage-info-label">What we'll set up:</span>
             </div>
-            <div id="download-progress-text" class="progress-text">Downloading... 0%</div>
+            <div class="storage-info-row">
+              <span class="storage-info-label">1. Storage Location</span>
+              <span class="storage-info-value">Where to store data</span>
+            </div>
+            <div class="storage-info-row">
+              <span class="storage-info-label">2. IPFS</span>
+              <span class="storage-info-value">Distributed file storage</span>
+            </div>
+            <div class="storage-info-row">
+              <span class="storage-info-label">3. Ollama</span>
+              <span class="storage-info-value">Local AI models</span>
+            </div>
           </div>
         </div>
 
@@ -1000,7 +1167,7 @@
             </svg>
           </div>
           <h3 class="wizard-title">Select Storage Location</h3>
-          <p class="wizard-desc">Choose where to store IPFS data. Select a drive with enough free space for workspace files.</p>
+          <p class="wizard-desc">Choose where to store IPFS data and AI models. Select a drive with enough free space.</p>
           <select id="wizard-drive-select" class="wizard-select">
             <option value="">Loading drives...</option>
           </select>
@@ -1020,23 +1187,97 @@
           </div>
         </div>
 
-        <!-- Step 3: Complete -->
+        <!-- Step 3: Setup IPFS -->
         <div id="wizard-step-3" class="wizard-step">
+          <div class="wizard-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </div>
+          <h3 class="wizard-title">Setup IPFS</h3>
+          <p class="wizard-desc" id="ipfs-setup-desc">IPFS enables distributed file storage across your workspace. We'll download the IPFS binary (~50MB).</p>
+          <div id="ipfs-download-progress" class="progress-container" style="display:none;">
+            <div class="progress-bar">
+              <div id="ipfs-download-progress-fill" class="progress-fill"></div>
+            </div>
+            <div id="ipfs-download-progress-text" class="progress-text">Downloading... 0%</div>
+          </div>
+          <div id="ipfs-setup-status" class="storage-info" style="display:none;margin-top:16px;">
+            <div class="storage-info-row">
+              <span class="storage-info-label">IPFS Status</span>
+              <span id="ipfs-setup-status-text" class="storage-info-value">-</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: Setup Ollama -->
+        <div id="wizard-step-4" class="wizard-step">
+          <div class="wizard-icon" style="border-color: rgba(118,185,0,0.5);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#76b900;">
+              <rect x="4" y="4" width="16" height="16" rx="2"/>
+              <rect x="9" y="9" width="6" height="6"/>
+              <line x1="9" y1="1" x2="9" y2="4"/>
+              <line x1="15" y1="1" x2="15" y2="4"/>
+              <line x1="9" y1="20" x2="9" y2="23"/>
+              <line x1="15" y1="20" x2="15" y2="23"/>
+            </svg>
+          </div>
+          <h3 class="wizard-title">Setup Ollama</h3>
+          <p class="wizard-desc" id="ollama-setup-desc">Ollama lets you run AI models locally. This enables AI capabilities for your workspaces.</p>
+          <div id="ollama-gpu-info" class="storage-info" style="margin-bottom:16px;">
+            <div class="storage-info-row">
+              <span class="storage-info-label">GPU Detected</span>
+              <span id="wizard-gpu-name" class="storage-info-value" style="color:#76b900;">Checking...</span>
+            </div>
+          </div>
+          <div id="ollama-download-progress" class="progress-container" style="display:none;">
+            <div class="progress-bar">
+              <div id="ollama-download-progress-fill" class="progress-fill" style="background: linear-gradient(90deg, #76b900, #9be22d);"></div>
+            </div>
+            <div id="ollama-download-progress-text" class="progress-text">Installing... 0%</div>
+          </div>
+          <div id="ollama-browse-section" style="display:none;margin-top:16px;">
+            <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">Ollama not auto-detected. If you installed it, browse to select ollama.exe:</p>
+            <div style="display:flex;gap:8px;">
+              <input type="text" id="ollama-path-input" readonly placeholder="Click Browse to select ollama.exe" style="flex:1;padding:10px 12px;background:var(--bg-dark);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);color:var(--text-primary);font-size:0.8rem;">
+              <button id="ollama-browse-btn" class="btn-wizard btn-wizard-secondary" style="padding:10px 16px;">Browse</button>
+            </div>
+          </div>
+          <div id="ollama-setup-status" class="storage-info" style="display:none;margin-top:16px;">
+            <div class="storage-info-row">
+              <span class="storage-info-label">Ollama Status</span>
+              <span id="ollama-setup-status-text" class="storage-info-value">-</span>
+            </div>
+            <div class="storage-info-row" id="ollama-path-row" style="display:none;">
+              <span class="storage-info-label">Path</span>
+              <span id="ollama-path-display" class="storage-info-value" style="font-size:0.7rem;word-break:break-all;">-</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 5: Complete -->
+        <div id="wizard-step-5" class="wizard-step">
           <div class="wizard-success">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
               <polyline points="22 4 12 14.01 9 11.01"/>
             </svg>
             <h3 class="wizard-title">Setup Complete!</h3>
-            <p class="wizard-desc">IPFS is ready. Your node can now participate in distributed storage for workspaces.</p>
+            <p class="wizard-desc">Your node is ready to contribute compute to workspaces.</p>
             <div id="wizard-final-info" class="storage-info" style="margin-top:20px;">
               <div class="storage-info-row">
-                <span class="storage-info-label">Storage Location</span>
+                <span class="storage-info-label">Storage</span>
                 <span id="wizard-final-path" class="storage-info-value">-</span>
               </div>
               <div class="storage-info-row">
-                <span class="storage-info-label">IPFS Status</span>
-                <span id="wizard-final-status" class="storage-info-value" style="color:var(--success)">Ready</span>
+                <span class="storage-info-label">IPFS</span>
+                <span id="wizard-final-ipfs" class="storage-info-value">-</span>
+              </div>
+              <div class="storage-info-row">
+                <span class="storage-info-label">Ollama</span>
+                <span id="wizard-final-ollama" class="storage-info-value">-</span>
               </div>
             </div>
           </div>
@@ -1044,7 +1285,7 @@
       </div>
       <div class="modal-footer">
         <button id="wizard-skip-btn" class="btn-wizard btn-wizard-secondary">Skip for now</button>
-        <button id="wizard-next-btn" class="btn-wizard btn-wizard-primary">Download IPFS</button>
+        <button id="wizard-next-btn" class="btn-wizard btn-wizard-primary">Get Started</button>
       </div>
     </div>
   </div>
@@ -1202,6 +1443,62 @@
             <div id="ipfs-peers" class="ipfs-stat-value">0</div>
             <div class="ipfs-stat-label">Peers</div>
           </div>
+        </div>
+        <div id="ipfs-limit-section" class="limit-row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-subtle);">
+          <span class="limit-label">Max Storage</span>
+          <input type="range" class="limit-slider" id="ipfs-limit-slider" min="5" max="500" value="50" step="5">
+          <span class="limit-value"><span id="ipfs-limit-value">50</span> GB</span>
+          <button id="ipfs-limit-save-btn" class="btn btn-save" style="margin-left:8px;padding:6px 12px;font-size:0.7rem;">Apply</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ollama AI Models -->
+    <div class="card" id="ollama-card">
+      <div class="card-header">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#76b900;"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/></svg>
+          Ollama AI Models
+        </div>
+        <span id="ollama-status-badge" style="font-size:0.65rem;color:var(--text-muted)">Checking...</span>
+      </div>
+      <div class="card-body">
+        <div id="ollama-status-box" class="ollama-status">
+          <div class="ollama-status-info">
+            <div id="ollama-dot" class="ollama-status-dot"></div>
+            <div class="ollama-status-text">
+              <h4 id="ollama-title">Ollama Offline</h4>
+              <p id="ollama-endpoint">Not running</p>
+            </div>
+          </div>
+          <button id="ollama-toggle-btn" class="ipfs-btn start" disabled>Start</button>
+        </div>
+
+        <div id="model-list" class="model-list">
+          <div class="empty-models">No models installed</div>
+        </div>
+
+        <div id="model-progress" class="model-progress">
+          <div id="model-progress-text" class="model-progress-text">Downloading...</div>
+          <div class="model-progress-bar">
+            <div id="model-progress-fill" class="model-progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="model-add-section">
+          <select id="model-select" class="model-select">
+            <option value="">-- Select a model to install --</option>
+            <option value="llama3.2:1b">Llama 3.2 1B (1.3 GB) - Fast, lightweight</option>
+            <option value="llama3.2:3b">Llama 3.2 3B (2.0 GB) - Balanced</option>
+            <option value="llama3.1:8b">Llama 3.1 8B (4.7 GB) - Powerful</option>
+            <option value="mistral:7b">Mistral 7B (4.1 GB) - Great quality</option>
+            <option value="codellama:7b">Code Llama 7B (3.8 GB) - Code generation</option>
+            <option value="phi3:mini">Phi-3 Mini (2.3 GB) - Microsoft</option>
+            <option value="gemma2:2b">Gemma 2 2B (1.6 GB) - Google</option>
+            <option value="qwen2.5:3b">Qwen 2.5 3B (1.9 GB) - Alibaba</option>
+            <option value="deepseek-coder:6.7b">DeepSeek Coder (3.8 GB) - Code</option>
+          </select>
+          <button id="model-pull-btn" class="model-pull-btn" disabled>Pull Model</button>
         </div>
       </div>
     </div>
@@ -1517,6 +1814,8 @@
           const result = await window.electronAPI.setStoragePath(selectedMount || null);
           if (result.success) {
             addLog('Storage drive set to: ' + (selectedMount || 'none'), 'success');
+            // Refresh IPFS status to update button state
+            setTimeout(updateIPFSStatus, 500);
           } else {
             addLog('Failed to set storage drive: ' + result.error, 'error');
           }
@@ -1630,6 +1929,251 @@
           updateIPFSStatus();
         }
       }, 10000);
+
+      // IPFS Storage Limit
+      const ipfsLimitSlider = document.getElementById('ipfs-limit-slider');
+      const ipfsLimitValue = document.getElementById('ipfs-limit-value');
+      const ipfsLimitSaveBtn = document.getElementById('ipfs-limit-save-btn');
+
+      ipfsLimitSlider.addEventListener('input', () => {
+        ipfsLimitValue.textContent = ipfsLimitSlider.value;
+      });
+
+      ipfsLimitSaveBtn.addEventListener('click', async () => {
+        const limitGb = parseInt(ipfsLimitSlider.value);
+        ipfsLimitSaveBtn.disabled = true;
+        ipfsLimitSaveBtn.textContent = 'Saving...';
+
+        try {
+          const result = await window.electronAPI.setIPFSStorageLimit(limitGb);
+          if (result.success) {
+            addLog(`IPFS storage limit set to ${limitGb} GB`, 'success');
+            ipfsLimitSaveBtn.textContent = 'Saved!';
+            setTimeout(() => {
+              ipfsLimitSaveBtn.textContent = 'Apply';
+              ipfsLimitSaveBtn.disabled = false;
+            }, 1500);
+          } else {
+            addLog('Failed to set IPFS limit: ' + result.error, 'error');
+            ipfsLimitSaveBtn.textContent = 'Apply';
+            ipfsLimitSaveBtn.disabled = false;
+          }
+        } catch (err) {
+          addLog('Error: ' + err, 'error');
+          ipfsLimitSaveBtn.textContent = 'Apply';
+          ipfsLimitSaveBtn.disabled = false;
+        }
+      });
+
+      // Load current IPFS storage limit
+      async function loadIPFSStorageLimit() {
+        try {
+          const limit = await window.electronAPI.getIPFSStorageLimit();
+          if (limit !== null) {
+            ipfsLimitSlider.value = Math.round(limit);
+            ipfsLimitValue.textContent = Math.round(limit);
+          }
+        } catch (e) {
+          // Ignore errors on initial load
+        }
+      }
+      loadIPFSStorageLimit();
+
+      // ===== OLLAMA CONTROLS =====
+      const ollamaStatusBadge = document.getElementById('ollama-status-badge');
+      const ollamaStatusBox = document.getElementById('ollama-status-box');
+      const ollamaDot = document.getElementById('ollama-dot');
+      const ollamaTitle = document.getElementById('ollama-title');
+      const ollamaEndpoint = document.getElementById('ollama-endpoint');
+      const ollamaToggleBtn = document.getElementById('ollama-toggle-btn');
+      const modelList = document.getElementById('model-list');
+      const modelSelect = document.getElementById('model-select');
+      const modelPullBtn = document.getElementById('model-pull-btn');
+      const modelProgress = document.getElementById('model-progress');
+      const modelProgressText = document.getElementById('model-progress-text');
+      const modelProgressFill = document.getElementById('model-progress-fill');
+      let ollamaRunning = false;
+      let ollamaInstalled = false;
+
+      function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+      }
+
+      async function updateOllamaUI() {
+        try {
+          const status = await window.electronAPI.getOllamaStatus();
+          ollamaInstalled = status.installed;
+          ollamaRunning = status.running;
+
+          // Update status badge
+          if (!status.installed) {
+            ollamaStatusBadge.textContent = 'Not installed';
+            ollamaStatusBadge.style.color = 'var(--error)';
+          } else if (status.running) {
+            ollamaStatusBadge.textContent = 'Running';
+            ollamaStatusBadge.style.color = '#76b900';
+          } else {
+            ollamaStatusBadge.textContent = 'Stopped';
+            ollamaStatusBadge.style.color = 'var(--warning)';
+          }
+
+          // Update status box
+          if (status.running) {
+            ollamaStatusBox.classList.add('running');
+            ollamaDot.classList.add('online');
+            ollamaTitle.textContent = 'Ollama Running';
+            ollamaEndpoint.textContent = status.endpoint || 'http://127.0.0.1:11434';
+            ollamaToggleBtn.textContent = 'Stop';
+            ollamaToggleBtn.className = 'ipfs-btn stop';
+            ollamaToggleBtn.disabled = false;
+            modelPullBtn.disabled = !modelSelect.value;
+          } else {
+            ollamaStatusBox.classList.remove('running');
+            ollamaDot.classList.remove('online');
+            ollamaTitle.textContent = status.installed ? 'Ollama Stopped' : 'Ollama Not Installed';
+            ollamaEndpoint.textContent = status.installed ? 'Click Start to begin' : 'Install Ollama to use AI models';
+            ollamaToggleBtn.textContent = 'Start';
+            ollamaToggleBtn.className = 'ipfs-btn start';
+            ollamaToggleBtn.disabled = !status.installed;
+            modelPullBtn.disabled = true;
+          }
+
+          // Update model list
+          if (status.models && status.models.length > 0) {
+            modelList.innerHTML = status.models.map(model => `
+              <div class="model-item">
+                <div class="model-info">
+                  <span class="model-name">${model.name}</span>
+                  <span class="model-size">${formatBytes(model.size)}${model.parameterSize ? ' • ' + model.parameterSize : ''}</span>
+                </div>
+                <button class="model-delete-btn" data-model="${model.name}">Delete</button>
+              </div>
+            `).join('');
+
+            // Add delete handlers
+            modelList.querySelectorAll('.model-delete-btn').forEach(btn => {
+              btn.addEventListener('click', async () => {
+                const modelName = btn.getAttribute('data-model');
+                if (confirm(`Delete model "${modelName}"?`)) {
+                  btn.disabled = true;
+                  btn.textContent = 'Deleting...';
+                  try {
+                    const result = await window.electronAPI.deleteOllamaModel(modelName);
+                    if (result.success) {
+                      addLog(`Model ${modelName} deleted`, 'success');
+                      updateOllamaUI();
+                    } else {
+                      addLog(`Failed to delete: ${result.error}`, 'error');
+                      btn.disabled = false;
+                      btn.textContent = 'Delete';
+                    }
+                  } catch (err) {
+                    addLog(`Error: ${err}`, 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Delete';
+                  }
+                }
+              });
+            });
+          } else {
+            modelList.innerHTML = '<div class="empty-models">No models installed. Pull a model to get started.</div>';
+          }
+
+        } catch (err) {
+          console.error('Failed to get Ollama status:', err);
+          ollamaStatusBadge.textContent = 'Error';
+          ollamaStatusBadge.style.color = 'var(--error)';
+        }
+      }
+
+      ollamaToggleBtn.addEventListener('click', async () => {
+        ollamaToggleBtn.disabled = true;
+        try {
+          if (ollamaRunning) {
+            addLog('Stopping Ollama...', 'info');
+            const result = await window.electronAPI.stopOllama();
+            if (!result.success) {
+              addLog('Failed to stop Ollama: ' + result.error, 'error');
+            }
+          } else {
+            addLog('Starting Ollama...', 'info');
+            const result = await window.electronAPI.startOllama();
+            if (!result.success) {
+              addLog('Failed to start Ollama: ' + result.error, 'error');
+            } else {
+              addLog('Ollama started', 'success');
+            }
+          }
+        } catch (err) {
+          addLog('Ollama error: ' + err, 'error');
+        }
+        setTimeout(updateOllamaUI, 1000);
+      });
+
+      modelSelect.addEventListener('change', () => {
+        modelPullBtn.disabled = !modelSelect.value || !ollamaRunning;
+      });
+
+      modelPullBtn.addEventListener('click', async () => {
+        const modelName = modelSelect.value;
+        if (!modelName) return;
+
+        modelPullBtn.disabled = true;
+        modelSelect.disabled = true;
+        modelProgress.classList.add('visible');
+        modelProgressText.textContent = `Pulling ${modelName}...`;
+        modelProgressFill.style.width = '0%';
+
+        try {
+          const result = await window.electronAPI.pullOllamaModel(modelName);
+          if (result.success) {
+            addLog(`Model ${modelName} pulled successfully`, 'success');
+            modelProgressText.textContent = 'Complete!';
+            modelProgressFill.style.width = '100%';
+            setTimeout(() => {
+              modelProgress.classList.remove('visible');
+              modelSelect.value = '';
+              updateOllamaUI();
+            }, 1500);
+          } else {
+            addLog(`Failed to pull model: ${result.error}`, 'error');
+            modelProgressText.textContent = 'Failed: ' + result.error;
+          }
+        } catch (err) {
+          addLog(`Pull error: ${err}`, 'error');
+          modelProgressText.textContent = 'Error: ' + err;
+        }
+
+        modelPullBtn.disabled = false;
+        modelSelect.disabled = false;
+      });
+
+      // Listen for pull progress
+      window.electronAPI.onOllamaPullProgress((data) => {
+        modelProgressText.textContent = `${data.model}: ${data.status}`;
+        if (data.percent !== undefined) {
+          modelProgressFill.style.width = data.percent + '%';
+        }
+      });
+
+      // Listen for status changes
+      window.electronAPI.onOllamaStatusChange((status) => {
+        updateOllamaUI();
+      });
+
+      // Initial Ollama status check
+      updateOllamaUI();
+
+      // Refresh Ollama periodically
+      setInterval(() => {
+        if (ollamaRunning) {
+          updateOllamaUI();
+        }
+      }, 15000);
 
       // Resource Limits
       const cpuSlider = document.getElementById('cpu-slider');
@@ -1745,12 +2289,13 @@
       const wizardSkipBtn = document.getElementById('wizard-skip-btn');
       const wizardDriveSelect = document.getElementById('wizard-drive-select');
       const wizardStorageInfo = document.getElementById('wizard-storage-info');
-      const downloadProgress = document.getElementById('download-progress');
-      const downloadProgressFill = document.getElementById('download-progress-fill');
-      const downloadProgressText = document.getElementById('download-progress-text');
 
       let currentWizardStep = 1;
       let wizardDrives = [];
+      let wizardHasGpu = false;
+      let wizardGpuName = 'No GPU detected';
+      let wizardIpfsReady = false;
+      let wizardOllamaReady = false;
 
       function showWizard() {
         wizardOverlay.classList.add('visible');
@@ -1762,33 +2307,48 @@
 
       function updateWizardStep(step) {
         currentWizardStep = step;
+        const totalSteps = 5;
+
         // Update dots
-        for (let i = 1; i <= 3; i++) {
+        for (let i = 1; i <= totalSteps; i++) {
           const dot = document.getElementById(`wizard-dot-${i}`);
-          dot.classList.remove('active', 'completed');
-          if (i < step) {
-            dot.classList.add('completed');
-          } else if (i === step) {
-            dot.classList.add('active');
+          if (dot) {
+            dot.classList.remove('active', 'completed');
+            if (i < step) {
+              dot.classList.add('completed');
+            } else if (i === step) {
+              dot.classList.add('active');
+            }
           }
         }
+
         // Update steps
-        for (let i = 1; i <= 3; i++) {
+        for (let i = 1; i <= totalSteps; i++) {
           const stepEl = document.getElementById(`wizard-step-${i}`);
-          stepEl.classList.toggle('active', i === step);
+          if (stepEl) {
+            stepEl.classList.toggle('active', i === step);
+          }
         }
-        // Update button text
+
+        // Update button text and state
+        wizardNextBtn.disabled = false;
+        wizardSkipBtn.style.display = 'block';
+
         switch(step) {
-          case 1:
-            wizardNextBtn.textContent = 'Download IPFS';
-            wizardSkipBtn.style.display = 'block';
+          case 1: // Welcome
+            wizardNextBtn.textContent = 'Get Started';
             break;
-          case 2:
+          case 2: // Storage
             wizardNextBtn.textContent = 'Continue';
             wizardNextBtn.disabled = !wizardDriveSelect.value;
-            wizardSkipBtn.style.display = 'block';
             break;
-          case 3:
+          case 3: // IPFS
+            wizardNextBtn.textContent = wizardIpfsReady ? 'Continue' : 'Setup IPFS';
+            break;
+          case 4: // Ollama
+            wizardNextBtn.textContent = wizardOllamaReady ? 'Continue' : 'Setup Ollama';
+            break;
+          case 5: // Complete
             wizardNextBtn.textContent = 'Done';
             wizardSkipBtn.style.display = 'none';
             break;
@@ -1802,11 +2362,30 @@
           wizardDrives.forEach(drive => {
             const opt = document.createElement('option');
             opt.value = drive.mount;
-            opt.textContent = `${drive.mount} - ${drive.available_gb} GB free (${drive.type})`;
+            opt.textContent = `${drive.mount} - ${drive.available_gb.toFixed(1)} GB free (${drive.type})`;
             wizardDriveSelect.appendChild(opt);
           });
         } catch (err) {
           wizardDriveSelect.innerHTML = '<option value="">Error loading drives</option>';
+        }
+      }
+
+      async function checkWizardGpu() {
+        try {
+          const hw = await window.electronAPI.getHardware();
+          if (hw.gpus && hw.gpus.length > 0) {
+            wizardHasGpu = true;
+            wizardGpuName = hw.gpus[0].model;
+            document.getElementById('wizard-gpu-name').textContent = wizardGpuName;
+            document.getElementById('wizard-gpu-name').style.color = '#76b900';
+          } else {
+            wizardHasGpu = false;
+            wizardGpuName = 'No dedicated GPU';
+            document.getElementById('wizard-gpu-name').textContent = wizardGpuName;
+            document.getElementById('wizard-gpu-name').style.color = 'var(--text-muted)';
+          }
+        } catch (err) {
+          wizardHasGpu = false;
         }
       }
 
@@ -1815,8 +2394,8 @@
         if (selectedDrive) {
           wizardStorageInfo.style.display = 'block';
           document.getElementById('wizard-drive-name').textContent = selectedDrive.mount;
-          document.getElementById('wizard-drive-free').textContent = selectedDrive.available_gb + ' GB';
-          document.getElementById('wizard-storage-path').textContent = selectedDrive.mount + '/otherthing-storage/ipfs';
+          document.getElementById('wizard-drive-free').textContent = selectedDrive.available_gb.toFixed(1) + ' GB';
+          document.getElementById('wizard-storage-path').textContent = selectedDrive.mount + '/otherthing-storage';
           wizardNextBtn.disabled = false;
         } else {
           wizardStorageInfo.style.display = 'none';
@@ -1824,78 +2403,58 @@
         }
       });
 
-      // Listen for download progress
+      // Listen for IPFS download progress
       window.electronAPI.onIPFSDownloadProgress((percent) => {
-        downloadProgressFill.style.width = percent + '%';
-        downloadProgressText.textContent = `Downloading... ${percent}%`;
+        const fill = document.getElementById('ipfs-download-progress-fill');
+        const text = document.getElementById('ipfs-download-progress-text');
+        if (fill) fill.style.width = percent + '%';
+        if (text) text.textContent = `Downloading... ${percent}%`;
+      });
+
+      // Listen for Ollama install progress
+      window.electronAPI.onOllamaInstallProgress((percent) => {
+        const fill = document.getElementById('ollama-download-progress-fill');
+        const text = document.getElementById('ollama-download-progress-text');
+        if (fill) fill.style.width = percent + '%';
+        if (text) text.textContent = `Installing... ${percent}%`;
       });
 
       wizardNextBtn.addEventListener('click', async () => {
         switch(currentWizardStep) {
-          case 1:
-            // Download IPFS
-            wizardNextBtn.disabled = true;
-            wizardNextBtn.textContent = 'Downloading...';
-            downloadProgress.style.display = 'block';
-
-            try {
-              const result = await window.electronAPI.downloadIPFSBinary();
-              if (result.success) {
-                addLog('IPFS binary downloaded successfully', 'success');
-                downloadProgressFill.style.width = '100%';
-                downloadProgressText.textContent = 'Download complete!';
-                // Load drives for next step
-                await loadWizardDrives();
-                setTimeout(() => updateWizardStep(2), 500);
-              } else {
-                addLog('Failed to download IPFS: ' + result.error, 'error');
-                downloadProgressText.textContent = 'Download failed: ' + result.error;
-                wizardNextBtn.disabled = false;
-                wizardNextBtn.textContent = 'Retry Download';
-              }
-            } catch (err) {
-              addLog('Download error: ' + err, 'error');
-              downloadProgressText.textContent = 'Download failed';
-              wizardNextBtn.disabled = false;
-              wizardNextBtn.textContent = 'Retry Download';
-            }
+          case 1: // Welcome -> Storage
+            await loadWizardDrives();
+            await checkWizardGpu();
+            updateWizardStep(2);
             break;
 
-          case 2:
-            // Save storage location
+          case 2: // Storage -> IPFS
             if (!wizardDriveSelect.value) return;
 
             wizardNextBtn.disabled = true;
-            wizardNextBtn.textContent = 'Configuring...';
+            wizardNextBtn.textContent = 'Saving...';
 
             try {
               const result = await window.electronAPI.setStoragePath(wizardDriveSelect.value);
               if (result.success) {
-                addLog('Storage location configured', 'success');
-
-                // Also update the main drive selector
+                addLog('Storage location configured: ' + wizardDriveSelect.value, 'success');
                 driveSelect.value = wizardDriveSelect.value;
                 const selectedDrive = wizardDrives.find(d => d.mount === wizardDriveSelect.value);
                 updateDriveDisplay(selectedDrive);
 
-                // Update final info
-                document.getElementById('wizard-final-path').textContent = wizardDriveSelect.value + '/otherthing-storage/ipfs';
+                // Check IPFS status
+                const ipfsStatus = await window.electronAPI.getIPFSStatus();
+                wizardIpfsReady = ipfsStatus.hasBinary;
 
-                // Try to start IPFS
-                addLog('Initializing IPFS...', 'info');
-                const startResult = await window.electronAPI.startIPFS();
-                if (startResult.success) {
-                  document.getElementById('wizard-final-status').textContent = 'Running';
-                  document.getElementById('wizard-final-status').style.color = 'var(--success)';
-                  addLog('IPFS started successfully', 'success');
-                } else {
-                  document.getElementById('wizard-final-status').textContent = 'Ready (not started)';
-                  document.getElementById('wizard-final-status').style.color = 'var(--primary)';
+                if (wizardIpfsReady) {
+                  document.getElementById('ipfs-setup-desc').textContent = 'IPFS is already installed. Click Continue to proceed.';
+                  document.getElementById('ipfs-setup-status').style.display = 'block';
+                  document.getElementById('ipfs-setup-status-text').textContent = 'Installed';
+                  document.getElementById('ipfs-setup-status-text').style.color = 'var(--success)';
                 }
 
                 updateWizardStep(3);
               } else {
-                addLog('Failed to set storage path: ' + result.error, 'error');
+                addLog('Failed to set storage: ' + result.error, 'error');
                 wizardNextBtn.disabled = false;
                 wizardNextBtn.textContent = 'Continue';
               }
@@ -1906,38 +2465,214 @@
             }
             break;
 
-          case 3:
-            // Done - close wizard
+          case 3: // IPFS -> Ollama
+            if (wizardIpfsReady) {
+              // Already installed, go to Ollama
+              const ollamaStatus = await window.electronAPI.getOllamaStatus();
+              wizardOllamaReady = ollamaStatus.installed;
+              if (wizardOllamaReady) {
+                document.getElementById('ollama-setup-desc').textContent = 'Ollama is already installed. Click Continue to finish setup.';
+                document.getElementById('ollama-setup-status').style.display = 'block';
+                document.getElementById('ollama-setup-status-text').textContent = ollamaStatus.running ? 'Running' : 'Installed';
+                document.getElementById('ollama-setup-status-text').style.color = 'var(--success)';
+              }
+              updateWizardStep(4);
+            } else {
+              // Download IPFS
+              wizardNextBtn.disabled = true;
+              wizardNextBtn.textContent = 'Downloading...';
+              document.getElementById('ipfs-download-progress').style.display = 'block';
+
+              try {
+                const result = await window.electronAPI.downloadIPFSBinary();
+                if (result.success) {
+                  addLog('IPFS binary downloaded', 'success');
+                  document.getElementById('ipfs-download-progress-fill').style.width = '100%';
+                  document.getElementById('ipfs-download-progress-text').textContent = 'Download complete!';
+                  document.getElementById('ipfs-setup-status').style.display = 'block';
+                  document.getElementById('ipfs-setup-status-text').textContent = 'Installed';
+                  document.getElementById('ipfs-setup-status-text').style.color = 'var(--success)';
+                  wizardIpfsReady = true;
+
+                  // Check Ollama for next step
+                  const ollamaStatus = await window.electronAPI.getOllamaStatus();
+                  wizardOllamaReady = ollamaStatus.installed;
+                  if (wizardOllamaReady) {
+                    document.getElementById('ollama-setup-desc').textContent = 'Ollama is already installed. Click Continue to finish setup.';
+                    document.getElementById('ollama-setup-status').style.display = 'block';
+                    document.getElementById('ollama-setup-status-text').textContent = ollamaStatus.running ? 'Running' : 'Installed';
+                    document.getElementById('ollama-setup-status-text').style.color = 'var(--success)';
+                  }
+
+                  setTimeout(() => updateWizardStep(4), 500);
+                } else {
+                  addLog('IPFS download failed: ' + result.error, 'error');
+                  document.getElementById('ipfs-download-progress-text').textContent = 'Failed: ' + result.error;
+                  wizardNextBtn.disabled = false;
+                  wizardNextBtn.textContent = 'Retry';
+                }
+              } catch (err) {
+                addLog('IPFS download error: ' + err, 'error');
+                wizardNextBtn.disabled = false;
+                wizardNextBtn.textContent = 'Retry';
+              }
+            }
+            break;
+
+          case 4: // Ollama -> Complete
+            if (wizardOllamaReady) {
+              // Already installed, go to complete
+              await finishWizard();
+              updateWizardStep(5);
+            } else {
+              // Install Ollama - run installer visibly
+              wizardNextBtn.disabled = true;
+              wizardNextBtn.textContent = 'Downloading...';
+              document.getElementById('ollama-download-progress').style.display = 'block';
+              document.getElementById('ollama-browse-section').style.display = 'none';
+
+              try {
+                const result = await window.electronAPI.installOllama();
+                document.getElementById('ollama-download-progress').style.display = 'none';
+
+                // Check if Ollama was detected after install
+                const status = await window.electronAPI.getOllamaStatus();
+                wizardOllamaReady = status.installed;
+
+                if (wizardOllamaReady) {
+                  addLog('Ollama installed and detected', 'success');
+                  document.getElementById('ollama-setup-status').style.display = 'block';
+                  document.getElementById('ollama-setup-status-text').textContent = 'Installed';
+                  document.getElementById('ollama-setup-status-text').style.color = 'var(--success)';
+                  const ollamaPath = await window.electronAPI.getOllamaPath();
+                  if (ollamaPath) {
+                    document.getElementById('ollama-path-row').style.display = 'flex';
+                    document.getElementById('ollama-path-display').textContent = ollamaPath;
+                  }
+                  await finishWizard();
+                  setTimeout(() => updateWizardStep(5), 500);
+                } else {
+                  // Not auto-detected - show browse option
+                  addLog('Ollama installer completed - please locate ollama.exe', 'info');
+                  document.getElementById('ollama-browse-section').style.display = 'block';
+                  document.getElementById('ollama-setup-desc').textContent = 'Installation completed. Please browse to select ollama.exe, or click Continue to skip.';
+                  wizardNextBtn.disabled = false;
+                  wizardNextBtn.textContent = 'Continue (Skip Ollama)';
+                }
+              } catch (err) {
+                addLog('Ollama install error: ' + err, 'error');
+                document.getElementById('ollama-download-progress').style.display = 'none';
+                document.getElementById('ollama-browse-section').style.display = 'block';
+                document.getElementById('ollama-setup-desc').textContent = 'Installation had an issue. You can browse to select ollama.exe manually, or skip for now.';
+                wizardNextBtn.disabled = false;
+                wizardNextBtn.textContent = 'Continue (Skip Ollama)';
+              }
+            }
+            break;
+
+          case 5: // Complete - close wizard
             hideWizard();
             updateIPFSStatus();
+            updateOllamaStatus();
             break;
         }
       });
 
+      async function finishWizard() {
+        // Update final summary
+        document.getElementById('wizard-final-path').textContent = wizardDriveSelect.value + '/otherthing-storage';
+        document.getElementById('wizard-final-ipfs').textContent = wizardIpfsReady ? 'Ready' : 'Not installed';
+        document.getElementById('wizard-final-ipfs').style.color = wizardIpfsReady ? 'var(--success)' : 'var(--text-muted)';
+        document.getElementById('wizard-final-ollama').textContent = wizardOllamaReady ? 'Ready' : 'Not installed';
+        document.getElementById('wizard-final-ollama').style.color = wizardOllamaReady ? 'var(--success)' : 'var(--text-muted)';
+
+        // Try to start IPFS
+        if (wizardIpfsReady) {
+          try {
+            await window.electronAPI.startIPFS();
+            addLog('IPFS started', 'success');
+          } catch (e) { }
+        }
+
+        // Try to start Ollama
+        if (wizardOllamaReady) {
+          try {
+            await window.electronAPI.startOllama();
+            addLog('Ollama started', 'success');
+          } catch (e) { }
+        }
+      }
+
       wizardSkipBtn.addEventListener('click', () => {
         hideWizard();
-        addLog('IPFS setup skipped - you can configure it later in the IPFS Storage section', 'info');
+        addLog('Setup wizard skipped - configure manually in Settings', 'info');
       });
+
+      // Ollama browse button handler
+      document.getElementById('ollama-browse-btn').addEventListener('click', async () => {
+        try {
+          const filePath = await window.electronAPI.browseForFile({
+            title: 'Select ollama.exe',
+            filters: [{ name: 'Ollama Executable', extensions: ['exe'] }]
+          });
+
+          if (filePath) {
+            document.getElementById('ollama-path-input').value = filePath;
+            const result = await window.electronAPI.setOllamaPath(filePath);
+
+            if (result.success) {
+              wizardOllamaReady = true;
+              addLog('Ollama path set: ' + filePath, 'success');
+              document.getElementById('ollama-setup-status').style.display = 'block';
+              document.getElementById('ollama-setup-status-text').textContent = 'Configured';
+              document.getElementById('ollama-setup-status-text').style.color = 'var(--success)';
+              document.getElementById('ollama-path-row').style.display = 'flex';
+              document.getElementById('ollama-path-display').textContent = filePath;
+              document.getElementById('ollama-browse-section').style.display = 'none';
+              wizardNextBtn.textContent = 'Continue';
+
+              // Auto-proceed after successful selection
+              await finishWizard();
+              setTimeout(() => updateWizardStep(5), 500);
+            } else {
+              addLog('Invalid Ollama path: ' + result.error, 'error');
+            }
+          }
+        } catch (err) {
+          addLog('Browse error: ' + err, 'error');
+        }
+      });
+
+      // Ollama status update function
+      async function updateOllamaStatus() {
+        try {
+          const status = await window.electronAPI.getOllamaStatus();
+          // Update UI if we have an Ollama section
+          const ollamaStatusEl = document.getElementById('ollama-status-text');
+          if (ollamaStatusEl) {
+            ollamaStatusEl.textContent = status.running ? 'Running' : (status.installed ? 'Stopped' : 'Not installed');
+          }
+        } catch (e) { }
+      }
 
       // Check if we need to show the setup wizard
       async function checkSetupNeeded() {
         try {
-          const status = await window.electronAPI.getIPFSStatus();
+          const ipfsStatus = await window.electronAPI.getIPFSStatus();
+          const ollamaStatus = await window.electronAPI.getOllamaStatus();
           const storagePath = await window.electronAPI.getStoragePath();
 
-          // Show wizard if binary is missing OR no storage path is set
-          if (!status.hasBinary) {
-            addLog('IPFS binary not found - showing setup wizard', 'info');
-            showWizard();
-          } else if (!storagePath) {
-            // Binary exists but no storage path - skip to step 2
-            addLog('IPFS storage not configured - showing setup wizard', 'info');
-            await loadWizardDrives();
-            updateWizardStep(2);
+          // Show wizard if: no storage path, or IPFS not installed, or Ollama not installed
+          const needsSetup = !storagePath || !ipfsStatus.hasBinary || !ollamaStatus.installed;
+
+          if (needsSetup) {
+            addLog('First-time setup required', 'info');
             showWizard();
           }
         } catch (err) {
           console.error('Error checking setup:', err);
+          // Show wizard on error to be safe
+          showWizard();
         }
       }
 

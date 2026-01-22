@@ -59,6 +59,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('ipfs-pin', cid),
   ipfsUnpin: (cid: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('ipfs-unpin', cid),
+  setIPFSStorageLimit: (limitGb: number): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('ipfs-set-storage-limit', limitGb),
+  getIPFSStorageLimit: (): Promise<number | null> =>
+    ipcRenderer.invoke('ipfs-get-storage-limit'),
+
+  // Ollama operations
+  getOllamaStatus: (): Promise<{ installed: boolean; running: boolean; version?: string; models: any[]; endpoint?: string }> =>
+    ipcRenderer.invoke('ollama-status'),
+  installOllama: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('ollama-install'),
+  startOllama: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('ollama-start'),
+  stopOllama: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('ollama-stop'),
+  pullOllamaModel: (modelName: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('ollama-pull-model', modelName),
+  deleteOllamaModel: (modelName: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('ollama-delete-model', modelName),
+  getOllamaModels: (): Promise<any[]> =>
+    ipcRenderer.invoke('ollama-models'),
+  onOllamaInstallProgress: (callback: (percent: number) => void) => {
+    ipcRenderer.on('ollama-install-progress', (_, percent) => callback(percent));
+  },
+  onOllamaPullProgress: (callback: (data: { model: string; status: string; percent?: number }) => void) => {
+    ipcRenderer.on('ollama-pull-progress', (_, data) => callback(data));
+  },
+  onOllamaStatusChange: (callback: (status: any) => void) => {
+    ipcRenderer.on('ollama-status-change', (_, status) => callback(status));
+  },
+  setOllamaPath: (ollamaPath: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('ollama-set-path', ollamaPath),
+  getOllamaPath: (): Promise<string | null> =>
+    ipcRenderer.invoke('ollama-get-path'),
+  browseForFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }): Promise<string | null> =>
+    ipcRenderer.invoke('browse-for-file', options || {}),
 
   // Window controls
   minimizeWindow: () => ipcRenderer.invoke('window-minimize'),
