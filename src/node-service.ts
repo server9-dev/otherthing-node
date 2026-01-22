@@ -64,6 +64,7 @@ export class NodeService extends EventEmitter {
   private ipfsManager: IPFSManager | null = null;
   private ipfsEnabled = false;
   private ollamaManager: OllamaManager;
+  private joinedWorkspaces: Set<string> = new Set(); // Track workspaces we've joined to avoid duplicate processing
 
   constructor(defaultOrchestratorUrl: string) {
     super();
@@ -195,12 +196,16 @@ export class NodeService extends EventEmitter {
     try {
       this.ws = new WebSocket(this.orchestratorUrl);
 
-      this.ws.on('open', () => {
+      this.ws.on('open', async () => {
         this.log('WebSocket connected', 'success');
         this.connected = true;
         this.emit('statusChange');
 
         // Send registration with persistent nodeId and shareKey
+        // Get Ollama status for registration
+        const ollamaStatus = await this.ollamaManager.getStatus();
+        this.log(`Ollama status: installed=${ollamaStatus.installed}, running=${ollamaStatus.running}, models=${ollamaStatus.models?.length || 0}`, 'info');
+
         const registerMsg = {
           type: 'register',
           share_key: this.shareKey, // Send our locally generated share key
@@ -234,6 +239,16 @@ export class NodeService extends EventEmitter {
               path: this.storagePath,  // Selected storage drive/path
             },
             mcp_adapters: [],
+            ollama: ollamaStatus.running ? {
+              installed: true,
+              version: ollamaStatus.version,
+              models: ollamaStatus.models.map((m: any) => ({
+                name: m.name,
+                size: m.size || 0,
+                quantization: m.details?.quantization_level,
+              })),
+              endpoint: ollamaStatus.endpoint || 'http://localhost:11434',
+            } : undefined,
           },
           workspace_ids: this.workspaceIds,
           resource_limits: this.resourceLimits,
@@ -299,36 +314,48 @@ export class NodeService extends EventEmitter {
 
             case 'workspace_joined':
               // Received swarm key for workspace IPFS
-              if (msg.ipfs_swarm_key && this.ipfsManager) {
-                this.log(`Received IPFS swarm key for workspace ${msg.workspace_id}`, 'info');
-                await this.ipfsManager.setSwarmKey(msg.ipfs_swarm_key);
+              try {
+                // Skip if we've already processed this workspace
+                if (this.joinedWorkspaces.has(msg.workspace_id)) {
+                  this.log(`Already joined workspace ${msg.workspace_id}, skipping`, 'info');
+                  break;
+                }
+                this.joinedWorkspaces.add(msg.workspace_id);
+                this.log(`Joined workspace ${msg.workspace_id}`, 'success');
 
-                // Connect to bootstrap peers
-                if (msg.bootstrap_peers && Array.isArray(msg.bootstrap_peers)) {
-                  for (const peer of msg.bootstrap_peers) {
+                if (msg.ipfs_swarm_key && this.ipfsManager) {
+                  this.log(`Setting up IPFS for workspace...`, 'info');
+                  await this.ipfsManager.setSwarmKey(msg.ipfs_swarm_key);
+
+                  // Connect to bootstrap peers
+                  if (msg.bootstrap_peers && Array.isArray(msg.bootstrap_peers)) {
+                    for (const peer of msg.bootstrap_peers) {
+                      try {
+                        await this.ipfsManager.connectPeer(peer);
+                      } catch (err) {
+                        // Ignore connection errors
+                      }
+                    }
+                  }
+
+                  // Start IPFS if not running
+                  if (!this.ipfsManager.getIsRunning()) {
                     try {
-                      await this.ipfsManager.connectPeer(peer);
+                      await this.ipfsManager.start();
+                      // Send IPFS ready message
+                      const stats = await this.ipfsManager.getStats();
+                      this.ws?.send(JSON.stringify({
+                        type: 'ipfs_ready',
+                        peer_id: stats.peerId,
+                        addresses: stats.addresses,
+                      }));
                     } catch (err) {
-                      // Ignore connection errors
+                      this.log(`Failed to start IPFS: ${err}`, 'error');
                     }
                   }
                 }
-
-                // Start IPFS if not running
-                if (!this.ipfsManager.getIsRunning()) {
-                  try {
-                    await this.ipfsManager.start();
-                    // Send IPFS ready message
-                    const stats = await this.ipfsManager.getStats();
-                    this.ws?.send(JSON.stringify({
-                      type: 'ipfs_ready',
-                      peer_id: stats.peerId,
-                      addresses: stats.addresses,
-                    }));
-                  } catch (err) {
-                    this.log(`Failed to start IPFS: ${err}`, 'error');
-                  }
-                }
+              } catch (err) {
+                this.log(`Error handling workspace_joined: ${err}`, 'error');
               }
               break;
 

@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
+import * as os from 'os';
 import { EventEmitter } from 'events';
 import { app } from 'electron';
 
@@ -130,18 +131,35 @@ export class OllamaManager extends EventEmitter {
    * Check if Ollama server is running
    */
   async checkRunning(): Promise<boolean> {
-    try {
-      const response = await fetch('http://127.0.0.1:11434/api/tags', {
-        method: 'GET',
-        signal: AbortSignal.timeout(2000),
-      });
-      this.isRunning = response.ok;
-      return this.isRunning;
-    } catch {
-      this.isRunning = false;
-      return false;
+    // Try multiple endpoints (localhost, and common WSL2/Docker hosts)
+    const endpoints = [
+      'http://127.0.0.1:11434',
+      'http://localhost:11434',
+      'http://host.docker.internal:11434',
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(`${endpoint}/api/tags`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(2000),
+        });
+        if (response.ok) {
+          this.isRunning = true;
+          this.ollamaEndpoint = endpoint;
+          return true;
+        }
+      } catch {
+        // Try next endpoint
+      }
     }
+
+    this.isRunning = false;
+    return false;
   }
+
+  // Store the working endpoint
+  private ollamaEndpoint = 'http://127.0.0.1:11434';
 
   /**
    * Get list of installed models
@@ -172,18 +190,38 @@ export class OllamaManager extends EventEmitter {
   }
 
   /**
+   * Get the host address for Ollama endpoint.
+   *
+   * For local development with WSL, we use 'localhost' because WSL2 has
+   * localhost forwarding that automatically routes localhost to the Windows host.
+   * This is simpler and more reliable than trying to detect external IPs.
+   *
+   * For production/remote scenarios, we could detect external IPs, but
+   * that would also require Ollama to be configured to listen on 0.0.0.0.
+   */
+  private getAccessibleHost(): string {
+    // For WSL compatibility, localhost works because of WSL2 localhost forwarding
+    // This is the simplest and most reliable approach
+    return 'localhost';
+  }
+
+  /**
    * Get full status
    */
   async getStatus(): Promise<OllamaStatus> {
     await this.detectOllamaPath();
     const running = await this.checkRunning();
 
+    // Use externally accessible IP so WSL/other machines can connect
+    const host = this.getAccessibleHost();
+    const endpoint = running ? `http://${host}:11434` : undefined;
+
     return {
       installed: this.isInstalled(),
       version: await this.getVersion() || undefined,
       running,
       models: running ? await this.getModels() : [],
-      endpoint: running ? 'http://127.0.0.1:11434' : undefined,
+      endpoint,
     };
   }
 
@@ -204,9 +242,16 @@ export class OllamaManager extends EventEmitter {
     this.emit('log', { message: 'Starting Ollama server...', type: 'info' });
 
     // Start Ollama serve in background
+    // Set OLLAMA_HOST to 0.0.0.0 so it listens on all interfaces (needed for WSL access)
+    const env = {
+      ...process.env,
+      OLLAMA_HOST: '0.0.0.0:11434',
+    };
+
     this.process = spawn(this.ollamaPath, ['serve'], {
       detached: true,
       stdio: 'ignore',
+      env,
     });
 
     this.process.unref();
