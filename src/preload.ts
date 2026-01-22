@@ -40,6 +40,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopIPFS: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('ipfs-stop'),
   getIPFSStatus: (): Promise<{ running: boolean; hasBinary: boolean; peerId: string | null; stats: any }> =>
     ipcRenderer.invoke('ipfs-status'),
+  downloadIPFSBinary: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('ipfs-download-binary'),
+  onIPFSDownloadProgress: (callback: (percent: number) => void) => {
+    ipcRenderer.on('ipfs-download-progress', (_, percent) => callback(percent));
+  },
   onIPFSStatus: (callback: (status: any) => void) => {
     ipcRenderer.on('ipfs-status', (_, status) => callback(status));
   },

@@ -651,6 +651,29 @@ export class NodeService extends EventEmitter {
     return this.ipfsManager?.hasBinary() ?? false;
   }
 
+  async downloadIPFSBinary(onProgress?: (percent: number) => void): Promise<void> {
+    // Create a temporary IPFS manager if none exists (for binary check/download)
+    if (!this.ipfsManager) {
+      // Use a temp path for now - will be reinitialized when user selects storage
+      const tempPath = app.getPath('userData');
+      this.ipfsManager = new IPFSManager(tempPath);
+      this.ipfsManager.on('log', (entry) => {
+        this.log(`[IPFS] ${entry.message}`, entry.type);
+      });
+    }
+    await this.ipfsManager.downloadBinary(onProgress);
+  }
+
+  canCheckIPFSBinary(): boolean {
+    // Can check binary status even without storage path
+    if (!this.ipfsManager) {
+      const tempPath = app.getPath('userData');
+      const tempManager = new IPFSManager(tempPath);
+      return tempManager.hasBinary();
+    }
+    return this.ipfsManager.hasBinary();
+  }
+
   getIPFSPeerId(): string | null {
     return this.ipfsManager?.getPeerId() ?? null;
   }

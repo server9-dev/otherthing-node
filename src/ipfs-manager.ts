@@ -4,8 +4,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 import { app } from 'electron';
+import * as https from 'https';
+import * as zlib from 'zlib';
+import * as tar from 'tar';
 
 const execAsync = promisify(exec);
+
+// IPFS Kubo version to download
+const IPFS_VERSION = 'v0.24.0';
+const IPFS_DOWNLOAD_BASE = 'https://dist.ipfs.tech/kubo';
 
 export interface IPFSStats {
   repoSize: number;      // bytes
@@ -41,6 +48,158 @@ export class IPFSManager extends EventEmitter {
    */
   hasBinary(): boolean {
     return fs.existsSync(this.ipfsBinaryPath);
+  }
+
+  /**
+   * Get the download URL for IPFS binary based on platform
+   */
+  private getDownloadUrl(): string {
+    const platform = process.platform;
+    const arch = process.arch;
+
+    let osName: string;
+    let archName: string;
+
+    switch (platform) {
+      case 'win32':
+        osName = 'windows';
+        break;
+      case 'darwin':
+        osName = 'darwin';
+        break;
+      case 'linux':
+        osName = 'linux';
+        break;
+      default:
+        throw new Error(`Unsupported platform: ${platform}`);
+    }
+
+    switch (arch) {
+      case 'x64':
+        archName = 'amd64';
+        break;
+      case 'arm64':
+        archName = 'arm64';
+        break;
+      default:
+        throw new Error(`Unsupported architecture: ${arch}`);
+    }
+
+    const ext = platform === 'win32' ? 'zip' : 'tar.gz';
+    return `${IPFS_DOWNLOAD_BASE}/${IPFS_VERSION}/kubo_${IPFS_VERSION}_${osName}-${archName}.${ext}`;
+  }
+
+  /**
+   * Download and install IPFS binary if not present
+   */
+  async downloadBinary(onProgress?: (percent: number) => void): Promise<void> {
+    if (this.hasBinary()) {
+      this.emit('log', { message: 'IPFS binary already exists', type: 'info' });
+      return;
+    }
+
+    const url = this.getDownloadUrl();
+    const isZip = url.endsWith('.zip');
+    const tempDir = app.getPath('temp');
+    const downloadPath = path.join(tempDir, `ipfs-download-${Date.now()}${isZip ? '.zip' : '.tar.gz'}`);
+
+    this.emit('log', { message: `Downloading IPFS from ${url}...`, type: 'info' });
+
+    // Download the file
+    await new Promise<void>((resolve, reject) => {
+      const file = fs.createWriteStream(downloadPath);
+
+      const request = (urlStr: string) => {
+        https.get(urlStr, { headers: { 'User-Agent': 'OtherThing-Node' } }, (response) => {
+          // Handle redirects
+          if (response.statusCode === 302 || response.statusCode === 301) {
+            const redirectUrl = response.headers.location;
+            if (redirectUrl) {
+              request(redirectUrl);
+              return;
+            }
+          }
+
+          if (response.statusCode !== 200) {
+            reject(new Error(`Download failed with status ${response.statusCode}`));
+            return;
+          }
+
+          const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+          let downloadedSize = 0;
+
+          response.on('data', (chunk) => {
+            downloadedSize += chunk.length;
+            if (totalSize > 0 && onProgress) {
+              onProgress(Math.round((downloadedSize / totalSize) * 100));
+            }
+          });
+
+          response.pipe(file);
+
+          file.on('finish', () => {
+            file.close();
+            resolve();
+          });
+        }).on('error', (err) => {
+          fs.unlink(downloadPath, () => {});
+          reject(err);
+        });
+      };
+
+      request(url);
+    });
+
+    this.emit('log', { message: 'Download complete, extracting...', type: 'info' });
+
+    // Create the ipfs directory in resources
+    const ipfsDir = path.dirname(this.ipfsBinaryPath);
+    if (!fs.existsSync(ipfsDir)) {
+      fs.mkdirSync(ipfsDir, { recursive: true });
+    }
+
+    // Extract the binary
+    if (isZip) {
+      // For Windows, use unzip (or implement zip extraction)
+      const AdmZip = require('adm-zip');
+      const zip = new AdmZip(downloadPath);
+      const entries = zip.getEntries();
+
+      for (const entry of entries) {
+        if (entry.entryName.endsWith('ipfs.exe')) {
+          zip.extractEntryTo(entry, ipfsDir, false, true);
+          break;
+        }
+      }
+    } else {
+      // For Unix, extract tar.gz
+      await tar.x({
+        file: downloadPath,
+        cwd: tempDir,
+      });
+
+      // Find and move the binary
+      const extractedDir = path.join(tempDir, 'kubo');
+      const binaryName = process.platform === 'win32' ? 'ipfs.exe' : 'ipfs';
+      const extractedBinary = path.join(extractedDir, binaryName);
+
+      if (fs.existsSync(extractedBinary)) {
+        fs.copyFileSync(extractedBinary, this.ipfsBinaryPath);
+        fs.chmodSync(this.ipfsBinaryPath, 0o755);
+      }
+
+      // Cleanup extracted directory
+      fs.rmSync(extractedDir, { recursive: true, force: true });
+    }
+
+    // Cleanup download file
+    fs.unlinkSync(downloadPath);
+
+    if (this.hasBinary()) {
+      this.emit('log', { message: 'IPFS binary installed successfully', type: 'success' });
+    } else {
+      throw new Error('Failed to extract IPFS binary');
+    }
   }
 
   /**

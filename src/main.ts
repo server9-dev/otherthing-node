@@ -335,6 +335,18 @@ app.whenReady().then(async () => {
     };
   });
 
+  ipcMain.handle('ipfs-download-binary', async () => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.downloadIPFSBinary((percent: number) => {
+        mainWindow?.webContents.send('ipfs-download-progress', percent);
+      });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
   // IPFS File Operations (Phase 4)
   ipcMain.handle('ipfs-add', async (_, filePath: string) => {
     if (!nodeService) return { success: false, error: 'Node service not initialized' };

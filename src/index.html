@@ -715,6 +715,226 @@
     ::-webkit-scrollbar-track { background: var(--bg-dark); }
     ::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+    /* Setup Wizard Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s;
+    }
+    .modal-overlay.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+    .modal {
+      background: var(--bg-card);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius);
+      width: 90%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+      transform: scale(0.9);
+      transition: transform 0.3s;
+    }
+    .modal-overlay.visible .modal {
+      transform: scale(1);
+    }
+    .modal-header {
+      padding: 24px;
+      text-align: center;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .modal-header h2 {
+      font-size: 1.3rem;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .modal-header p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .modal-body {
+      padding: 24px;
+    }
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+    .wizard-step {
+      display: none;
+    }
+    .wizard-step.active {
+      display: block;
+    }
+    .wizard-step-indicator {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    .wizard-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--bg-dark);
+      border: 2px solid var(--text-muted);
+      transition: all 0.3s;
+    }
+    .wizard-dot.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      box-shadow: 0 0 10px var(--primary);
+    }
+    .wizard-dot.completed {
+      background: var(--success);
+      border-color: var(--success);
+    }
+    .wizard-icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 20px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(0,212,255,0.1), rgba(255,0,255,0.1));
+      border: 2px solid var(--border-accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .wizard-icon svg {
+      width: 40px;
+      height: 40px;
+      color: var(--primary);
+    }
+    .wizard-title {
+      text-align: center;
+      font-size: 1.1rem;
+      margin-bottom: 8px;
+    }
+    .wizard-desc {
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+    .progress-container {
+      margin: 20px 0;
+    }
+    .progress-bar {
+      height: 8px;
+      background: var(--bg-dark);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), var(--primary-light));
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .progress-text {
+      text-align: center;
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+    }
+    .wizard-select {
+      width: 100%;
+      padding: 14px 16px;
+      background: var(--bg-dark);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      cursor: pointer;
+      margin-bottom: 16px;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2300d4ff' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 16px center;
+    }
+    .wizard-select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    .wizard-success {
+      text-align: center;
+      padding: 20px;
+    }
+    .wizard-success svg {
+      width: 60px;
+      height: 60px;
+      color: var(--success);
+      margin-bottom: 16px;
+    }
+    .btn-wizard {
+      padding: 12px 24px;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-wizard-primary {
+      background: linear-gradient(135deg, var(--primary), #0099bb);
+      color: #000;
+    }
+    .btn-wizard-primary:hover {
+      box-shadow: var(--glow-primary);
+    }
+    .btn-wizard-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-wizard-secondary {
+      background: transparent;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+    }
+    .btn-wizard-secondary:hover {
+      border-color: var(--text-muted);
+      color: var(--text-primary);
+    }
+    .storage-info {
+      background: var(--bg-elevated);
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 16px;
+    }
+    .storage-info-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      margin-bottom: 6px;
+    }
+    .storage-info-row:last-child {
+      margin-bottom: 0;
+    }
+    .storage-info-label {
+      color: var(--text-muted);
+    }
+    .storage-info-value {
+      color: var(--primary);
+      font-family: var(--font-mono);
+    }
   </style>
 </head>
 <body>
@@ -734,6 +954,98 @@
       <button id="close-btn" class="window-btn close" title="Close">
         <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="1.5"/></svg>
       </button>
+    </div>
+  </div>
+
+  <!-- Setup Wizard Modal -->
+  <div id="setup-wizard-overlay" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>IPFS Setup</h2>
+        <p>Configure distributed storage for your node</p>
+      </div>
+      <div class="modal-body">
+        <div class="wizard-step-indicator">
+          <div id="wizard-dot-1" class="wizard-dot active"></div>
+          <div id="wizard-dot-2" class="wizard-dot"></div>
+          <div id="wizard-dot-3" class="wizard-dot"></div>
+        </div>
+
+        <!-- Step 1: Download IPFS -->
+        <div id="wizard-step-1" class="wizard-step active">
+          <div class="wizard-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </div>
+          <h3 class="wizard-title">Download IPFS</h3>
+          <p class="wizard-desc">IPFS enables distributed file storage across your workspace. We'll download the IPFS binary (~50MB) to get started.</p>
+          <div id="download-progress" class="progress-container" style="display:none;">
+            <div class="progress-bar">
+              <div id="download-progress-fill" class="progress-fill"></div>
+            </div>
+            <div id="download-progress-text" class="progress-text">Downloading... 0%</div>
+          </div>
+        </div>
+
+        <!-- Step 2: Select Storage -->
+        <div id="wizard-step-2" class="wizard-step">
+          <div class="wizard-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+          </div>
+          <h3 class="wizard-title">Select Storage Location</h3>
+          <p class="wizard-desc">Choose where to store IPFS data. Select a drive with enough free space for workspace files.</p>
+          <select id="wizard-drive-select" class="wizard-select">
+            <option value="">Loading drives...</option>
+          </select>
+          <div id="wizard-storage-info" class="storage-info" style="display:none;">
+            <div class="storage-info-row">
+              <span class="storage-info-label">Drive</span>
+              <span id="wizard-drive-name" class="storage-info-value">-</span>
+            </div>
+            <div class="storage-info-row">
+              <span class="storage-info-label">Free Space</span>
+              <span id="wizard-drive-free" class="storage-info-value">-</span>
+            </div>
+            <div class="storage-info-row">
+              <span class="storage-info-label">Storage Path</span>
+              <span id="wizard-storage-path" class="storage-info-value">-</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Complete -->
+        <div id="wizard-step-3" class="wizard-step">
+          <div class="wizard-success">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <h3 class="wizard-title">Setup Complete!</h3>
+            <p class="wizard-desc">IPFS is ready. Your node can now participate in distributed storage for workspaces.</p>
+            <div id="wizard-final-info" class="storage-info" style="margin-top:20px;">
+              <div class="storage-info-row">
+                <span class="storage-info-label">Storage Location</span>
+                <span id="wizard-final-path" class="storage-info-value">-</span>
+              </div>
+              <div class="storage-info-row">
+                <span class="storage-info-label">IPFS Status</span>
+                <span id="wizard-final-status" class="storage-info-value" style="color:var(--success)">Ready</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="wizard-skip-btn" class="btn-wizard btn-wizard-secondary">Skip for now</button>
+        <button id="wizard-next-btn" class="btn-wizard btn-wizard-primary">Download IPFS</button>
+      </div>
     </div>
   </div>
 
@@ -1426,6 +1738,211 @@
         window.electronAPI.openDashboard();
         addLog('Opening dashboard...', 'info');
       });
+
+      // ===== SETUP WIZARD =====
+      const wizardOverlay = document.getElementById('setup-wizard-overlay');
+      const wizardNextBtn = document.getElementById('wizard-next-btn');
+      const wizardSkipBtn = document.getElementById('wizard-skip-btn');
+      const wizardDriveSelect = document.getElementById('wizard-drive-select');
+      const wizardStorageInfo = document.getElementById('wizard-storage-info');
+      const downloadProgress = document.getElementById('download-progress');
+      const downloadProgressFill = document.getElementById('download-progress-fill');
+      const downloadProgressText = document.getElementById('download-progress-text');
+
+      let currentWizardStep = 1;
+      let wizardDrives = [];
+
+      function showWizard() {
+        wizardOverlay.classList.add('visible');
+      }
+
+      function hideWizard() {
+        wizardOverlay.classList.remove('visible');
+      }
+
+      function updateWizardStep(step) {
+        currentWizardStep = step;
+        // Update dots
+        for (let i = 1; i <= 3; i++) {
+          const dot = document.getElementById(`wizard-dot-${i}`);
+          dot.classList.remove('active', 'completed');
+          if (i < step) {
+            dot.classList.add('completed');
+          } else if (i === step) {
+            dot.classList.add('active');
+          }
+        }
+        // Update steps
+        for (let i = 1; i <= 3; i++) {
+          const stepEl = document.getElementById(`wizard-step-${i}`);
+          stepEl.classList.toggle('active', i === step);
+        }
+        // Update button text
+        switch(step) {
+          case 1:
+            wizardNextBtn.textContent = 'Download IPFS';
+            wizardSkipBtn.style.display = 'block';
+            break;
+          case 2:
+            wizardNextBtn.textContent = 'Continue';
+            wizardNextBtn.disabled = !wizardDriveSelect.value;
+            wizardSkipBtn.style.display = 'block';
+            break;
+          case 3:
+            wizardNextBtn.textContent = 'Done';
+            wizardSkipBtn.style.display = 'none';
+            break;
+        }
+      }
+
+      async function loadWizardDrives() {
+        try {
+          wizardDrives = await window.electronAPI.getDrives();
+          wizardDriveSelect.innerHTML = '<option value="">-- Select a drive --</option>';
+          wizardDrives.forEach(drive => {
+            const opt = document.createElement('option');
+            opt.value = drive.mount;
+            opt.textContent = `${drive.mount} - ${drive.available_gb} GB free (${drive.type})`;
+            wizardDriveSelect.appendChild(opt);
+          });
+        } catch (err) {
+          wizardDriveSelect.innerHTML = '<option value="">Error loading drives</option>';
+        }
+      }
+
+      wizardDriveSelect.addEventListener('change', () => {
+        const selectedDrive = wizardDrives.find(d => d.mount === wizardDriveSelect.value);
+        if (selectedDrive) {
+          wizardStorageInfo.style.display = 'block';
+          document.getElementById('wizard-drive-name').textContent = selectedDrive.mount;
+          document.getElementById('wizard-drive-free').textContent = selectedDrive.available_gb + ' GB';
+          document.getElementById('wizard-storage-path').textContent = selectedDrive.mount + '/otherthing-storage/ipfs';
+          wizardNextBtn.disabled = false;
+        } else {
+          wizardStorageInfo.style.display = 'none';
+          wizardNextBtn.disabled = true;
+        }
+      });
+
+      // Listen for download progress
+      window.electronAPI.onIPFSDownloadProgress((percent) => {
+        downloadProgressFill.style.width = percent + '%';
+        downloadProgressText.textContent = `Downloading... ${percent}%`;
+      });
+
+      wizardNextBtn.addEventListener('click', async () => {
+        switch(currentWizardStep) {
+          case 1:
+            // Download IPFS
+            wizardNextBtn.disabled = true;
+            wizardNextBtn.textContent = 'Downloading...';
+            downloadProgress.style.display = 'block';
+
+            try {
+              const result = await window.electronAPI.downloadIPFSBinary();
+              if (result.success) {
+                addLog('IPFS binary downloaded successfully', 'success');
+                downloadProgressFill.style.width = '100%';
+                downloadProgressText.textContent = 'Download complete!';
+                // Load drives for next step
+                await loadWizardDrives();
+                setTimeout(() => updateWizardStep(2), 500);
+              } else {
+                addLog('Failed to download IPFS: ' + result.error, 'error');
+                downloadProgressText.textContent = 'Download failed: ' + result.error;
+                wizardNextBtn.disabled = false;
+                wizardNextBtn.textContent = 'Retry Download';
+              }
+            } catch (err) {
+              addLog('Download error: ' + err, 'error');
+              downloadProgressText.textContent = 'Download failed';
+              wizardNextBtn.disabled = false;
+              wizardNextBtn.textContent = 'Retry Download';
+            }
+            break;
+
+          case 2:
+            // Save storage location
+            if (!wizardDriveSelect.value) return;
+
+            wizardNextBtn.disabled = true;
+            wizardNextBtn.textContent = 'Configuring...';
+
+            try {
+              const result = await window.electronAPI.setStoragePath(wizardDriveSelect.value);
+              if (result.success) {
+                addLog('Storage location configured', 'success');
+
+                // Also update the main drive selector
+                driveSelect.value = wizardDriveSelect.value;
+                const selectedDrive = wizardDrives.find(d => d.mount === wizardDriveSelect.value);
+                updateDriveDisplay(selectedDrive);
+
+                // Update final info
+                document.getElementById('wizard-final-path').textContent = wizardDriveSelect.value + '/otherthing-storage/ipfs';
+
+                // Try to start IPFS
+                addLog('Initializing IPFS...', 'info');
+                const startResult = await window.electronAPI.startIPFS();
+                if (startResult.success) {
+                  document.getElementById('wizard-final-status').textContent = 'Running';
+                  document.getElementById('wizard-final-status').style.color = 'var(--success)';
+                  addLog('IPFS started successfully', 'success');
+                } else {
+                  document.getElementById('wizard-final-status').textContent = 'Ready (not started)';
+                  document.getElementById('wizard-final-status').style.color = 'var(--primary)';
+                }
+
+                updateWizardStep(3);
+              } else {
+                addLog('Failed to set storage path: ' + result.error, 'error');
+                wizardNextBtn.disabled = false;
+                wizardNextBtn.textContent = 'Continue';
+              }
+            } catch (err) {
+              addLog('Error: ' + err, 'error');
+              wizardNextBtn.disabled = false;
+              wizardNextBtn.textContent = 'Continue';
+            }
+            break;
+
+          case 3:
+            // Done - close wizard
+            hideWizard();
+            updateIPFSStatus();
+            break;
+        }
+      });
+
+      wizardSkipBtn.addEventListener('click', () => {
+        hideWizard();
+        addLog('IPFS setup skipped - you can configure it later in the IPFS Storage section', 'info');
+      });
+
+      // Check if we need to show the setup wizard
+      async function checkSetupNeeded() {
+        try {
+          const status = await window.electronAPI.getIPFSStatus();
+          const storagePath = await window.electronAPI.getStoragePath();
+
+          // Show wizard if binary is missing OR no storage path is set
+          if (!status.hasBinary) {
+            addLog('IPFS binary not found - showing setup wizard', 'info');
+            showWizard();
+          } else if (!storagePath) {
+            // Binary exists but no storage path - skip to step 2
+            addLog('IPFS storage not configured - showing setup wizard', 'info');
+            await loadWizardDrives();
+            updateWizardStep(2);
+            showWizard();
+          }
+        } catch (err) {
+          console.error('Error checking setup:', err);
+        }
+      }
+
+      // Run setup check after a short delay
+      setTimeout(checkSetupNeeded, 500);
     }
   </script>
 </body>
