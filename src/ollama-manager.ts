@@ -166,7 +166,9 @@ export class OllamaManager extends EventEmitter {
    */
   async getModels(): Promise<OllamaModel[]> {
     try {
-      const response = await fetch('http://127.0.0.1:11434/api/tags', {
+      // Use the detected endpoint, fallback to localhost
+      const endpoint = this.ollamaEndpoint || 'http://127.0.0.1:11434';
+      const response = await fetch(`${endpoint}/api/tags`, {
         method: 'GET',
         signal: AbortSignal.timeout(5000),
       });
@@ -289,7 +291,8 @@ export class OllamaManager extends EventEmitter {
 
     this.emit('log', { message: `Pulling model ${modelName}...`, type: 'info' });
 
-    const response = await fetch('http://127.0.0.1:11434/api/pull', {
+    const endpoint = this.ollamaEndpoint || 'http://127.0.0.1:11434';
+    const response = await fetch(`${endpoint}/api/pull`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: modelName, stream: true }),
@@ -346,7 +349,8 @@ export class OllamaManager extends EventEmitter {
       throw new Error('Ollama server not running');
     }
 
-    const response = await fetch('http://127.0.0.1:11434/api/delete', {
+    const endpoint = this.ollamaEndpoint || 'http://127.0.0.1:11434';
+    const response = await fetch(`${endpoint}/api/delete`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: modelName }),

@@ -1336,6 +1336,15 @@
         </div>
       </div>
       <div class="card-body">
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Orchestrator URL</label>
+          <input type="text" id="orchestrator-url" value="ws://localhost:8080/ws/node"
+            style="width: 100%; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-family: var(--font-mono); font-size: 0.85rem;"
+            placeholder="ws://localhost:8080/ws/node">
+          <div style="margin-top: 4px; font-size: 0.7rem; color: var(--text-muted);">
+            Local: ws://localhost:8080/ws/node | Production: ws://155.117.46.228/ws/node
+          </div>
+        </div>
         <button id="start-btn" class="btn btn-start" disabled>Start Node</button>
         <button id="stop-btn" class="btn btn-stop" style="display:none;">Stop Node</button>
         <button id="open-dashboard-btn" class="btn-dashboard">
@@ -1631,7 +1640,9 @@
         addLog('Starting node...');
         orchDot.className = 'indicator-dot connecting';
         try {
-          const result = await window.electronAPI.startNode({ workspaceIds: [] });
+          const orchestratorUrl = document.getElementById('orchestrator-url').value.trim();
+          addLog(`Connecting to ${orchestratorUrl}...`);
+          const result = await window.electronAPI.startNode({ orchestratorUrl, workspaceIds: [] });
           if (result.success) {
             addLog('Node started', 'success');
             startBtn.style.display = 'none';
