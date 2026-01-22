@@ -4,6 +4,15 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+export interface DriveInfo {
+  mount: string;       // Mount point (e.g., "C:" on Windows, "/" on Linux)
+  label: string;       // Volume label or filesystem name
+  type: string;        // Filesystem type (NTFS, ext4, etc.)
+  size_gb: number;     // Total size in GB
+  available_gb: number; // Available space in GB
+  used_percent: number; // Percentage used
+}
+
 export interface HardwareInfo {
   cpu: {
     model: string;
@@ -91,5 +100,40 @@ export class HardwareDetector {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Get list of available drives/partitions for storage selection
+   * Filters out system partitions and small drives
+   */
+  static async getDrives(): Promise<DriveInfo[]> {
+    const disks = await si.fsSize();
+
+    // Filter and map drives
+    const drives: DriveInfo[] = disks
+      .filter((d) => {
+        // Skip very small partitions (< 1GB)
+        if (d.size < 1024 * 1024 * 1024) return false;
+
+        // Skip system/boot partitions on Linux
+        if (process.platform !== 'win32') {
+          const mount = d.mount.toLowerCase();
+          if (mount === '/boot' || mount === '/boot/efi' || mount.startsWith('/snap')) return false;
+        }
+
+        return true;
+      })
+      .map((d) => ({
+        mount: d.mount,
+        label: d.fs || d.mount,
+        type: d.type,
+        size_gb: Math.round(d.size / (1024 * 1024 * 1024)),
+        available_gb: Math.round(d.available / (1024 * 1024 * 1024)),
+        used_percent: Math.round(d.use),
+      }))
+      // Sort by available space (most available first)
+      .sort((a, b) => b.available_gb - a.available_gb);
+
+    return drives;
   }
 }

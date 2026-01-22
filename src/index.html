@@ -463,6 +463,154 @@
       transform: translateX(22px);
     }
 
+    /* IPFS Status */
+    .ipfs-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      margin-bottom: 12px;
+    }
+    .ipfs-status.running {
+      background: linear-gradient(135deg, rgba(0,255,65,0.08), rgba(0,212,255,0.05));
+      border-color: rgba(0,255,65,0.3);
+    }
+    .ipfs-status-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .ipfs-status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+    .ipfs-status-dot.online {
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+    .ipfs-status-text h4 {
+      font-size: 0.85rem;
+      margin-bottom: 2px;
+    }
+    .ipfs-status-text p {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+    .ipfs-btn {
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      border: none;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .ipfs-btn.start {
+      background: linear-gradient(135deg, var(--success), #00aa2a);
+      color: #000;
+    }
+    .ipfs-btn.stop {
+      background: linear-gradient(135deg, var(--error), #cc0033);
+      color: #fff;
+    }
+    .ipfs-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .ipfs-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .ipfs-stat {
+      padding: 10px;
+      background: var(--bg-dark);
+      border-radius: var(--radius-sm);
+      text-align: center;
+    }
+    .ipfs-stat-value {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      color: var(--primary);
+    }
+    .ipfs-stat-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    /* Drive Selector */
+    .drive-selector {
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .drive-selector-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .drive-selector-label span {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+    }
+    .drive-selector-label .drive-info {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+    .drive-select {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--bg-dark);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2300d4ff' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+    }
+    .drive-select:hover {
+      border-color: var(--border-accent);
+    }
+    .drive-select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 10px rgba(0,212,255,0.2);
+    }
+    .drive-select option {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      padding: 8px;
+    }
+    .drive-bar {
+      margin-top: 8px;
+      height: 4px;
+      background: var(--bg-dark);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .drive-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), var(--primary-light));
+      transition: width 0.3s;
+    }
+    .drive-bar-fill.warning { background: linear-gradient(90deg, var(--warning), #ff6600); }
+    .drive-bar-fill.danger { background: linear-gradient(90deg, var(--error), #cc0033); }
+
     /* Buttons */
     .btn {
       padding: 14px 28px;
@@ -671,6 +819,20 @@
         <span style="font-size:0.7rem;color:var(--text-muted)">Control how much to share</span>
       </div>
       <div class="card-body">
+        <!-- Drive Selector -->
+        <div class="drive-selector">
+          <div class="drive-selector-label">
+            <span>Storage Drive</span>
+            <span id="drive-info" class="drive-info">Select a drive</span>
+          </div>
+          <select id="drive-select" class="drive-select">
+            <option value="">Loading drives...</option>
+          </select>
+          <div class="drive-bar">
+            <div id="drive-bar-fill" class="drive-bar-fill" style="width: 0%"></div>
+          </div>
+        </div>
+
         <div class="limit-row">
           <span class="limit-label">CPU Cores</span>
           <input type="range" class="limit-slider" id="cpu-slider" min="1" max="16" value="16">
@@ -692,6 +854,43 @@
           <span class="limit-value"><span id="gpu-value">100</span>%</span>
         </div>
         <button id="save-limits-btn" class="btn btn-save">Save Limits</button>
+      </div>
+    </div>
+
+    <!-- IPFS Storage -->
+    <div class="card" id="ipfs-card">
+      <div class="card-header">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          IPFS Storage
+        </div>
+        <span id="ipfs-binary-status" style="font-size:0.65rem;color:var(--text-muted)">Checking...</span>
+      </div>
+      <div class="card-body">
+        <div id="ipfs-status-box" class="ipfs-status">
+          <div class="ipfs-status-info">
+            <div id="ipfs-dot" class="ipfs-status-dot"></div>
+            <div class="ipfs-status-text">
+              <h4 id="ipfs-title">IPFS Offline</h4>
+              <p id="ipfs-peer-id">Select a storage drive first</p>
+            </div>
+          </div>
+          <button id="ipfs-toggle-btn" class="ipfs-btn start" disabled>Start</button>
+        </div>
+        <div id="ipfs-stats-box" class="ipfs-stats" style="display:none;">
+          <div class="ipfs-stat">
+            <div id="ipfs-repo-size" class="ipfs-stat-value">0 MB</div>
+            <div class="ipfs-stat-label">Repo Size</div>
+          </div>
+          <div class="ipfs-stat">
+            <div id="ipfs-objects" class="ipfs-stat-value">0</div>
+            <div class="ipfs-stat-label">Objects</div>
+          </div>
+          <div class="ipfs-stat">
+            <div id="ipfs-peers" class="ipfs-stat-value">0</div>
+            <div class="ipfs-stat-label">Peers</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -929,6 +1128,196 @@
       window.electronAPI.onNodeLog(entry => {
         addLog(entry.message, entry.type);
       });
+
+      // Drive Selector
+      const driveSelect = document.getElementById('drive-select');
+      const driveInfo = document.getElementById('drive-info');
+      const driveBarFill = document.getElementById('drive-bar-fill');
+      let drives = [];
+
+      async function loadDrives() {
+        try {
+          drives = await window.electronAPI.getDrives();
+          const savedPath = await window.electronAPI.getStoragePath();
+
+          driveSelect.innerHTML = '<option value="">-- Select a drive --</option>';
+          drives.forEach(drive => {
+            const opt = document.createElement('option');
+            opt.value = drive.mount;
+            opt.textContent = `${drive.mount} - ${drive.available_gb} GB free of ${drive.size_gb} GB (${drive.type})`;
+            if (savedPath === drive.mount) {
+              opt.selected = true;
+            }
+            driveSelect.appendChild(opt);
+          });
+
+          // Update display for saved selection
+          if (savedPath) {
+            const selectedDrive = drives.find(d => d.mount === savedPath);
+            if (selectedDrive) {
+              updateDriveDisplay(selectedDrive);
+            }
+          }
+
+          addLog('Drives detected: ' + drives.length, 'success');
+        } catch (err) {
+          addLog('Failed to load drives: ' + err, 'error');
+          driveSelect.innerHTML = '<option value="">Error loading drives</option>';
+        }
+      }
+
+      function updateDriveDisplay(drive) {
+        if (!drive) {
+          driveInfo.textContent = 'Select a drive';
+          driveBarFill.style.width = '0%';
+          driveBarFill.className = 'drive-bar-fill';
+          return;
+        }
+
+        driveInfo.textContent = `${drive.available_gb} GB free / ${drive.size_gb} GB total`;
+        driveBarFill.style.width = `${drive.used_percent}%`;
+
+        // Color based on usage
+        driveBarFill.className = 'drive-bar-fill';
+        if (drive.used_percent > 90) {
+          driveBarFill.classList.add('danger');
+        } else if (drive.used_percent > 75) {
+          driveBarFill.classList.add('warning');
+        }
+
+        // Update storage slider max based on selected drive
+        const maxStorage = Math.round(drive.available_gb);
+        document.getElementById('storage-slider').max = maxStorage;
+        document.getElementById('storage-max').textContent = maxStorage;
+        if (parseInt(storageSlider.value) > maxStorage) {
+          storageSlider.value = maxStorage;
+        }
+        updateSliderDisplays();
+      }
+
+      driveSelect.addEventListener('change', async () => {
+        const selectedMount = driveSelect.value;
+        const selectedDrive = drives.find(d => d.mount === selectedMount);
+
+        updateDriveDisplay(selectedDrive);
+
+        try {
+          const result = await window.electronAPI.setStoragePath(selectedMount || null);
+          if (result.success) {
+            addLog('Storage drive set to: ' + (selectedMount || 'none'), 'success');
+          } else {
+            addLog('Failed to set storage drive: ' + result.error, 'error');
+          }
+        } catch (err) {
+          addLog('Error setting storage drive: ' + err, 'error');
+        }
+      });
+
+      // Load drives on startup
+      loadDrives();
+
+      // IPFS Controls
+      const ipfsBinaryStatus = document.getElementById('ipfs-binary-status');
+      const ipfsStatusBox = document.getElementById('ipfs-status-box');
+      const ipfsDot = document.getElementById('ipfs-dot');
+      const ipfsTitle = document.getElementById('ipfs-title');
+      const ipfsPeerId = document.getElementById('ipfs-peer-id');
+      const ipfsToggleBtn = document.getElementById('ipfs-toggle-btn');
+      const ipfsStatsBox = document.getElementById('ipfs-stats-box');
+      const ipfsRepoSize = document.getElementById('ipfs-repo-size');
+      const ipfsObjects = document.getElementById('ipfs-objects');
+      const ipfsPeers = document.getElementById('ipfs-peers');
+      let ipfsRunning = false;
+
+      async function updateIPFSStatus() {
+        try {
+          const status = await window.electronAPI.getIPFSStatus();
+
+          // Update binary status
+          if (status.hasBinary) {
+            ipfsBinaryStatus.textContent = 'Binary ready';
+            ipfsBinaryStatus.style.color = 'var(--success)';
+          } else {
+            ipfsBinaryStatus.textContent = 'Binary not found';
+            ipfsBinaryStatus.style.color = 'var(--error)';
+          }
+
+          ipfsRunning = status.running;
+
+          if (status.running) {
+            ipfsStatusBox.classList.add('running');
+            ipfsDot.classList.add('online');
+            ipfsTitle.textContent = 'IPFS Running';
+            ipfsPeerId.textContent = status.peerId ? status.peerId.slice(0, 20) + '...' : 'Getting peer ID...';
+            ipfsToggleBtn.textContent = 'Stop';
+            ipfsToggleBtn.className = 'ipfs-btn stop';
+            ipfsStatsBox.style.display = 'grid';
+
+            // Update stats
+            if (status.stats) {
+              const sizeMB = Math.round(status.stats.repoSize / (1024 * 1024));
+              ipfsRepoSize.textContent = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + ' GB' : sizeMB + ' MB';
+              ipfsObjects.textContent = status.stats.numObjects || '0';
+              ipfsPeers.textContent = status.stats.addresses?.length || '0';
+            }
+          } else {
+            ipfsStatusBox.classList.remove('running');
+            ipfsDot.classList.remove('online');
+            ipfsTitle.textContent = 'IPFS Offline';
+            ipfsPeerId.textContent = driveSelect.value ? 'Ready to start' : 'Select a storage drive first';
+            ipfsToggleBtn.textContent = 'Start';
+            ipfsToggleBtn.className = 'ipfs-btn start';
+            ipfsStatsBox.style.display = 'none';
+          }
+
+          // Enable button only if we have a drive selected and binary exists
+          ipfsToggleBtn.disabled = !driveSelect.value || !status.hasBinary;
+
+        } catch (err) {
+          console.error('Failed to get IPFS status:', err);
+        }
+      }
+
+      ipfsToggleBtn.addEventListener('click', async () => {
+        ipfsToggleBtn.disabled = true;
+
+        try {
+          if (ipfsRunning) {
+            addLog('Stopping IPFS...', 'info');
+            const result = await window.electronAPI.stopIPFS();
+            if (!result.success) {
+              addLog('Failed to stop IPFS: ' + result.error, 'error');
+            }
+          } else {
+            addLog('Starting IPFS...', 'info');
+            const result = await window.electronAPI.startIPFS();
+            if (!result.success) {
+              addLog('Failed to start IPFS: ' + result.error, 'error');
+            }
+          }
+        } catch (err) {
+          addLog('IPFS error: ' + err, 'error');
+        }
+
+        // Refresh status after a short delay
+        setTimeout(updateIPFSStatus, 1000);
+        ipfsToggleBtn.disabled = false;
+      });
+
+      // Listen for IPFS status updates
+      window.electronAPI.onIPFSStatus((status) => {
+        updateIPFSStatus();
+      });
+
+      // Check IPFS status on load
+      updateIPFSStatus();
+
+      // Refresh IPFS stats periodically when running
+      setInterval(() => {
+        if (ipfsRunning) {
+          updateIPFSStatus();
+        }
+      }, 10000);
 
       // Resource Limits
       const cpuSlider = document.getElementById('cpu-slider');

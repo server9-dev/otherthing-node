@@ -178,6 +178,10 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send('limits-change', limits);
   });
 
+  nodeService.on('ipfsStatusChange', (status) => {
+    mainWindow?.webContents.send('ipfs-status', status);
+  });
+
   // IPC handlers
   ipcMain.handle('get-hardware', async () => {
     return await HardwareDetector.detect();
@@ -279,6 +283,107 @@ app.whenReady().then(async () => {
   // Open dashboard in browser
   ipcMain.handle('open-dashboard', () => {
     shell.openExternal('http://155.117.46.228');
+  });
+
+  // Drive/storage selection
+  ipcMain.handle('get-drives', async () => {
+    return await HardwareDetector.getDrives();
+  });
+
+  ipcMain.handle('get-storage-path', () => {
+    return nodeService?.getStoragePath() ?? null;
+  });
+
+  ipcMain.handle('set-storage-path', (_, path: string | null) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      nodeService.setStoragePath(path);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // IPFS handlers
+  ipcMain.handle('ipfs-start', async () => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.startIPFS();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ipfs-stop', async () => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.stopIPFS();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ipfs-status', async () => {
+    if (!nodeService) return { running: false, hasBinary: false, stats: null };
+    return {
+      running: nodeService.isIPFSRunning(),
+      hasBinary: nodeService.hasIPFSBinary(),
+      peerId: nodeService.getIPFSPeerId(),
+      stats: await nodeService.getIPFSStats(),
+    };
+  });
+
+  // IPFS File Operations (Phase 4)
+  ipcMain.handle('ipfs-add', async (_, filePath: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      const cid = await nodeService.ipfsAdd(filePath);
+      return { success: true, cid };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ipfs-add-content', async (_, content: string, filename?: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      const cid = await nodeService.ipfsAddContent(content, filename);
+      return { success: true, cid };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ipfs-get', async (_, cid: string, outputPath: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.ipfsGet(cid, outputPath);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ipfs-pin', async (_, cid: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.ipfsPin(cid);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('ipfs-unpin', async (_, cid: string) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.ipfsUnpin(cid);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
   });
 
   app.on('activate', () => {

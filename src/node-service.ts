@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { HardwareDetector, HardwareInfo } from './hardware';
+import { IPFSManager, IPFSStats } from './ipfs-manager';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -20,6 +21,7 @@ interface NodeConfig {
   nodeId: string;
   resourceLimits: ResourceLimits;
   remoteControlEnabled: boolean;
+  storagePath: string | null;  // Selected drive/path for shared storage
 }
 
 interface Job {
@@ -56,7 +58,10 @@ export class NodeService extends EventEmitter {
   private currentJobs: Map<string, Job> = new Map();
   private resourceLimits: ResourceLimits = {};
   private remoteControlEnabled = false;
+  private storagePath: string | null = null;
   private configPath: string;
+  private ipfsManager: IPFSManager | null = null;
+  private ipfsEnabled = false;
 
   constructor(defaultOrchestratorUrl: string) {
     super();
@@ -69,6 +74,31 @@ export class NodeService extends EventEmitter {
     this.nodeId = config.nodeId;
     this.resourceLimits = config.resourceLimits;
     this.remoteControlEnabled = config.remoteControlEnabled;
+    this.storagePath = config.storagePath;
+
+    // Initialize IPFS manager if storage path is set
+    if (this.storagePath) {
+      this.initIPFS(this.storagePath);
+    }
+  }
+
+  private initIPFS(storagePath: string): void {
+    this.ipfsManager = new IPFSManager(storagePath);
+
+    // Forward IPFS logs to our log handler
+    this.ipfsManager.on('log', (entry) => {
+      this.log(`[IPFS] ${entry.message}`, entry.type);
+    });
+
+    this.ipfsManager.on('started', () => {
+      this.ipfsEnabled = true;
+      this.emit('ipfsStatusChange', { running: true, peerId: this.ipfsManager?.getPeerId() });
+    });
+
+    this.ipfsManager.on('stopped', () => {
+      this.ipfsEnabled = false;
+      this.emit('ipfsStatusChange', { running: false, peerId: null });
+    });
   }
 
   private loadOrCreateConfig(): NodeConfig {
@@ -82,6 +112,7 @@ export class NodeService extends EventEmitter {
           nodeId: config.nodeId || `node-${Math.random().toString(36).slice(2, 10)}`,
           resourceLimits: config.resourceLimits || {},
           remoteControlEnabled: config.remoteControlEnabled ?? false,
+          storagePath: config.storagePath ?? null,
         };
       }
     } catch (err) {
@@ -94,6 +125,7 @@ export class NodeService extends EventEmitter {
       nodeId: `node-${Math.random().toString(36).slice(2, 10)}`,
       resourceLimits: {},
       remoteControlEnabled: false,
+      storagePath: null,
     };
     this.saveConfig(config);
     return config;
@@ -106,6 +138,7 @@ export class NodeService extends EventEmitter {
         nodeId: this.nodeId,
         resourceLimits: this.resourceLimits,
         remoteControlEnabled: this.remoteControlEnabled,
+        storagePath: this.storagePath,
       };
       fs.writeFileSync(this.configPath, JSON.stringify(toSave, null, 2));
     } catch (err) {
@@ -187,6 +220,7 @@ export class NodeService extends EventEmitter {
             storage: {
               total_gb: this.hardware?.storage.total_gb || 10,
               available_gb: this.hardware?.storage.available_gb || 5,
+              path: this.storagePath,  // Selected storage drive/path
             },
             mcp_adapters: [],
           },
@@ -252,8 +286,114 @@ export class NodeService extends EventEmitter {
               this.emit('statusChange');
               break;
 
+            case 'workspace_joined':
+              // Received swarm key for workspace IPFS
+              if (msg.ipfs_swarm_key && this.ipfsManager) {
+                this.log(`Received IPFS swarm key for workspace ${msg.workspace_id}`, 'info');
+                await this.ipfsManager.setSwarmKey(msg.ipfs_swarm_key);
+
+                // Connect to bootstrap peers
+                if (msg.bootstrap_peers && Array.isArray(msg.bootstrap_peers)) {
+                  for (const peer of msg.bootstrap_peers) {
+                    try {
+                      await this.ipfsManager.connectPeer(peer);
+                    } catch (err) {
+                      // Ignore connection errors
+                    }
+                  }
+                }
+
+                // Start IPFS if not running
+                if (!this.ipfsManager.getIsRunning()) {
+                  try {
+                    await this.ipfsManager.start();
+                    // Send IPFS ready message
+                    const stats = await this.ipfsManager.getStats();
+                    this.ws?.send(JSON.stringify({
+                      type: 'ipfs_ready',
+                      peer_id: stats.peerId,
+                      addresses: stats.addresses,
+                    }));
+                  } catch (err) {
+                    this.log(`Failed to start IPFS: ${err}`, 'error');
+                  }
+                }
+              }
+              break;
+
             case 'error':
               this.log(`Error: ${msg.message}`, 'error');
+              break;
+
+            // IPFS Storage Operations (from orchestrator)
+            case 'ipfs_store':
+              // Store content in IPFS and return CID
+              if (!this.ipfsManager?.getIsRunning()) {
+                this.ws?.send(JSON.stringify({
+                  type: 'ipfs_store_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: 'IPFS not running',
+                }));
+                break;
+              }
+              try {
+                const content = typeof msg.content === 'string'
+                  ? msg.content
+                  : JSON.stringify(msg.content);
+                const cid = await this.ipfsManager.addContent(content, msg.filename);
+                await this.ipfsManager.pin(cid);
+                this.log(`Stored content: ${cid}`, 'success');
+                this.ws?.send(JSON.stringify({
+                  type: 'ipfs_store_result',
+                  request_id: msg.request_id,
+                  success: true,
+                  cid,
+                }));
+              } catch (err) {
+                this.log(`IPFS store failed: ${err}`, 'error');
+                this.ws?.send(JSON.stringify({
+                  type: 'ipfs_store_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: String(err),
+                }));
+              }
+              break;
+
+            case 'ipfs_retrieve':
+              // Retrieve content from IPFS by CID
+              if (!this.ipfsManager?.getIsRunning()) {
+                this.ws?.send(JSON.stringify({
+                  type: 'ipfs_retrieve_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: 'IPFS not running',
+                }));
+                break;
+              }
+              try {
+                const tempPath = path.join(app.getPath('temp'), `ipfs-get-${Date.now()}`);
+                await this.ipfsManager.get(msg.cid, tempPath);
+                const content = fs.readFileSync(tempPath, 'utf-8');
+                fs.unlinkSync(tempPath); // Cleanup
+                this.log(`Retrieved content: ${msg.cid}`, 'success');
+                this.ws?.send(JSON.stringify({
+                  type: 'ipfs_retrieve_result',
+                  request_id: msg.request_id,
+                  success: true,
+                  cid: msg.cid,
+                  content,
+                }));
+              } catch (err) {
+                this.log(`IPFS retrieve failed: ${err}`, 'error');
+                this.ws?.send(JSON.stringify({
+                  type: 'ipfs_retrieve_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: String(err),
+                }));
+              }
               break;
           }
         } catch (err) {
@@ -387,6 +527,11 @@ export class NodeService extends EventEmitter {
       this.ws = null;
     }
 
+    // Stop IPFS daemon
+    if (this.ipfsManager?.getIsRunning()) {
+      await this.ipfsManager.stop();
+    }
+
     this.connected = false;
     // Keep nodeId and shareKey - they are persistent local values
     this.log('Node stopped', 'info');
@@ -437,5 +582,112 @@ export class NodeService extends EventEmitter {
     this.saveConfig();
     this.log(`Remote control ${enabled ? 'enabled' : 'disabled'}`, 'success');
     this.emit('statusChange');
+  }
+
+  getStoragePath(): string | null {
+    return this.storagePath;
+  }
+
+  setStoragePath(newPath: string | null): void {
+    // Stop IPFS if running
+    if (this.ipfsManager?.getIsRunning()) {
+      this.ipfsManager.stop();
+    }
+
+    this.storagePath = newPath;
+    this.saveConfig();
+
+    // Reinitialize IPFS manager with new path
+    if (newPath) {
+      this.initIPFS(newPath);
+    } else {
+      this.ipfsManager = null;
+    }
+
+    this.log(`Storage path set to: ${newPath || 'not selected'}`, 'success');
+    this.emit('statusChange');
+  }
+
+  // IPFS Methods
+  async startIPFS(): Promise<void> {
+    if (!this.ipfsManager) {
+      throw new Error('No storage path configured');
+    }
+    await this.ipfsManager.start();
+  }
+
+  async stopIPFS(): Promise<void> {
+    if (this.ipfsManager) {
+      await this.ipfsManager.stop();
+    }
+  }
+
+  async setIPFSSwarmKey(key: string): Promise<void> {
+    if (!this.ipfsManager) {
+      throw new Error('No storage path configured');
+    }
+    await this.ipfsManager.setSwarmKey(key);
+  }
+
+  async connectIPFSPeer(multiaddr: string): Promise<void> {
+    if (!this.ipfsManager?.getIsRunning()) {
+      throw new Error('IPFS not running');
+    }
+    await this.ipfsManager.connectPeer(multiaddr);
+  }
+
+  async getIPFSStats(): Promise<IPFSStats | null> {
+    if (!this.ipfsManager) {
+      return null;
+    }
+    return this.ipfsManager.getStats();
+  }
+
+  isIPFSRunning(): boolean {
+    return this.ipfsManager?.getIsRunning() ?? false;
+  }
+
+  hasIPFSBinary(): boolean {
+    return this.ipfsManager?.hasBinary() ?? false;
+  }
+
+  getIPFSPeerId(): string | null {
+    return this.ipfsManager?.getPeerId() ?? null;
+  }
+
+  // IPFS File Operations (Phase 4)
+  async ipfsAdd(filePath: string): Promise<string> {
+    if (!this.ipfsManager?.getIsRunning()) {
+      throw new Error('IPFS not running');
+    }
+    return await this.ipfsManager.add(filePath);
+  }
+
+  async ipfsAddContent(content: string, filename?: string): Promise<string> {
+    if (!this.ipfsManager?.getIsRunning()) {
+      throw new Error('IPFS not running');
+    }
+    return await this.ipfsManager.addContent(content, filename);
+  }
+
+  async ipfsGet(cid: string, outputPath: string): Promise<void> {
+    if (!this.ipfsManager?.getIsRunning()) {
+      throw new Error('IPFS not running');
+    }
+    await this.ipfsManager.get(cid, outputPath);
+  }
+
+  async ipfsPin(cid: string): Promise<void> {
+    if (!this.ipfsManager?.getIsRunning()) {
+      throw new Error('IPFS not running');
+    }
+    await this.ipfsManager.pin(cid);
+  }
+
+  async ipfsUnpin(cid: string): Promise<void> {
+    if (!this.ipfsManager?.getIsRunning()) {
+      throw new Error('IPFS not running');
+    }
+    await this.ipfsManager.unpin(cid);
   }
 }
