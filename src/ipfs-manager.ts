@@ -37,10 +37,10 @@ export class IPFSManager extends EventEmitter {
     // IPFS repo lives in the user's selected storage path
     this.repoPath = path.join(storagePath, 'otherthing-storage', 'ipfs');
 
-    // Binary is in app resources
-    const resourcesPath = process.resourcesPath || path.join(__dirname, '..');
+    // Binary is stored in userData (writable location that persists across updates)
+    const userDataPath = app.getPath('userData');
     const binaryName = process.platform === 'win32' ? 'ipfs.exe' : 'ipfs';
-    this.ipfsBinaryPath = path.join(resourcesPath, 'ipfs', binaryName);
+    this.ipfsBinaryPath = path.join(userDataPath, 'bin', binaryName);
   }
 
   /**
@@ -152,7 +152,7 @@ export class IPFSManager extends EventEmitter {
 
     this.emit('log', { message: 'Download complete, extracting...', type: 'info' });
 
-    // Create the ipfs directory in resources
+    // Create the bin directory in userData (writable location)
     const ipfsDir = path.dirname(this.ipfsBinaryPath);
     if (!fs.existsSync(ipfsDir)) {
       fs.mkdirSync(ipfsDir, { recursive: true });
