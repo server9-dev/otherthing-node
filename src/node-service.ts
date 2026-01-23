@@ -703,6 +703,34 @@ export class NodeService extends EventEmitter {
                 }));
               }
               break;
+
+            case 'llm_inference':
+              // Execute LLM inference on node's local Ollama
+              try {
+                this.log(`LLM inference request: model=${msg.model}`, 'info');
+                const result = await this.ollamaManager.chat({
+                  model: msg.model,
+                  messages: msg.messages,
+                  max_tokens: msg.max_tokens,
+                  temperature: msg.temperature,
+                });
+                this.log(`LLM inference complete: ${result.tokens_used || 'unknown'} tokens`, 'info');
+                this.ws?.send(JSON.stringify({
+                  type: 'llm_inference_result',
+                  request_id: msg.request_id,
+                  success: true,
+                  response: result,
+                }));
+              } catch (err) {
+                this.log(`LLM inference failed: ${err}`, 'error');
+                this.ws?.send(JSON.stringify({
+                  type: 'llm_inference_result',
+                  request_id: msg.request_id,
+                  success: false,
+                  error: String(err),
+                }));
+              }
+              break;
           }
         } catch (err) {
           console.error('Failed to parse message:', err);

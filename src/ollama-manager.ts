@@ -342,6 +342,65 @@ export class OllamaManager extends EventEmitter {
   }
 
   /**
+   * Run chat inference with a model
+   */
+  async chat(request: {
+    model: string;
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+    max_tokens?: number;
+    temperature?: number;
+  }): Promise<{
+    content: string;
+    model: string;
+    tokens_used?: number;
+    finish_reason?: string;
+  }> {
+    if (!await this.checkRunning()) {
+      throw new Error('Ollama server not running');
+    }
+
+    const endpoint = this.ollamaEndpoint || 'http://127.0.0.1:11434';
+    this.emit('log', { message: `Running inference with ${request.model}...`, type: 'info' });
+
+    const response = await fetch(`${endpoint}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: request.model,
+        messages: request.messages,
+        stream: false,
+        options: {
+          num_predict: request.max_tokens || 4096,
+          temperature: request.temperature || 0.7,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Ollama chat failed: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json() as {
+      message?: { content: string };
+      model?: string;
+      eval_count?: number;
+      done_reason?: string;
+    };
+
+    if (!data.message?.content) {
+      throw new Error('No response content from Ollama');
+    }
+
+    return {
+      content: data.message.content,
+      model: data.model || request.model,
+      tokens_used: data.eval_count,
+      finish_reason: data.done_reason || 'stop',
+    };
+  }
+
+  /**
    * Delete a model
    */
   async deleteModel(modelName: string): Promise<void> {
