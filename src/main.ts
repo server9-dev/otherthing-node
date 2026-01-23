@@ -9,7 +9,7 @@ let tray: Tray | null = null;
 let nodeService: NodeService | null = null;
 let httpServer: ReturnType<typeof createServer> | null = null;
 
-const DEFAULT_ORCHESTRATOR = 'ws://155.117.46.228/ws/node';
+const DEFAULT_ORCHESTRATOR = 'ws://localhost:8080/ws/node';
 const HTTP_PORT = 3847;
 
 function createWindow() {
