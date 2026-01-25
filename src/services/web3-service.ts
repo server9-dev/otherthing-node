@@ -11,7 +11,7 @@ import { ethers, BrowserProvider, JsonRpcSigner, Contract } from 'ethers';
 export const CONTRACT_ADDRESSES = {
   sepolia: {
     OTT: '0x201333A5C882751a98E483f9B763DF4D8e5A1055',
-    NodeRegistry: '0x4e420Eeaf3909b83aeF27A27677E02D88F89c0dC',
+    NodeRegistry: '0xFaCB01A565ea526FC8CAC87D5D4622983735e8F3',
     TaskEscrow: '0x246127F9743AC938baB7fc221546a785C880ad86',
   },
   localhost: {

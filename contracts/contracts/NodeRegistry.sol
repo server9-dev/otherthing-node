@@ -9,49 +9,53 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 /**
  * @title NodeRegistry
  * @notice Registry for OtherThing compute nodes with staking
- * @dev Nodes stake OTT to participate, earn rewards for compute
  */
 contract NodeRegistry is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable ottToken;
 
-    uint256 public minStake = 1000 * 10**18; // 1000 OTT minimum
-    uint256 public rewardRate = 1 * 10**18;  // 1 OTT per compute unit
-    uint256 public slashPercent = 10;        // 10% slash for bad behavior
+    uint256 public minStake = 100 * 10**18; // 100 OTT minimum
+    uint256 public rewardRate = 1 * 10**15; // 0.001 OTT per compute second
+
+    struct Capabilities {
+        uint32 cpuCores;
+        uint32 memoryMb;
+        uint32 gpuCount;
+        uint32 gpuVramMb;
+        bool hasOllama;
+        bool hasSandbox;
+    }
 
     struct Node {
         address owner;
         uint256 stakedAmount;
         uint256 pendingRewards;
-        uint256 totalCompute;      // Total compute units provided
-        uint256 reputation;        // 0-10000 (100.00%)
-        bool isActive;
-        bool isSlashed;
-        bytes32 capabilities;      // Packed: cpuCores, memoryGb, gpuCount, hasOllama
+        uint256 totalEarned;
+        uint256 totalComputeSeconds;
+        uint256 reputation;
         uint256 registeredAt;
         uint256 lastActiveAt;
+        bool isActive;
+        bool isSlashed;
+        Capabilities capabilities;
+        string endpoint;
     }
 
-    // nodeId => Node
-    mapping(bytes32 => Node) public nodes;
-
-    // owner => nodeIds
+    mapping(bytes32 => Node) private _nodes;
     mapping(address => bytes32[]) public ownerNodes;
-
-    // Authorized compute reporters (orchestrators)
-    mapping(address => bool) public reporters;
+    mapping(address => bool) public authorizedReporters;
 
     bytes32[] public allNodeIds;
+    uint256 private nodeCounter;
 
     event NodeRegistered(bytes32 indexed nodeId, address indexed owner, uint256 stake);
     event NodeDeactivated(bytes32 indexed nodeId);
     event NodeReactivated(bytes32 indexed nodeId);
     event StakeAdded(bytes32 indexed nodeId, uint256 amount);
     event StakeWithdrawn(bytes32 indexed nodeId, uint256 amount);
-    event ComputeReported(bytes32 indexed nodeId, uint256 units, uint256 reward);
+    event ComputeReported(bytes32 indexed nodeId, uint256 seconds_, uint256 reward);
     event RewardsClaimed(bytes32 indexed nodeId, address indexed to, uint256 amount);
-    event NodeSlashed(bytes32 indexed nodeId, uint256 amount, string reason);
     event ReporterAdded(address indexed reporter);
     event ReporterRemoved(address indexed reporter);
 
@@ -59,69 +63,63 @@ contract NodeRegistry is Ownable, ReentrancyGuard {
         ottToken = IERC20(_ottToken);
     }
 
-    modifier onlyReporter() {
-        require(reporters[msg.sender] || msg.sender == owner(), "NodeRegistry: not a reporter");
-        _;
-    }
-
-    modifier onlyNodeOwner(bytes32 nodeId) {
-        require(nodes[nodeId].owner == msg.sender, "NodeRegistry: not node owner");
-        _;
-    }
-
-    /**
-     * @notice Register a new compute node
-     * @param nodeId Unique identifier for the node (e.g., keccak256 of hardware fingerprint)
-     * @param stake Amount of OTT to stake
-     * @param capabilities Packed capabilities (cpuCores, memoryGb, gpuCount, flags)
-     */
     function registerNode(
-        bytes32 nodeId,
-        uint256 stake,
-        bytes32 capabilities
-    ) external nonReentrant {
-        require(nodes[nodeId].owner == address(0), "NodeRegistry: node already exists");
-        require(stake >= minStake, "NodeRegistry: stake too low");
+        Capabilities calldata capabilities,
+        string calldata endpoint,
+        uint256 stakeAmount
+    ) external nonReentrant returns (bytes32) {
+        require(stakeAmount >= minStake, "Stake too low");
 
-        ottToken.safeTransferFrom(msg.sender, address(this), stake);
+        ottToken.safeTransferFrom(msg.sender, address(this), stakeAmount);
 
-        nodes[nodeId] = Node({
+        nodeCounter++;
+        bytes32 nodeId = keccak256(abi.encodePacked(msg.sender, block.timestamp, nodeCounter));
+
+        _nodes[nodeId] = Node({
             owner: msg.sender,
-            stakedAmount: stake,
+            stakedAmount: stakeAmount,
             pendingRewards: 0,
-            totalCompute: 0,
-            reputation: 10000, // Start at 100%
+            totalEarned: 0,
+            totalComputeSeconds: 0,
+            reputation: 10000,
+            registeredAt: block.timestamp,
+            lastActiveAt: block.timestamp,
             isActive: true,
             isSlashed: false,
             capabilities: capabilities,
-            registeredAt: block.timestamp,
-            lastActiveAt: block.timestamp
+            endpoint: endpoint
         });
 
         ownerNodes[msg.sender].push(nodeId);
         allNodeIds.push(nodeId);
 
-        emit NodeRegistered(nodeId, msg.sender, stake);
+        emit NodeRegistered(nodeId, msg.sender, stakeAmount);
+        return nodeId;
     }
 
-    /**
-     * @notice Add more stake to a node
-     */
-    function addStake(bytes32 nodeId, uint256 amount) external nonReentrant onlyNodeOwner(nodeId) {
+    function updateEndpoint(bytes32 nodeId, string calldata endpoint) external {
+        require(_nodes[nodeId].owner == msg.sender, "Not owner");
+        _nodes[nodeId].endpoint = endpoint;
+    }
+
+    function updateCapabilities(bytes32 nodeId, Capabilities calldata capabilities) external {
+        require(_nodes[nodeId].owner == msg.sender, "Not owner");
+        _nodes[nodeId].capabilities = capabilities;
+    }
+
+    function addStake(bytes32 nodeId, uint256 amount) external nonReentrant {
+        require(_nodes[nodeId].owner == msg.sender, "Not owner");
         ottToken.safeTransferFrom(msg.sender, address(this), amount);
-        nodes[nodeId].stakedAmount += amount;
+        _nodes[nodeId].stakedAmount += amount;
         emit StakeAdded(nodeId, amount);
     }
 
-    /**
-     * @notice Withdraw stake (deactivates node if below minimum)
-     */
-    function withdrawStake(bytes32 nodeId, uint256 amount) external nonReentrant onlyNodeOwner(nodeId) {
-        Node storage node = nodes[nodeId];
-        require(node.stakedAmount >= amount, "NodeRegistry: insufficient stake");
+    function withdrawStake(bytes32 nodeId, uint256 amount) external nonReentrant {
+        Node storage node = _nodes[nodeId];
+        require(node.owner == msg.sender, "Not owner");
+        require(node.stakedAmount >= amount, "Insufficient stake");
 
         node.stakedAmount -= amount;
-
         if (node.stakedAmount < minStake) {
             node.isActive = false;
             emit NodeDeactivated(nodeId);
@@ -131,93 +129,56 @@ contract NodeRegistry is Ownable, ReentrancyGuard {
         emit StakeWithdrawn(nodeId, amount);
     }
 
-    /**
-     * @notice Deactivate a node (keeps stake, stops earning)
-     */
-    function deactivateNode(bytes32 nodeId) external onlyNodeOwner(nodeId) {
-        nodes[nodeId].isActive = false;
+    function deactivateNode(bytes32 nodeId) external {
+        require(_nodes[nodeId].owner == msg.sender, "Not owner");
+        _nodes[nodeId].isActive = false;
         emit NodeDeactivated(nodeId);
     }
 
-    /**
-     * @notice Reactivate a node
-     */
-    function reactivateNode(bytes32 nodeId) external onlyNodeOwner(nodeId) {
-        Node storage node = nodes[nodeId];
-        require(node.stakedAmount >= minStake, "NodeRegistry: stake too low");
-        require(!node.isSlashed, "NodeRegistry: node is slashed");
+    function reactivateNode(bytes32 nodeId) external {
+        Node storage node = _nodes[nodeId];
+        require(node.owner == msg.sender, "Not owner");
+        require(node.stakedAmount >= minStake, "Stake too low");
+        require(!node.isSlashed, "Node slashed");
         node.isActive = true;
         node.lastActiveAt = block.timestamp;
         emit NodeReactivated(nodeId);
     }
 
-    /**
-     * @notice Report compute work done by a node (called by orchestrator)
-     * @param nodeId The node that did the work
-     * @param computeUnits Amount of compute (e.g., seconds of GPU time)
-     */
-    function reportCompute(bytes32 nodeId, uint256 computeUnits) external onlyReporter {
-        Node storage node = nodes[nodeId];
-        require(node.isActive, "NodeRegistry: node not active");
+    function reportCompute(bytes32 nodeId, uint256 computeSeconds) external {
+        require(authorizedReporters[msg.sender] || msg.sender == owner(), "Not reporter");
+        Node storage node = _nodes[nodeId];
+        require(node.isActive, "Node not active");
 
-        uint256 reward = computeUnits * rewardRate / 10**18;
+        uint256 reward = computeSeconds * rewardRate;
         node.pendingRewards += reward;
-        node.totalCompute += computeUnits;
+        node.totalComputeSeconds += computeSeconds;
         node.lastActiveAt = block.timestamp;
 
-        emit ComputeReported(nodeId, computeUnits, reward);
+        emit ComputeReported(nodeId, computeSeconds, reward);
     }
 
-    /**
-     * @notice Claim pending rewards
-     */
-    function claimRewards(bytes32 nodeId) external nonReentrant onlyNodeOwner(nodeId) {
-        Node storage node = nodes[nodeId];
+    function claimRewards(bytes32 nodeId) external nonReentrant {
+        Node storage node = _nodes[nodeId];
+        require(node.owner == msg.sender, "Not owner");
         uint256 rewards = node.pendingRewards;
-        require(rewards > 0, "NodeRegistry: no rewards");
+        require(rewards > 0, "No rewards");
 
         node.pendingRewards = 0;
-
-        // Mint rewards (requires NodeRegistry to be a minter on OTT)
-        // For now, transfer from contract balance (owner must fund)
+        node.totalEarned += rewards;
         ottToken.safeTransfer(msg.sender, rewards);
 
         emit RewardsClaimed(nodeId, msg.sender, rewards);
     }
 
-    /**
-     * @notice Slash a node for bad behavior
-     */
-    function slashNode(bytes32 nodeId, string calldata reason) external onlyOwner {
-        Node storage node = nodes[nodeId];
-        require(!node.isSlashed, "NodeRegistry: already slashed");
-
-        uint256 slashAmount = (node.stakedAmount * slashPercent) / 100;
-        node.stakedAmount -= slashAmount;
-        node.isSlashed = true;
-        node.isActive = false;
-        node.reputation = 0;
-
-        // Burned (sent to zero address equivalent - kept in contract)
-        emit NodeSlashed(nodeId, slashAmount, reason);
-    }
-
-    /**
-     * @notice Update reputation based on performance
-     */
-    function updateReputation(bytes32 nodeId, uint256 newReputation) external onlyReporter {
-        require(newReputation <= 10000, "NodeRegistry: invalid reputation");
-        nodes[nodeId].reputation = newReputation;
-    }
-
-    // Admin functions
+    // Admin
     function addReporter(address reporter) external onlyOwner {
-        reporters[reporter] = true;
+        authorizedReporters[reporter] = true;
         emit ReporterAdded(reporter);
     }
 
     function removeReporter(address reporter) external onlyOwner {
-        reporters[reporter] = false;
+        authorizedReporters[reporter] = false;
         emit ReporterRemoved(reporter);
     }
 
@@ -229,26 +190,21 @@ contract NodeRegistry is Ownable, ReentrancyGuard {
         rewardRate = _rewardRate;
     }
 
-    function setSlashPercent(uint256 _slashPercent) external onlyOwner {
-        require(_slashPercent <= 100, "NodeRegistry: invalid percent");
-        slashPercent = _slashPercent;
-    }
-
-    // View functions
+    // View
     function getNode(bytes32 nodeId) external view returns (Node memory) {
-        return nodes[nodeId];
+        return _nodes[nodeId];
     }
 
-    function getOwnerNodes(address owner) external view returns (bytes32[] memory) {
-        return ownerNodes[owner];
+    function getOwnerNodes(address owner_) external view returns (bytes32[] memory) {
+        return ownerNodes[owner_];
+    }
+
+    function isNodeEligible(bytes32 nodeId) external view returns (bool) {
+        Node storage node = _nodes[nodeId];
+        return node.isActive && !node.isSlashed && node.stakedAmount >= minStake;
     }
 
     function getTotalNodes() external view returns (uint256) {
         return allNodeIds.length;
-    }
-
-    function isNodeEligible(bytes32 nodeId) external view returns (bool) {
-        Node storage node = nodes[nodeId];
-        return node.isActive && !node.isSlashed && node.stakedAmount >= minStake;
     }
 }

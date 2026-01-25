@@ -38,7 +38,23 @@ function createWindow() {
 
   // In development, load Vite dev server; in production, load built files
   if (isDev) {
-    mainWindow.loadURL(VITE_DEV_SERVER_URL);
+    // Wait for Vite dev server to be ready with retries
+    const loadWithRetry = async (retries = 30, delay = 1000) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          await mainWindow!.loadURL(VITE_DEV_SERVER_URL);
+          console.log('[Main] Loaded Vite dev server');
+          return;
+        } catch (err) {
+          console.log(`[Main] Waiting for Vite... attempt ${i + 1}/${retries}`);
+          if (i < retries - 1) {
+            await new Promise(r => setTimeout(r, delay));
+          }
+        }
+      }
+      console.error('[Main] Failed to load Vite dev server after retries');
+    };
+    loadWithRetry();
     // DevTools can be opened manually with Ctrl+Shift+I if needed
   } else {
     mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));

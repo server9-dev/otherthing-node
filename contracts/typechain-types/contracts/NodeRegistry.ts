@@ -24,41 +24,72 @@ import type {
 } from "../common";
 
 export declare namespace NodeRegistry {
+  export type CapabilitiesStruct = {
+    cpuCores: BigNumberish;
+    memoryMb: BigNumberish;
+    gpuCount: BigNumberish;
+    gpuVramMb: BigNumberish;
+    hasOllama: boolean;
+    hasSandbox: boolean;
+  };
+
+  export type CapabilitiesStructOutput = [
+    cpuCores: bigint,
+    memoryMb: bigint,
+    gpuCount: bigint,
+    gpuVramMb: bigint,
+    hasOllama: boolean,
+    hasSandbox: boolean
+  ] & {
+    cpuCores: bigint;
+    memoryMb: bigint;
+    gpuCount: bigint;
+    gpuVramMb: bigint;
+    hasOllama: boolean;
+    hasSandbox: boolean;
+  };
+
   export type NodeStruct = {
     owner: AddressLike;
     stakedAmount: BigNumberish;
     pendingRewards: BigNumberish;
-    totalCompute: BigNumberish;
+    totalEarned: BigNumberish;
+    totalComputeSeconds: BigNumberish;
     reputation: BigNumberish;
-    isActive: boolean;
-    isSlashed: boolean;
-    capabilities: BytesLike;
     registeredAt: BigNumberish;
     lastActiveAt: BigNumberish;
+    isActive: boolean;
+    isSlashed: boolean;
+    capabilities: NodeRegistry.CapabilitiesStruct;
+    endpoint: string;
   };
 
   export type NodeStructOutput = [
     owner: string,
     stakedAmount: bigint,
     pendingRewards: bigint,
-    totalCompute: bigint,
+    totalEarned: bigint,
+    totalComputeSeconds: bigint,
     reputation: bigint,
+    registeredAt: bigint,
+    lastActiveAt: bigint,
     isActive: boolean,
     isSlashed: boolean,
-    capabilities: string,
-    registeredAt: bigint,
-    lastActiveAt: bigint
+    capabilities: NodeRegistry.CapabilitiesStructOutput,
+    endpoint: string
   ] & {
     owner: string;
     stakedAmount: bigint;
     pendingRewards: bigint;
-    totalCompute: bigint;
+    totalEarned: bigint;
+    totalComputeSeconds: bigint;
     reputation: bigint;
-    isActive: boolean;
-    isSlashed: boolean;
-    capabilities: string;
     registeredAt: bigint;
     lastActiveAt: bigint;
+    isActive: boolean;
+    isSlashed: boolean;
+    capabilities: NodeRegistry.CapabilitiesStructOutput;
+    endpoint: string;
   };
 }
 
@@ -68,6 +99,7 @@ export interface NodeRegistryInterface extends Interface {
       | "addReporter"
       | "addStake"
       | "allNodeIds"
+      | "authorizedReporters"
       | "claimRewards"
       | "deactivateNode"
       | "getNode"
@@ -75,7 +107,6 @@ export interface NodeRegistryInterface extends Interface {
       | "getTotalNodes"
       | "isNodeEligible"
       | "minStake"
-      | "nodes"
       | "ottToken"
       | "owner"
       | "ownerNodes"
@@ -84,15 +115,12 @@ export interface NodeRegistryInterface extends Interface {
       | "removeReporter"
       | "renounceOwnership"
       | "reportCompute"
-      | "reporters"
       | "rewardRate"
       | "setMinStake"
       | "setRewardRate"
-      | "setSlashPercent"
-      | "slashNode"
-      | "slashPercent"
       | "transferOwnership"
-      | "updateReputation"
+      | "updateCapabilities"
+      | "updateEndpoint"
       | "withdrawStake"
   ): FunctionFragment;
 
@@ -102,7 +130,6 @@ export interface NodeRegistryInterface extends Interface {
       | "NodeDeactivated"
       | "NodeReactivated"
       | "NodeRegistered"
-      | "NodeSlashed"
       | "OwnershipTransferred"
       | "ReporterAdded"
       | "ReporterRemoved"
@@ -122,6 +149,10 @@ export interface NodeRegistryInterface extends Interface {
   encodeFunctionData(
     functionFragment: "allNodeIds",
     values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "authorizedReporters",
+    values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "claimRewards",
@@ -145,7 +176,6 @@ export interface NodeRegistryInterface extends Interface {
     values: [BytesLike]
   ): string;
   encodeFunctionData(functionFragment: "minStake", values?: undefined): string;
-  encodeFunctionData(functionFragment: "nodes", values: [BytesLike]): string;
   encodeFunctionData(functionFragment: "ottToken", values?: undefined): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
   encodeFunctionData(
@@ -158,7 +188,7 @@ export interface NodeRegistryInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "registerNode",
-    values: [BytesLike, BigNumberish, BytesLike]
+    values: [NodeRegistry.CapabilitiesStruct, string, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "removeReporter",
@@ -173,10 +203,6 @@ export interface NodeRegistryInterface extends Interface {
     values: [BytesLike, BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "reporters",
-    values: [AddressLike]
-  ): string;
-  encodeFunctionData(
     functionFragment: "rewardRate",
     values?: undefined
   ): string;
@@ -189,24 +215,16 @@ export interface NodeRegistryInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "setSlashPercent",
-    values: [BigNumberish]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "slashNode",
-    values: [BytesLike, string]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "slashPercent",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "transferOwnership",
     values: [AddressLike]
   ): string;
   encodeFunctionData(
-    functionFragment: "updateReputation",
-    values: [BytesLike, BigNumberish]
+    functionFragment: "updateCapabilities",
+    values: [BytesLike, NodeRegistry.CapabilitiesStruct]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "updateEndpoint",
+    values: [BytesLike, string]
   ): string;
   encodeFunctionData(
     functionFragment: "withdrawStake",
@@ -219,6 +237,10 @@ export interface NodeRegistryInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "addStake", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "allNodeIds", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "authorizedReporters",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "claimRewards",
     data: BytesLike
@@ -241,7 +263,6 @@ export interface NodeRegistryInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "minStake", data: BytesLike): Result;
-  decodeFunctionResult(functionFragment: "nodes", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "ottToken", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "ownerNodes", data: BytesLike): Result;
@@ -265,7 +286,6 @@ export interface NodeRegistryInterface extends Interface {
     functionFragment: "reportCompute",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "reporters", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "rewardRate", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "setMinStake",
@@ -276,20 +296,15 @@ export interface NodeRegistryInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "setSlashPercent",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(functionFragment: "slashNode", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "slashPercent",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "transferOwnership",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "updateReputation",
+    functionFragment: "updateCapabilities",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "updateEndpoint",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -301,13 +316,13 @@ export interface NodeRegistryInterface extends Interface {
 export namespace ComputeReportedEvent {
   export type InputTuple = [
     nodeId: BytesLike,
-    units: BigNumberish,
+    seconds_: BigNumberish,
     reward: BigNumberish
   ];
-  export type OutputTuple = [nodeId: string, units: bigint, reward: bigint];
+  export type OutputTuple = [nodeId: string, seconds_: bigint, reward: bigint];
   export interface OutputObject {
     nodeId: string;
-    units: bigint;
+    seconds_: bigint;
     reward: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
@@ -351,24 +366,6 @@ export namespace NodeRegisteredEvent {
     nodeId: string;
     owner: string;
     stake: bigint;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
-}
-
-export namespace NodeSlashedEvent {
-  export type InputTuple = [
-    nodeId: BytesLike,
-    amount: BigNumberish,
-    reason: string
-  ];
-  export type OutputTuple = [nodeId: string, amount: bigint, reason: string];
-  export interface OutputObject {
-    nodeId: string;
-    amount: bigint;
-    reason: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -514,6 +511,12 @@ export interface NodeRegistry extends BaseContract {
 
   allNodeIds: TypedContractMethod<[arg0: BigNumberish], [string], "view">;
 
+  authorizedReporters: TypedContractMethod<
+    [arg0: AddressLike],
+    [boolean],
+    "view"
+  >;
+
   claimRewards: TypedContractMethod<[nodeId: BytesLike], [void], "nonpayable">;
 
   deactivateNode: TypedContractMethod<
@@ -528,43 +531,13 @@ export interface NodeRegistry extends BaseContract {
     "view"
   >;
 
-  getOwnerNodes: TypedContractMethod<[owner: AddressLike], [string[]], "view">;
+  getOwnerNodes: TypedContractMethod<[owner_: AddressLike], [string[]], "view">;
 
   getTotalNodes: TypedContractMethod<[], [bigint], "view">;
 
   isNodeEligible: TypedContractMethod<[nodeId: BytesLike], [boolean], "view">;
 
   minStake: TypedContractMethod<[], [bigint], "view">;
-
-  nodes: TypedContractMethod<
-    [arg0: BytesLike],
-    [
-      [
-        string,
-        bigint,
-        bigint,
-        bigint,
-        bigint,
-        boolean,
-        boolean,
-        string,
-        bigint,
-        bigint
-      ] & {
-        owner: string;
-        stakedAmount: bigint;
-        pendingRewards: bigint;
-        totalCompute: bigint;
-        reputation: bigint;
-        isActive: boolean;
-        isSlashed: boolean;
-        capabilities: string;
-        registeredAt: bigint;
-        lastActiveAt: bigint;
-      }
-    ],
-    "view"
-  >;
 
   ottToken: TypedContractMethod<[], [string], "view">;
 
@@ -583,8 +556,12 @@ export interface NodeRegistry extends BaseContract {
   >;
 
   registerNode: TypedContractMethod<
-    [nodeId: BytesLike, stake: BigNumberish, capabilities: BytesLike],
-    [void],
+    [
+      capabilities: NodeRegistry.CapabilitiesStruct,
+      endpoint: string,
+      stakeAmount: BigNumberish
+    ],
+    [string],
     "nonpayable"
   >;
 
@@ -597,12 +574,10 @@ export interface NodeRegistry extends BaseContract {
   renounceOwnership: TypedContractMethod<[], [void], "nonpayable">;
 
   reportCompute: TypedContractMethod<
-    [nodeId: BytesLike, computeUnits: BigNumberish],
+    [nodeId: BytesLike, computeSeconds: BigNumberish],
     [void],
     "nonpayable"
   >;
-
-  reporters: TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
 
   rewardRate: TypedContractMethod<[], [bigint], "view">;
 
@@ -618,28 +593,20 @@ export interface NodeRegistry extends BaseContract {
     "nonpayable"
   >;
 
-  setSlashPercent: TypedContractMethod<
-    [_slashPercent: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-
-  slashNode: TypedContractMethod<
-    [nodeId: BytesLike, reason: string],
-    [void],
-    "nonpayable"
-  >;
-
-  slashPercent: TypedContractMethod<[], [bigint], "view">;
-
   transferOwnership: TypedContractMethod<
     [newOwner: AddressLike],
     [void],
     "nonpayable"
   >;
 
-  updateReputation: TypedContractMethod<
-    [nodeId: BytesLike, newReputation: BigNumberish],
+  updateCapabilities: TypedContractMethod<
+    [nodeId: BytesLike, capabilities: NodeRegistry.CapabilitiesStruct],
+    [void],
+    "nonpayable"
+  >;
+
+  updateEndpoint: TypedContractMethod<
+    [nodeId: BytesLike, endpoint: string],
     [void],
     "nonpayable"
   >;
@@ -668,6 +635,9 @@ export interface NodeRegistry extends BaseContract {
     nameOrSignature: "allNodeIds"
   ): TypedContractMethod<[arg0: BigNumberish], [string], "view">;
   getFunction(
+    nameOrSignature: "authorizedReporters"
+  ): TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
+  getFunction(
     nameOrSignature: "claimRewards"
   ): TypedContractMethod<[nodeId: BytesLike], [void], "nonpayable">;
   getFunction(
@@ -682,7 +652,7 @@ export interface NodeRegistry extends BaseContract {
   >;
   getFunction(
     nameOrSignature: "getOwnerNodes"
-  ): TypedContractMethod<[owner: AddressLike], [string[]], "view">;
+  ): TypedContractMethod<[owner_: AddressLike], [string[]], "view">;
   getFunction(
     nameOrSignature: "getTotalNodes"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -692,37 +662,6 @@ export interface NodeRegistry extends BaseContract {
   getFunction(
     nameOrSignature: "minStake"
   ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "nodes"
-  ): TypedContractMethod<
-    [arg0: BytesLike],
-    [
-      [
-        string,
-        bigint,
-        bigint,
-        bigint,
-        bigint,
-        boolean,
-        boolean,
-        string,
-        bigint,
-        bigint
-      ] & {
-        owner: string;
-        stakedAmount: bigint;
-        pendingRewards: bigint;
-        totalCompute: bigint;
-        reputation: bigint;
-        isActive: boolean;
-        isSlashed: boolean;
-        capabilities: string;
-        registeredAt: bigint;
-        lastActiveAt: bigint;
-      }
-    ],
-    "view"
-  >;
   getFunction(
     nameOrSignature: "ottToken"
   ): TypedContractMethod<[], [string], "view">;
@@ -742,8 +681,12 @@ export interface NodeRegistry extends BaseContract {
   getFunction(
     nameOrSignature: "registerNode"
   ): TypedContractMethod<
-    [nodeId: BytesLike, stake: BigNumberish, capabilities: BytesLike],
-    [void],
+    [
+      capabilities: NodeRegistry.CapabilitiesStruct,
+      endpoint: string,
+      stakeAmount: BigNumberish
+    ],
+    [string],
     "nonpayable"
   >;
   getFunction(
@@ -755,13 +698,10 @@ export interface NodeRegistry extends BaseContract {
   getFunction(
     nameOrSignature: "reportCompute"
   ): TypedContractMethod<
-    [nodeId: BytesLike, computeUnits: BigNumberish],
+    [nodeId: BytesLike, computeSeconds: BigNumberish],
     [void],
     "nonpayable"
   >;
-  getFunction(
-    nameOrSignature: "reporters"
-  ): TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
   getFunction(
     nameOrSignature: "rewardRate"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -772,25 +712,19 @@ export interface NodeRegistry extends BaseContract {
     nameOrSignature: "setRewardRate"
   ): TypedContractMethod<[_rewardRate: BigNumberish], [void], "nonpayable">;
   getFunction(
-    nameOrSignature: "setSlashPercent"
-  ): TypedContractMethod<[_slashPercent: BigNumberish], [void], "nonpayable">;
+    nameOrSignature: "transferOwnership"
+  ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
   getFunction(
-    nameOrSignature: "slashNode"
+    nameOrSignature: "updateCapabilities"
   ): TypedContractMethod<
-    [nodeId: BytesLike, reason: string],
+    [nodeId: BytesLike, capabilities: NodeRegistry.CapabilitiesStruct],
     [void],
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "slashPercent"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "transferOwnership"
-  ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "updateReputation"
+    nameOrSignature: "updateEndpoint"
   ): TypedContractMethod<
-    [nodeId: BytesLike, newReputation: BigNumberish],
+    [nodeId: BytesLike, endpoint: string],
     [void],
     "nonpayable"
   >;
@@ -829,13 +763,6 @@ export interface NodeRegistry extends BaseContract {
     NodeRegisteredEvent.InputTuple,
     NodeRegisteredEvent.OutputTuple,
     NodeRegisteredEvent.OutputObject
-  >;
-  getEvent(
-    key: "NodeSlashed"
-  ): TypedContractEvent<
-    NodeSlashedEvent.InputTuple,
-    NodeSlashedEvent.OutputTuple,
-    NodeSlashedEvent.OutputObject
   >;
   getEvent(
     key: "OwnershipTransferred"
@@ -923,17 +850,6 @@ export interface NodeRegistry extends BaseContract {
       NodeRegisteredEvent.InputTuple,
       NodeRegisteredEvent.OutputTuple,
       NodeRegisteredEvent.OutputObject
-    >;
-
-    "NodeSlashed(bytes32,uint256,string)": TypedContractEvent<
-      NodeSlashedEvent.InputTuple,
-      NodeSlashedEvent.OutputTuple,
-      NodeSlashedEvent.OutputObject
-    >;
-    NodeSlashed: TypedContractEvent<
-      NodeSlashedEvent.InputTuple,
-      NodeSlashedEvent.OutputTuple,
-      NodeSlashedEvent.OutputObject
     >;
 
     "OwnershipTransferred(address,address)": TypedContractEvent<

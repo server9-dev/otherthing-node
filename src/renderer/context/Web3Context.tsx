@@ -9,7 +9,7 @@ const WALLETCONNECT_PROJECT_ID = 'e8c2c97bc93e37d1d5a4c6f48c0e75a7';
 const CONTRACT_ADDRESSES: Record<string, { OTT: string; NodeRegistry: string; TaskEscrow: string }> = {
   sepolia: {
     OTT: '0x201333A5C882751a98E483f9B763DF4D8e5A1055',
-    NodeRegistry: '0x4e420Eeaf3909b83aeF27A27677E02D88F89c0dC',
+    NodeRegistry: '0xFaCB01A565ea526FC8CAC87D5D4622983735e8F3',
     TaskEscrow: '0x246127F9743AC938baB7fc221546a785C880ad86',
   },
   localhost: {
