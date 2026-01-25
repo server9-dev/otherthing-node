@@ -249,6 +249,45 @@ export class ApiServer {
       res.json({ success: true });
     });
 
+    // Join workspace by invite code
+    this.app.post('/api/v1/workspaces/join', localAuth, (req, res) => {
+      const session = (req as any).session;
+      const { inviteCode } = req.body;
+
+      if (!inviteCode) {
+        res.status(400).json({ error: 'Invite code is required' });
+        return;
+      }
+
+      const result = this.workspaceManager.joinWorkspace(
+        inviteCode.trim(),
+        session.userId,
+        session.username
+      );
+
+      if (!result.success) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+
+      res.json({ success: true, workspace: result.workspace });
+    });
+
+    // Leave workspace
+    this.app.post('/api/v1/workspaces/:id/leave', localAuth, (req, res) => {
+      const session = (req as any).session;
+      const workspaceId = req.params.id as string;
+
+      const result = this.workspaceManager.leaveWorkspace(workspaceId, session.userId);
+
+      if (!result.success) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+
+      res.json({ success: true });
+    });
+
     // Agent Endpoints (AgentExecution - running agents with goals)
     this.app.get('/api/v1/workspaces/:id/agents', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
