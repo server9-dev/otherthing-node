@@ -19,6 +19,17 @@ import {
   loginWithPassword,
   logout,
 } from './middleware/auth';
+
+// Local mode - bypass auth for desktop app
+const localAuth = (req: Request, res: Response, next: express.NextFunction) => {
+  // For local desktop app, auto-authenticate as local user
+  (req as any).session = {
+    userId: 'local-user',
+    username: 'local',
+    token: 'local-token',
+  };
+  next();
+};
 import { OllamaManager } from './ollama-manager';
 import { SandboxManager } from './sandbox-manager';
 import { IPFSManager } from './ipfs-manager';
@@ -68,6 +79,21 @@ interface OnChainNodeRecord {
   lastReported: string;    // Last time we reported to chain
 }
 
+// Workspace node record (nodes added to workspaces)
+interface WorkspaceNodeRecord {
+  id: string;
+  shareKey: string;
+  name?: string;
+  status: 'online' | 'offline';
+  hardware?: {
+    cpuCores: number;
+    memoryMb: number;
+    gpuCount: number;
+  };
+  addedAt: string;
+  isLocal: boolean;
+}
+
 export class ApiServer {
   private app: express.Application;
   private server: http.Server | null = null;
@@ -81,12 +107,26 @@ export class ApiServer {
   // On-chain node tracking
   private onChainNodes: Map<string, OnChainNodeRecord> = new Map(); // keyed by localNodeId
   private computeReportInterval: NodeJS.Timeout | null = null;
+  // Workspace nodes storage (keyed by workspaceId)
+  private workspaceNodes: Map<string, WorkspaceNodeRecord[]> = new Map();
+  // Local node share key (generated once)
+  private localNodeShareKey: string = this.generateShareKey();
 
   constructor() {
     this.app = express();
     this.workspaceManager = new WorkspaceManager();
     this.setupMiddleware();
     this.setupRoutes();
+  }
+
+  private generateShareKey(): string {
+    // Generate an 8-character alphanumeric share key
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude confusing chars (0, O, 1, I)
+    let key = '';
+    for (let i = 0; i < 8; i++) {
+      key += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return key;
   }
 
   setManagers(
@@ -154,19 +194,19 @@ export class ApiServer {
       res.json({ success: true });
     });
 
-    this.app.get('/api/v1/auth/me', requireAuth, (req, res) => {
+    this.app.get('/api/v1/auth/me', localAuth, (req, res) => {
       const session = (req as any).session;
       res.json({ authenticated: true, userId: session.userId, username: session.username });
     });
 
     // Workspace Endpoints
-    this.app.get('/api/v1/workspaces', requireAuth, (req, res) => {
+    this.app.get('/api/v1/workspaces', localAuth, (req, res) => {
       const session = (req as any).session;
       const workspaces = this.workspaceManager.getUserWorkspaces(session.userId);
       res.json({ workspaces });
     });
 
-    this.app.post('/api/v1/workspaces', requireAuth, (req, res) => {
+    this.app.post('/api/v1/workspaces', localAuth, (req, res) => {
       const session = (req as any).session;
       const { name, description } = req.body;
       if (!name) {
@@ -183,7 +223,7 @@ export class ApiServer {
       res.status(201).json(workspace);
     });
 
-    this.app.get('/api/v1/workspaces/:id', requireAuth, (req, res) => {
+    this.app.get('/api/v1/workspaces/:id', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const workspace = this.workspaceManager.getWorkspace(workspaceId);
       if (!workspace) {
@@ -193,7 +233,7 @@ export class ApiServer {
       res.json({ workspace });
     });
 
-    this.app.delete('/api/v1/workspaces/:id', requireAuth, (req, res) => {
+    this.app.delete('/api/v1/workspaces/:id', localAuth, (req, res) => {
       const session = (req as any).session;
       const workspaceId = req.params.id as string;
       const workspace = this.workspaceManager.getWorkspace(workspaceId);
@@ -210,7 +250,7 @@ export class ApiServer {
     });
 
     // Agent Endpoints (AgentExecution - running agents with goals)
-    this.app.get('/api/v1/workspaces/:id/agents', requireAuth, (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/agents', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const agents = Array.from(this.agentExecutions.values())
         .filter(a => a.workspaceId === workspaceId)
@@ -218,7 +258,7 @@ export class ApiServer {
       res.json({ agents });
     });
 
-    this.app.post('/api/v1/workspaces/:id/agents', requireAuth, async (req, res) => {
+    this.app.post('/api/v1/workspaces/:id/agents', localAuth, async (req, res) => {
       const workspaceId = req.params.id as string;
       const session = (req as any).session;
       const { goal, agentType, model, provider, preferLocal } = req.body;
@@ -280,7 +320,7 @@ export class ApiServer {
     });
 
     // Agent analyze endpoint (stub - returns mock analysis)
-    this.app.post('/api/v1/workspaces/:id/agents/analyze', requireAuth, async (req, res) => {
+    this.app.post('/api/v1/workspaces/:id/agents/analyze', localAuth, async (req, res) => {
       const { goal } = req.body;
 
       // Get available models from Ollama
@@ -311,7 +351,7 @@ export class ApiServer {
     });
 
     // Agent scan endpoint (stub - returns mock security scan)
-    this.app.post('/api/v1/workspaces/:id/agents/scan', requireAuth, (req, res) => {
+    this.app.post('/api/v1/workspaces/:id/agents/scan', localAuth, (req, res) => {
       const { goal } = req.body;
       // Return a stub scan response (UI expects 'alerts' not 'warnings')
       res.json({
@@ -322,7 +362,7 @@ export class ApiServer {
       });
     });
 
-    this.app.get('/api/v1/workspaces/:id/agents/:agentId', requireAuth, (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/agents/:agentId', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const agentId = req.params.agentId as string;
       const execution = this.agentExecutions.get(agentId);
@@ -333,7 +373,7 @@ export class ApiServer {
       res.json({ agent: execution });
     });
 
-    this.app.delete('/api/v1/workspaces/:id/agents/:agentId', requireAuth, (req, res) => {
+    this.app.delete('/api/v1/workspaces/:id/agents/:agentId', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const agentId = req.params.agentId as string;
       const execution = this.agentExecutions.get(agentId);
@@ -352,13 +392,13 @@ export class ApiServer {
     const tasksStore: Map<string, any[]> = new Map();
 
     // Tasks Endpoints
-    this.app.get('/api/v1/workspaces/:id/tasks', requireAuth, (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/tasks', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const tasks = tasksStore.get(workspaceId) || [];
       res.json({ tasks });
     });
 
-    this.app.post('/api/v1/workspaces/:id/tasks', requireAuth, (req, res) => {
+    this.app.post('/api/v1/workspaces/:id/tasks', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const task = {
         id: req.body.id || uuidv4(),
@@ -376,7 +416,7 @@ export class ApiServer {
       res.status(201).json({ task });
     });
 
-    this.app.patch('/api/v1/workspaces/:id/tasks/:taskId', requireAuth, (req, res) => {
+    this.app.patch('/api/v1/workspaces/:id/tasks/:taskId', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const taskId = req.params.taskId as string;
       const tasks = tasksStore.get(workspaceId) || [];
@@ -389,7 +429,7 @@ export class ApiServer {
       res.json({ task: tasks[taskIndex] });
     });
 
-    this.app.delete('/api/v1/workspaces/:id/tasks/:taskId', requireAuth, (req, res) => {
+    this.app.delete('/api/v1/workspaces/:id/tasks/:taskId', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const taskId = req.params.taskId as string;
       const tasks = tasksStore.get(workspaceId) || [];
@@ -403,49 +443,116 @@ export class ApiServer {
     });
 
     // Workspace Nodes Endpoints
-    this.app.get('/api/v1/workspaces/:id/nodes', requireAuth, async (req, res) => {
-      const os = require('os');
-      const cpus = os.cpus();
-      const totalMem = os.totalmem();
-
-      // Check for GPU info from Ollama if available
-      let gpuCount = 0;
-      const gpus: Array<{ model: string; vramMb: number }> = [];
-
-      // Return the local node in the format UI expects (WorkspaceNode interface)
-      res.json({
-        nodes: [{
-          id: 'local-node',
-          hostname: os.hostname(),
-          status: 'online' as const,
-          capabilities: {
-            cpuCores: cpus.length,
-            memoryMb: Math.round(totalMem / 1024 / 1024),
-            gpuCount,
-            gpus,
-          },
-          resourceLimits: null,
-          remoteControlEnabled: false,
-          reputation: 100,
-        }],
-      });
+    this.app.get('/api/v1/workspaces/:id/nodes', localAuth, async (req, res) => {
+      const workspaceId = req.params.id as string;
+      const nodes = this.workspaceNodes.get(workspaceId) || [];
+      res.json({ nodes });
     });
 
-    this.app.post('/api/v1/workspaces/:id/nodes/add-by-key', requireAuth, (req, res) => {
-      res.status(501).json({ error: 'Node sharing not yet implemented in local mode' });
+    this.app.post('/api/v1/workspaces/:id/nodes/add-by-key', localAuth, async (req, res) => {
+      const workspaceId = req.params.id as string;
+      const { shareKey } = req.body;
+
+      if (!shareKey) {
+        res.status(400).json({ error: 'Share key is required' });
+        return;
+      }
+
+      // Check if workspace exists
+      const workspace = this.workspaceManager.getWorkspace(workspaceId);
+      if (!workspace) {
+        res.status(404).json({ error: 'Workspace not found' });
+        return;
+      }
+
+      // Initialize workspace nodes array if needed
+      if (!this.workspaceNodes.has(workspaceId)) {
+        this.workspaceNodes.set(workspaceId, []);
+      }
+
+      const nodes = this.workspaceNodes.get(workspaceId)!;
+
+      // Check if node already exists in workspace
+      if (nodes.some(n => n.shareKey === shareKey)) {
+        res.status(400).json({ error: 'Node already added to this workspace' });
+        return;
+      }
+
+      // Check if this is the local node
+      const isLocalNode = shareKey === this.localNodeShareKey;
+      const os = require('os');
+
+      let nodeRecord: WorkspaceNodeRecord;
+
+      if (isLocalNode) {
+        // Add local node with full hardware info
+        nodeRecord = {
+          id: `node-${uuidv4().slice(0, 8)}`,
+          shareKey,
+          name: os.hostname(),
+          status: 'online',
+          hardware: {
+            cpuCores: os.cpus().length,
+            memoryMb: Math.round(os.totalmem() / 1024 / 1024),
+            gpuCount: 0,
+          },
+          addedAt: new Date().toISOString(),
+          isLocal: true,
+        };
+      } else {
+        // For remote nodes, we'd need to verify the share key with a node registry
+        // For now, add it as a pending/offline node
+        nodeRecord = {
+          id: `node-${uuidv4().slice(0, 8)}`,
+          shareKey,
+          name: undefined,
+          status: 'offline',
+          hardware: undefined,
+          addedAt: new Date().toISOString(),
+          isLocal: false,
+        };
+      }
+
+      nodes.push(nodeRecord);
+      console.log(`[ApiServer] Added node ${nodeRecord.id} (${shareKey}) to workspace ${workspaceId}`);
+
+      res.status(201).json({ node: nodeRecord });
+    });
+
+    // Remove node from workspace
+    this.app.delete('/api/v1/workspaces/:id/nodes/:nodeId', localAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const nodeId = req.params.nodeId as string;
+
+      const nodes = this.workspaceNodes.get(workspaceId);
+      if (!nodes) {
+        res.status(404).json({ error: 'Workspace has no nodes' });
+        return;
+      }
+
+      const nodeIndex = nodes.findIndex(n => n.id === nodeId);
+      if (nodeIndex === -1) {
+        res.status(404).json({ error: 'Node not found in workspace' });
+        return;
+      }
+
+      const removedNode = nodes.splice(nodeIndex, 1)[0];
+      console.log(`[ApiServer] Removed node ${nodeId} from workspace ${workspaceId}`);
+
+      res.json({ success: true, removedNode });
     });
 
     // API Keys storage (in-memory)
     const apiKeysStore: Map<string, any[]> = new Map();
 
     // API Keys Endpoints
-    this.app.get('/api/v1/workspaces/:id/api-keys', requireAuth, (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/api-keys', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const apiKeys = apiKeysStore.get(workspaceId) || [];
       res.json({ apiKeys });
     });
 
-    this.app.post('/api/v1/workspaces/:id/api-keys', requireAuth, (req, res) => {
+    this.app.post('/api/v1/workspaces/:id/api-keys', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const session = (req as any).session;
       const { provider, name, key } = req.body;
@@ -476,7 +583,7 @@ export class ApiServer {
       res.status(201).json({ apiKey });
     });
 
-    this.app.delete('/api/v1/workspaces/:id/api-keys/:keyId', requireAuth, (req, res) => {
+    this.app.delete('/api/v1/workspaces/:id/api-keys/:keyId', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const keyId = req.params.keyId as string;
       const keys = apiKeysStore.get(workspaceId) || [];
@@ -493,13 +600,13 @@ export class ApiServer {
     const flowsStore: Map<string, any[]> = new Map();
 
     // Flows Endpoints
-    this.app.get('/api/v1/workspaces/:id/flows', requireAuth, (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/flows', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const flows = flowsStore.get(workspaceId) || [];
       res.json({ flows });
     });
 
-    this.app.post('/api/v1/workspaces/:id/flows', requireAuth, (req, res) => {
+    this.app.post('/api/v1/workspaces/:id/flows', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const session = (req as any).session;
       const flow = {
@@ -518,7 +625,7 @@ export class ApiServer {
       res.status(201).json({ flow });
     });
 
-    this.app.delete('/api/v1/workspaces/:id/flows/:flowId', requireAuth, (req, res) => {
+    this.app.delete('/api/v1/workspaces/:id/flows/:flowId', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const flowId = req.params.flowId as string;
       const flows = flowsStore.get(workspaceId) || [];
@@ -535,13 +642,13 @@ export class ApiServer {
     const reposStore: Map<string, any[]> = new Map();
 
     // Repos Endpoints
-    this.app.get('/api/v1/workspaces/:id/repos', requireAuth, (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/repos', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const repos = reposStore.get(workspaceId) || [];
       res.json({ repos });
     });
 
-    this.app.post('/api/v1/workspaces/:id/repos', requireAuth, (req, res) => {
+    this.app.post('/api/v1/workspaces/:id/repos', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const session = (req as any).session;
       const repo = {
@@ -559,7 +666,7 @@ export class ApiServer {
       res.status(201).json({ repo });
     });
 
-    this.app.post('/api/v1/workspaces/:id/repos/:repoId/analyze', requireAuth, (req, res) => {
+    this.app.post('/api/v1/workspaces/:id/repos/:repoId/analyze', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const repoId = req.params.repoId as string;
       const repos = reposStore.get(workspaceId) || [];
@@ -588,7 +695,7 @@ export class ApiServer {
       }, 1000);
     });
 
-    this.app.delete('/api/v1/workspaces/:id/repos/:repoId', requireAuth, (req, res) => {
+    this.app.delete('/api/v1/workspaces/:id/repos/:repoId', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const repoId = req.params.repoId as string;
       const repos = reposStore.get(workspaceId) || [];
@@ -606,13 +713,13 @@ export class ApiServer {
     const storageContent: Map<string, string> = new Map();
 
     // Storage Files Endpoints
-    this.app.get('/api/v1/workspaces/:id/storage/files', requireAuth, (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/storage/files', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const files = storageStore.get(workspaceId) || [];
       res.json({ files });
     });
 
-    this.app.post('/api/v1/workspaces/:id/storage/upload', requireAuth, (req, res) => {
+    this.app.post('/api/v1/workspaces/:id/storage/upload', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const session = (req as any).session;
       const { content, filename, mimeType } = req.body;
@@ -645,7 +752,7 @@ export class ApiServer {
       res.status(201).json({ file });
     });
 
-    this.app.get('/api/v1/workspaces/:id/storage/content/:cid', requireAuth, (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/storage/content/:cid', localAuth, (req, res) => {
       const cid = req.params.cid as string;
       const content = storageContent.get(cid);
       if (!content) {
@@ -655,7 +762,7 @@ export class ApiServer {
       res.json({ content });
     });
 
-    this.app.delete('/api/v1/workspaces/:id/storage/files/:fileId', requireAuth, (req, res) => {
+    this.app.delete('/api/v1/workspaces/:id/storage/files/:fileId', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const fileId = req.params.fileId as string;
       const files = storageStore.get(workspaceId) || [];
@@ -672,7 +779,7 @@ export class ApiServer {
     });
 
     // Usage Summary Endpoint
-    this.app.get('/api/v1/workspaces/:id/usage/summary', requireAuth, (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/usage/summary', localAuth, (req, res) => {
       // Return in the format UI expects (UsageSummary interface)
       res.json({
         summary: {
@@ -686,7 +793,7 @@ export class ApiServer {
     });
 
     // Compute Summary Endpoint
-    this.app.get('/api/v1/workspaces/:id/compute', requireAuth, async (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/compute', localAuth, async (req, res) => {
       const cpus = require('os').cpus();
       const totalMem = require('os').totalmem();
       const freeMem = require('os').freemem();
@@ -720,7 +827,7 @@ export class ApiServer {
     });
 
     // Sandbox Endpoints
-    this.app.get('/api/v1/workspaces/:id/sandbox/files', requireAuth, async (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/sandbox/files', localAuth, async (req, res) => {
       const workspaceId = req.params.id as string;
       const dirPath = (req.query.path as string) || '.';
       if (!this.sandboxManager) {
@@ -735,7 +842,7 @@ export class ApiServer {
       }
     });
 
-    this.app.get('/api/v1/workspaces/:id/sandbox/file', requireAuth, async (req, res) => {
+    this.app.get('/api/v1/workspaces/:id/sandbox/file', localAuth, async (req, res) => {
       const workspaceId = req.params.id as string;
       const filePath = (req.query.path as string) || '';
       if (!this.sandboxManager) {
@@ -750,7 +857,7 @@ export class ApiServer {
       }
     });
 
-    this.app.put('/api/v1/workspaces/:id/sandbox/file', requireAuth, async (req, res) => {
+    this.app.put('/api/v1/workspaces/:id/sandbox/file', localAuth, async (req, res) => {
       const workspaceId = req.params.id as string;
       const filePath = (req.query.path as string) || req.body.path || '';
       const { content } = req.body;
@@ -766,7 +873,7 @@ export class ApiServer {
       }
     });
 
-    this.app.delete('/api/v1/workspaces/:id/sandbox/file', requireAuth, async (req, res) => {
+    this.app.delete('/api/v1/workspaces/:id/sandbox/file', localAuth, async (req, res) => {
       const workspaceId = req.params.id as string;
       const filePath = (req.query.path as string) || '';
       if (!this.sandboxManager) {
@@ -782,7 +889,7 @@ export class ApiServer {
     });
 
     // Models Endpoint
-    this.app.get('/api/v1/models', requireAuth, async (req, res) => {
+    this.app.get('/api/v1/models', localAuth, async (req, res) => {
       if (!this.ollamaManager) {
         res.json({ models: [], provider: 'none' });
         return;
@@ -796,7 +903,7 @@ export class ApiServer {
     });
 
     // Stats Endpoint
-    this.app.get('/api/v1/stats', requireAuth, (req, res) => {
+    this.app.get('/api/v1/stats', localAuth, (req, res) => {
       res.json({
         mode: 'local',
         nodes: 1,
@@ -807,7 +914,7 @@ export class ApiServer {
     });
 
     // Nodes Endpoint (compatibility)
-    this.app.get('/api/v1/nodes', requireAuth, (req, res) => {
+    this.app.get('/api/v1/nodes', localAuth, (req, res) => {
       res.json({
         nodes: [{
           id: 'local',
@@ -820,14 +927,16 @@ export class ApiServer {
     });
 
     // My Nodes Endpoint (for web UI node detection)
-    this.app.get('/api/v1/my-nodes', requireAuth, async (req, res) => {
+    this.app.get('/api/v1/my-nodes', localAuth, async (req, res) => {
       try {
         // Get hardware info from Ollama manager or use defaults
         const ollamaStatus = this.ollamaManager ? await this.ollamaManager.getStatus() : null;
+        const os = require('os');
 
         res.json({
           nodes: [{
             id: 'local-node',
+            shareKey: this.localNodeShareKey,
             available: true,
             workspaceIds: [],
             workspaceNames: ['Local'],
@@ -836,12 +945,12 @@ export class ApiServer {
             capabilities: {
               cpu: {
                 model: 'Local CPU',
-                cores: require('os').cpus().length,
-                threads: require('os').cpus().length,
+                cores: os.cpus().length,
+                threads: os.cpus().length,
               },
               memory: {
-                total_mb: Math.round(require('os').totalmem() / 1024 / 1024),
-                available_mb: Math.round(require('os').freemem() / 1024 / 1024),
+                total_mb: Math.round(os.totalmem() / 1024 / 1024),
+                available_mb: Math.round(os.freemem() / 1024 / 1024),
               },
               gpus: [],
               storage: {
@@ -862,7 +971,7 @@ export class ApiServer {
     });
 
     // Assign node to workspaces (stub - in local mode, node is always available)
-    this.app.post('/api/v1/nodes/:nodeId/workspaces', requireAuth, (req, res) => {
+    this.app.post('/api/v1/nodes/:nodeId/workspaces', localAuth, (req, res) => {
       const nodeId = req.params.nodeId as string;
       const { workspaceIds } = req.body;
       // In local mode, we just acknowledge the request
@@ -893,7 +1002,7 @@ export class ApiServer {
     });
 
     // Set contract addresses (after deployment)
-    this.app.post('/api/v1/web3/contracts', requireAuth, (req, res) => {
+    this.app.post('/api/v1/web3/contracts', localAuth, (req, res) => {
       const { network, addresses } = req.body;
       if (!network || !addresses) {
         res.status(400).json({ error: 'Network and addresses required' });
@@ -909,7 +1018,7 @@ export class ApiServer {
     });
 
     // Get node hardware info for blockchain registration
-    this.app.get('/api/v1/web3/node-capabilities', requireAuth, async (req, res) => {
+    this.app.get('/api/v1/web3/node-capabilities', localAuth, async (req, res) => {
       const os = require('os');
       const cpus = os.cpus();
       const totalMem = os.totalmem();
@@ -969,7 +1078,7 @@ export class ApiServer {
     // ============ On-Chain Node Verification Routes ============
 
     // Verify and link an on-chain node
-    this.app.post('/api/v1/web3/nodes/verify', requireAuth, async (req, res) => {
+    this.app.post('/api/v1/web3/nodes/verify', localAuth, async (req, res) => {
       const { onChainNodeId, walletAddress, signature, challenge, localNodeId } = req.body;
 
       if (!onChainNodeId || !walletAddress || !signature || !challenge || !localNodeId) {
@@ -1038,7 +1147,7 @@ export class ApiServer {
     });
 
     // Get on-chain verified nodes
-    this.app.get('/api/v1/web3/nodes/verified', requireAuth, (req, res) => {
+    this.app.get('/api/v1/web3/nodes/verified', localAuth, (req, res) => {
       const nodes = Array.from(this.onChainNodes.values()).map(n => ({
         onChainNodeId: n.nodeId,
         walletAddress: n.walletAddress,
@@ -1051,7 +1160,7 @@ export class ApiServer {
     });
 
     // Report compute time for a node (called after job completion)
-    this.app.post('/api/v1/web3/nodes/:localNodeId/compute', requireAuth, (req, res) => {
+    this.app.post('/api/v1/web3/nodes/:localNodeId/compute', localAuth, (req, res) => {
       const localNodeId = req.params.localNodeId as string;
       const { seconds } = req.body;
 
@@ -1077,7 +1186,7 @@ export class ApiServer {
     });
 
     // Get pending compute time to report
-    this.app.get('/api/v1/web3/nodes/:localNodeId/pending-compute', requireAuth, (req, res) => {
+    this.app.get('/api/v1/web3/nodes/:localNodeId/pending-compute', localAuth, (req, res) => {
       const localNodeId = req.params.localNodeId as string;
       const record = this.onChainNodes.get(localNodeId);
 
@@ -1095,7 +1204,7 @@ export class ApiServer {
     });
 
     // Unlink an on-chain node
-    this.app.delete('/api/v1/web3/nodes/:localNodeId', requireAuth, (req, res) => {
+    this.app.delete('/api/v1/web3/nodes/:localNodeId', localAuth, (req, res) => {
       const localNodeId = req.params.localNodeId as string;
       const existed = this.onChainNodes.delete(localNodeId);
 
@@ -1110,7 +1219,7 @@ export class ApiServer {
 
     // Submit compute report to blockchain
     // Note: This requires the reporter wallet to be an authorized reporter on the contract
-    this.app.post('/api/v1/web3/nodes/:localNodeId/report', requireAuth, async (req, res) => {
+    this.app.post('/api/v1/web3/nodes/:localNodeId/report', localAuth, async (req, res) => {
       const localNodeId = req.params.localNodeId as string;
       const { privateKey } = req.body; // Reporter's private key (should be an authorized reporter)
 
@@ -1168,7 +1277,7 @@ export class ApiServer {
     });
 
     // Get all on-chain stats (for dashboard)
-    this.app.get('/api/v1/web3/stats', requireAuth, async (req, res) => {
+    this.app.get('/api/v1/web3/stats', localAuth, async (req, res) => {
       try {
         await web3Service.initWithRpc('https://ethereum-sepolia-rpc.publicnode.com', 'sepolia');
 

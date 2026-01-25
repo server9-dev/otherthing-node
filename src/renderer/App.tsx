@@ -5,6 +5,7 @@ import { Dashboard } from './pages/Dashboard';
 import { NodeControl } from './pages/NodeControl';
 import { Settings } from './pages/Settings';
 import { WorkspacePage } from './pages/Workspace';
+import { WorkspaceDetailPage } from './pages/WorkspaceDetail';
 import { AgentsPage } from './pages/Agents';
 import { Marketplace } from './pages/Marketplace';
 import { ModuleProvider } from './context/ModuleContext';
@@ -139,7 +140,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/workspaces" element={<WorkspacePage />} />
-                <Route path="/workspace/:workspaceId" element={<WorkspacePage />} />
+                <Route path="/workspace/:workspaceId" element={<WorkspaceDetailPage />} />
                 <Route path="/agents" element={<AgentsPage />} />
                 <Route path="/workspace/:workspaceId/agents" element={<AgentsPage />} />
                 <Route path="/node" element={<NodeControl />} />
