@@ -1,0 +1,1345 @@
+/**
+ * Local API Server
+ *
+ * Express HTTP server embedded in the Node app.
+ * Provides the same API as the orchestrator but runs locally.
+ */
+
+import express, { Request, Response } from 'express';
+import cors from 'cors';
+import http from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
+import { v4 as uuidv4 } from 'uuid';
+
+import { WorkspaceManager, Workspace } from './services/workspace-manager';
+import { agentService, AgentExecution } from './services/agent-service';
+import {
+  requireAuth,
+  signup,
+  loginWithPassword,
+  logout,
+} from './middleware/auth';
+import { OllamaManager } from './ollama-manager';
+import { SandboxManager } from './sandbox-manager';
+import { IPFSManager } from './ipfs-manager';
+import { web3Service, CONTRACT_ADDRESSES } from './services/web3-service';
+
+const PORT = 8080;
+
+// Agent execution storage (matches UI's AgentExecution interface)
+interface AgentExecutionLocal {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  goal: string;
+  agentType: string;
+  model: string;
+  provider: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'blocked' | 'pulling_model';
+  progress: number;
+  progressMessage: string;
+  actions: Array<{
+    thought: string;
+    tool?: string;
+    input?: string;
+    output?: string;
+  }>;
+  result?: string;
+  error?: string;
+  securityAlerts?: string[];
+  tokensUsed: number;
+  iterations: number;
+  createdAt: string;
+  completedAt?: string;
+  computeSource?: 'local' | 'cloud';
+  nodeId?: string;
+  modelPulled?: boolean;
+  taskCategory?: string;
+  sandboxCid?: string;
+}
+
+// On-chain verified node tracking
+interface OnChainNodeRecord {
+  nodeId: string;          // bytes32 from blockchain
+  walletAddress: string;   // Owner's wallet
+  localNodeId: string;     // Local node ID
+  verifiedAt: string;      // ISO timestamp
+  computeSeconds: number;  // Accumulated compute time to report
+  lastReported: string;    // Last time we reported to chain
+}
+
+export class ApiServer {
+  private app: express.Application;
+  private server: http.Server | null = null;
+  private wss: WebSocketServer | null = null;
+  private workspaceManager: WorkspaceManager;
+  private ollamaManager: OllamaManager | null = null;
+  private sandboxManager: SandboxManager | null = null;
+  private ipfsManager: IPFSManager | null = null;
+  private agentsWsClients: Map<string, Set<WebSocket>> = new Map();
+  private agentExecutions: Map<string, AgentExecutionLocal> = new Map();
+  // On-chain node tracking
+  private onChainNodes: Map<string, OnChainNodeRecord> = new Map(); // keyed by localNodeId
+  private computeReportInterval: NodeJS.Timeout | null = null;
+
+  constructor() {
+    this.app = express();
+    this.workspaceManager = new WorkspaceManager();
+    this.setupMiddleware();
+    this.setupRoutes();
+  }
+
+  setManagers(
+    ollama: OllamaManager | null,
+    sandbox: SandboxManager | null,
+    ipfs: IPFSManager | null
+  ): void {
+    this.ollamaManager = ollama;
+    this.sandboxManager = sandbox;
+    this.ipfsManager = ipfs;
+    agentService.setManagers(ollama, sandbox);
+  }
+
+  private setupMiddleware(): void {
+    // Allow all origins for local development
+    this.app.use(cors({
+      origin: true,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+    }));
+    this.app.use(express.json());
+  }
+
+  private setupRoutes(): void {
+    // Health Check
+    this.app.get('/health', (req, res) => {
+      res.json({ status: 'healthy', version: '1.0.0', mode: 'local' });
+    });
+
+    // Auth Endpoints
+    this.app.post('/api/v1/auth/signup', async (req, res) => {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        res.status(400).json({ error: 'Username and password required' });
+        return;
+      }
+      const result = await signup(username, password);
+      if (!result.success) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+      res.status(201).json({ token: result.token, user: result.user });
+    });
+
+    this.app.post('/api/v1/auth/login', async (req, res) => {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        res.status(400).json({ error: 'Username and password required' });
+        return;
+      }
+      const result = await loginWithPassword(username, password);
+      if (!result.success) {
+        res.status(401).json({ error: result.error });
+        return;
+      }
+      res.json({ token: result.token, user: result.user });
+    });
+
+    this.app.post('/api/v1/auth/logout', (req, res) => {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        logout(authHeader.slice(7));
+      }
+      res.json({ success: true });
+    });
+
+    this.app.get('/api/v1/auth/me', requireAuth, (req, res) => {
+      const session = (req as any).session;
+      res.json({ authenticated: true, userId: session.userId, username: session.username });
+    });
+
+    // Workspace Endpoints
+    this.app.get('/api/v1/workspaces', requireAuth, (req, res) => {
+      const session = (req as any).session;
+      const workspaces = this.workspaceManager.getUserWorkspaces(session.userId);
+      res.json({ workspaces });
+    });
+
+    this.app.post('/api/v1/workspaces', requireAuth, (req, res) => {
+      const session = (req as any).session;
+      const { name, description } = req.body;
+      if (!name) {
+        res.status(400).json({ error: 'Name is required' });
+        return;
+      }
+      const workspace = this.workspaceManager.createWorkspace(
+        name,
+        description || '',
+        session.userId,
+        session.username,
+        true
+      );
+      res.status(201).json(workspace);
+    });
+
+    this.app.get('/api/v1/workspaces/:id', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const workspace = this.workspaceManager.getWorkspace(workspaceId);
+      if (!workspace) {
+        res.status(404).json({ error: 'Workspace not found' });
+        return;
+      }
+      res.json({ workspace });
+    });
+
+    this.app.delete('/api/v1/workspaces/:id', requireAuth, (req, res) => {
+      const session = (req as any).session;
+      const workspaceId = req.params.id as string;
+      const workspace = this.workspaceManager.getWorkspace(workspaceId);
+      if (!workspace) {
+        res.status(404).json({ error: 'Workspace not found' });
+        return;
+      }
+      if (workspace.ownerId !== session.userId) {
+        res.status(403).json({ error: 'Only owner can delete workspace' });
+        return;
+      }
+      this.workspaceManager.deleteWorkspace(workspaceId, session.userId);
+      res.json({ success: true });
+    });
+
+    // Agent Endpoints (AgentExecution - running agents with goals)
+    this.app.get('/api/v1/workspaces/:id/agents', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const agents = Array.from(this.agentExecutions.values())
+        .filter(a => a.workspaceId === workspaceId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      res.json({ agents });
+    });
+
+    this.app.post('/api/v1/workspaces/:id/agents', requireAuth, async (req, res) => {
+      const workspaceId = req.params.id as string;
+      const session = (req as any).session;
+      const { goal, agentType, model, provider, preferLocal } = req.body;
+
+      if (!goal) {
+        res.status(400).json({ error: 'Goal is required' });
+        return;
+      }
+
+      // Get available models from Ollama
+      let availableModels: string[] = [];
+      let selectedModel = model || '';
+      let selectedProvider = provider || 'ollama';
+
+      if (this.ollamaManager) {
+        try {
+          const status = await this.ollamaManager.getStatus();
+          availableModels = (status.models || []).map(m => m.name);
+          // Auto-select a model if not specified
+          if (!selectedModel && availableModels.length > 0) {
+            selectedModel = availableModels.find(m => m.includes('llama') || m.includes('qwen')) || availableModels[0];
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
+      if (!selectedModel) {
+        selectedModel = 'llama3.2:3b';
+      }
+
+      // Create agent execution
+      const execution: AgentExecutionLocal = {
+        id: uuidv4(),
+        workspaceId,
+        userId: session.userId,
+        goal,
+        agentType: agentType || 'react',
+        model: selectedModel,
+        provider: selectedProvider,
+        status: 'pending',
+        progress: 0,
+        progressMessage: 'Starting agent...',
+        actions: [],
+        tokensUsed: 0,
+        iterations: 0,
+        createdAt: new Date().toISOString(),
+        computeSource: 'local',
+        nodeId: 'local-node',
+        modelPulled: availableModels.includes(selectedModel),
+      };
+
+      this.agentExecutions.set(execution.id, execution);
+
+      // Start the agent execution in the background
+      this.runAgentExecution(execution);
+
+      res.status(201).json({ agent: execution });
+    });
+
+    // Agent analyze endpoint (stub - returns mock analysis)
+    this.app.post('/api/v1/workspaces/:id/agents/analyze', requireAuth, async (req, res) => {
+      const { goal } = req.body;
+
+      // Get available models from Ollama
+      let models: string[] = [];
+      if (this.ollamaManager) {
+        try {
+          const status = await this.ollamaManager.getStatus();
+          models = (status.models || []).map(m => m.name);
+        } catch {
+          // Ignore
+        }
+      }
+
+      // Pick a model (prefer smaller ones for simple tasks)
+      const defaultModel = models.find(m => m.includes('llama') || m.includes('qwen')) || models[0] || 'llama3.2:3b';
+
+      // Return analysis in the format UI expects
+      res.json({
+        category: 'general',
+        complexity: 'medium',
+        estimatedSteps: 5,
+        recommendation: {
+          provider: 'ollama',
+          model: defaultModel,
+          needsPull: !models.includes(defaultModel),
+        },
+      });
+    });
+
+    // Agent scan endpoint (stub - returns mock security scan)
+    this.app.post('/api/v1/workspaces/:id/agents/scan', requireAuth, (req, res) => {
+      const { goal } = req.body;
+      // Return a stub scan response (UI expects 'alerts' not 'warnings')
+      res.json({
+        safe: true,
+        alerts: [],
+        blockedPatterns: [],
+        sanitizedGoal: goal || '',
+      });
+    });
+
+    this.app.get('/api/v1/workspaces/:id/agents/:agentId', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const agentId = req.params.agentId as string;
+      const execution = this.agentExecutions.get(agentId);
+      if (!execution || execution.workspaceId !== workspaceId) {
+        res.status(404).json({ error: 'Agent not found' });
+        return;
+      }
+      res.json({ agent: execution });
+    });
+
+    this.app.delete('/api/v1/workspaces/:id/agents/:agentId', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const agentId = req.params.agentId as string;
+      const execution = this.agentExecutions.get(agentId);
+      if (!execution || execution.workspaceId !== workspaceId) {
+        res.status(404).json({ error: 'Agent not found' });
+        return;
+      }
+      // Mark as failed/cancelled
+      execution.status = 'failed';
+      execution.error = 'Cancelled by user';
+      execution.completedAt = new Date().toISOString();
+      res.json({ success: true });
+    });
+
+    // Tasks storage (in-memory)
+    const tasksStore: Map<string, any[]> = new Map();
+
+    // Tasks Endpoints
+    this.app.get('/api/v1/workspaces/:id/tasks', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const tasks = tasksStore.get(workspaceId) || [];
+      res.json({ tasks });
+    });
+
+    this.app.post('/api/v1/workspaces/:id/tasks', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const task = {
+        id: req.body.id || uuidv4(),
+        title: req.body.title || '',
+        description: req.body.description || '',
+        status: req.body.status || 'todo',
+        priority: req.body.priority || 'medium',
+        createdAt: req.body.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      if (!tasksStore.has(workspaceId)) {
+        tasksStore.set(workspaceId, []);
+      }
+      tasksStore.get(workspaceId)!.push(task);
+      res.status(201).json({ task });
+    });
+
+    this.app.patch('/api/v1/workspaces/:id/tasks/:taskId', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const taskId = req.params.taskId as string;
+      const tasks = tasksStore.get(workspaceId) || [];
+      const taskIndex = tasks.findIndex(t => t.id === taskId);
+      if (taskIndex === -1) {
+        res.status(404).json({ error: 'Task not found' });
+        return;
+      }
+      tasks[taskIndex] = { ...tasks[taskIndex], ...req.body, updatedAt: new Date().toISOString() };
+      res.json({ task: tasks[taskIndex] });
+    });
+
+    this.app.delete('/api/v1/workspaces/:id/tasks/:taskId', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const taskId = req.params.taskId as string;
+      const tasks = tasksStore.get(workspaceId) || [];
+      const taskIndex = tasks.findIndex(t => t.id === taskId);
+      if (taskIndex === -1) {
+        res.status(404).json({ error: 'Task not found' });
+        return;
+      }
+      tasks.splice(taskIndex, 1);
+      res.json({ success: true });
+    });
+
+    // Workspace Nodes Endpoints
+    this.app.get('/api/v1/workspaces/:id/nodes', requireAuth, async (req, res) => {
+      const os = require('os');
+      const cpus = os.cpus();
+      const totalMem = os.totalmem();
+
+      // Check for GPU info from Ollama if available
+      let gpuCount = 0;
+      const gpus: Array<{ model: string; vramMb: number }> = [];
+
+      // Return the local node in the format UI expects (WorkspaceNode interface)
+      res.json({
+        nodes: [{
+          id: 'local-node',
+          hostname: os.hostname(),
+          status: 'online' as const,
+          capabilities: {
+            cpuCores: cpus.length,
+            memoryMb: Math.round(totalMem / 1024 / 1024),
+            gpuCount,
+            gpus,
+          },
+          resourceLimits: null,
+          remoteControlEnabled: false,
+          reputation: 100,
+        }],
+      });
+    });
+
+    this.app.post('/api/v1/workspaces/:id/nodes/add-by-key', requireAuth, (req, res) => {
+      res.status(501).json({ error: 'Node sharing not yet implemented in local mode' });
+    });
+
+    // API Keys storage (in-memory)
+    const apiKeysStore: Map<string, any[]> = new Map();
+
+    // API Keys Endpoints
+    this.app.get('/api/v1/workspaces/:id/api-keys', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const apiKeys = apiKeysStore.get(workspaceId) || [];
+      res.json({ apiKeys });
+    });
+
+    this.app.post('/api/v1/workspaces/:id/api-keys', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const session = (req as any).session;
+      const { provider, name, key } = req.body;
+
+      if (!key) {
+        res.status(400).json({ error: 'API key is required' });
+        return;
+      }
+
+      // Mask the key (show first 4 and last 4 chars)
+      const maskedKey = key.length > 8
+        ? `${key.slice(0, 4)}...${key.slice(-4)}`
+        : '****';
+
+      const apiKey = {
+        id: uuidv4(),
+        provider: provider || 'custom',
+        name: name || 'API Key',
+        maskedKey,
+        addedBy: session.username,
+        addedAt: new Date().toISOString(),
+      };
+
+      if (!apiKeysStore.has(workspaceId)) {
+        apiKeysStore.set(workspaceId, []);
+      }
+      apiKeysStore.get(workspaceId)!.push(apiKey);
+      res.status(201).json({ apiKey });
+    });
+
+    this.app.delete('/api/v1/workspaces/:id/api-keys/:keyId', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const keyId = req.params.keyId as string;
+      const keys = apiKeysStore.get(workspaceId) || [];
+      const keyIndex = keys.findIndex(k => k.id === keyId);
+      if (keyIndex === -1) {
+        res.status(404).json({ error: 'API key not found' });
+        return;
+      }
+      keys.splice(keyIndex, 1);
+      res.json({ success: true });
+    });
+
+    // Flows storage (in-memory)
+    const flowsStore: Map<string, any[]> = new Map();
+
+    // Flows Endpoints
+    this.app.get('/api/v1/workspaces/:id/flows', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const flows = flowsStore.get(workspaceId) || [];
+      res.json({ flows });
+    });
+
+    this.app.post('/api/v1/workspaces/:id/flows', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const session = (req as any).session;
+      const flow = {
+        id: uuidv4(),
+        name: req.body.name || 'Untitled Flow',
+        description: req.body.description || '',
+        flow: req.body.flow || { nodes: [], connections: [] },
+        createdBy: session.username,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      if (!flowsStore.has(workspaceId)) {
+        flowsStore.set(workspaceId, []);
+      }
+      flowsStore.get(workspaceId)!.push(flow);
+      res.status(201).json({ flow });
+    });
+
+    this.app.delete('/api/v1/workspaces/:id/flows/:flowId', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const flowId = req.params.flowId as string;
+      const flows = flowsStore.get(workspaceId) || [];
+      const flowIndex = flows.findIndex(f => f.id === flowId);
+      if (flowIndex === -1) {
+        res.status(404).json({ error: 'Flow not found' });
+        return;
+      }
+      flows.splice(flowIndex, 1);
+      res.json({ success: true });
+    });
+
+    // Repos storage (in-memory)
+    const reposStore: Map<string, any[]> = new Map();
+
+    // Repos Endpoints
+    this.app.get('/api/v1/workspaces/:id/repos', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const repos = reposStore.get(workspaceId) || [];
+      res.json({ repos });
+    });
+
+    this.app.post('/api/v1/workspaces/:id/repos', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const session = (req as any).session;
+      const repo = {
+        id: uuidv4(),
+        url: req.body.url || '',
+        name: req.body.name || 'unknown',
+        status: 'pending',
+        addedBy: session.username,
+        addedAt: new Date().toISOString(),
+      };
+      if (!reposStore.has(workspaceId)) {
+        reposStore.set(workspaceId, []);
+      }
+      reposStore.get(workspaceId)!.push(repo);
+      res.status(201).json({ repo });
+    });
+
+    this.app.post('/api/v1/workspaces/:id/repos/:repoId/analyze', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const repoId = req.params.repoId as string;
+      const repos = reposStore.get(workspaceId) || [];
+      const repo = repos.find(r => r.id === repoId);
+      if (!repo) {
+        res.status(404).json({ error: 'Repository not found' });
+        return;
+      }
+      // Update repo status
+      repo.status = 'analyzing';
+      // Return mock analysis (actual analysis would be done by on-bored tool)
+      res.json({
+        analysis: {
+          repoName: repo.name,
+          primaryLanguage: 'TypeScript',
+          totalCommits: 0,
+          contributors: [],
+          techStack: [],
+          topFiles: [],
+        },
+      });
+      // Mark as ready after a delay (simulate analysis)
+      setTimeout(() => {
+        repo.status = 'ready';
+        repo.analyzedAt = new Date().toISOString();
+      }, 1000);
+    });
+
+    this.app.delete('/api/v1/workspaces/:id/repos/:repoId', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const repoId = req.params.repoId as string;
+      const repos = reposStore.get(workspaceId) || [];
+      const repoIndex = repos.findIndex(r => r.id === repoId);
+      if (repoIndex === -1) {
+        res.status(404).json({ error: 'Repository not found' });
+        return;
+      }
+      repos.splice(repoIndex, 1);
+      res.json({ success: true });
+    });
+
+    // Storage Files storage (in-memory with content)
+    const storageStore: Map<string, any[]> = new Map();
+    const storageContent: Map<string, string> = new Map();
+
+    // Storage Files Endpoints
+    this.app.get('/api/v1/workspaces/:id/storage/files', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const files = storageStore.get(workspaceId) || [];
+      res.json({ files });
+    });
+
+    this.app.post('/api/v1/workspaces/:id/storage/upload', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const session = (req as any).session;
+      const { content, filename, mimeType } = req.body;
+
+      if (!content) {
+        res.status(400).json({ error: 'Content is required' });
+        return;
+      }
+
+      // Generate a mock CID
+      const cid = `Qm${uuidv4().replace(/-/g, '').slice(0, 44)}`;
+      const file = {
+        id: uuidv4(),
+        cid,
+        name: filename || 'untitled.txt',
+        size: Buffer.byteLength(content, 'utf8'),
+        mimeType: mimeType || 'text/plain',
+        addedBy: session.username,
+        addedAt: new Date().toISOString(),
+        pinned: true,
+      };
+
+      // Store the content
+      storageContent.set(cid, content);
+
+      if (!storageStore.has(workspaceId)) {
+        storageStore.set(workspaceId, []);
+      }
+      storageStore.get(workspaceId)!.push(file);
+      res.status(201).json({ file });
+    });
+
+    this.app.get('/api/v1/workspaces/:id/storage/content/:cid', requireAuth, (req, res) => {
+      const cid = req.params.cid as string;
+      const content = storageContent.get(cid);
+      if (!content) {
+        res.status(404).json({ error: 'Content not found' });
+        return;
+      }
+      res.json({ content });
+    });
+
+    this.app.delete('/api/v1/workspaces/:id/storage/files/:fileId', requireAuth, (req, res) => {
+      const workspaceId = req.params.id as string;
+      const fileId = req.params.fileId as string;
+      const files = storageStore.get(workspaceId) || [];
+      const fileIndex = files.findIndex(f => f.id === fileId);
+      if (fileIndex === -1) {
+        res.status(404).json({ error: 'File not found' });
+        return;
+      }
+      const file = files[fileIndex];
+      // Remove content
+      storageContent.delete(file.cid);
+      files.splice(fileIndex, 1);
+      res.json({ success: true });
+    });
+
+    // Usage Summary Endpoint
+    this.app.get('/api/v1/workspaces/:id/usage/summary', requireAuth, (req, res) => {
+      // Return in the format UI expects (UsageSummary interface)
+      res.json({
+        summary: {
+          totalCostCents: 0,
+          totalTokens: 0,
+          totalComputeSeconds: 0,
+          byProvider: {},
+          byFlow: {},
+        },
+      });
+    });
+
+    // Compute Summary Endpoint
+    this.app.get('/api/v1/workspaces/:id/compute', requireAuth, async (req, res) => {
+      const cpus = require('os').cpus();
+      const totalMem = require('os').totalmem();
+      const freeMem = require('os').freemem();
+
+      // Get local models from Ollama if available
+      let localModels: string[] = [];
+      if (this.ollamaManager) {
+        try {
+          const status = await this.ollamaManager.getStatus();
+          localModels = (status.models || []).map(m => m.name);
+        } catch {
+          // Ignore errors
+        }
+      }
+
+      res.json({
+        compute: {
+          nodes: 1,
+          totalCores: cpus.length,
+          totalMemoryMb: Math.round(totalMem / 1024 / 1024),
+          availableMemoryMb: Math.round(freeMem / 1024 / 1024),
+          gpus: 0,
+          // Fields expected by the UI
+          localNodes: 1,
+          localModels,
+          hasLocalCompute: true,
+          hasCloudKeys: false,
+          cloudProviders: [],
+        },
+      });
+    });
+
+    // Sandbox Endpoints
+    this.app.get('/api/v1/workspaces/:id/sandbox/files', requireAuth, async (req, res) => {
+      const workspaceId = req.params.id as string;
+      const dirPath = (req.query.path as string) || '.';
+      if (!this.sandboxManager) {
+        res.status(503).json({ error: 'Sandbox not configured' });
+        return;
+      }
+      const result = await this.sandboxManager.listFiles(workspaceId, dirPath);
+      if (result.success) {
+        res.json({ files: result.files });
+      } else {
+        res.status(500).json({ error: result.error });
+      }
+    });
+
+    this.app.get('/api/v1/workspaces/:id/sandbox/file', requireAuth, async (req, res) => {
+      const workspaceId = req.params.id as string;
+      const filePath = (req.query.path as string) || '';
+      if (!this.sandboxManager) {
+        res.status(503).json({ error: 'Sandbox not configured' });
+        return;
+      }
+      const result = await this.sandboxManager.readFile(workspaceId, filePath);
+      if (result.success) {
+        res.json({ content: result.content });
+      } else {
+        res.status(404).json({ error: result.error });
+      }
+    });
+
+    this.app.put('/api/v1/workspaces/:id/sandbox/file', requireAuth, async (req, res) => {
+      const workspaceId = req.params.id as string;
+      const filePath = (req.query.path as string) || req.body.path || '';
+      const { content } = req.body;
+      if (!this.sandboxManager) {
+        res.status(503).json({ error: 'Sandbox not configured' });
+        return;
+      }
+      const result = await this.sandboxManager.writeFile(workspaceId, filePath, content);
+      if (result.success) {
+        res.json({ success: true, path: result.path });
+      } else {
+        res.status(500).json({ error: result.error });
+      }
+    });
+
+    this.app.delete('/api/v1/workspaces/:id/sandbox/file', requireAuth, async (req, res) => {
+      const workspaceId = req.params.id as string;
+      const filePath = (req.query.path as string) || '';
+      if (!this.sandboxManager) {
+        res.status(503).json({ error: 'Sandbox not configured' });
+        return;
+      }
+      const result = await this.sandboxManager.deleteFile(workspaceId, filePath);
+      if (result.success) {
+        res.json({ success: true });
+      } else {
+        res.status(500).json({ error: result.error });
+      }
+    });
+
+    // Models Endpoint
+    this.app.get('/api/v1/models', requireAuth, async (req, res) => {
+      if (!this.ollamaManager) {
+        res.json({ models: [], provider: 'none' });
+        return;
+      }
+      const status = await this.ollamaManager.getStatus();
+      res.json({
+        models: status.models || [],
+        provider: 'ollama',
+        endpoint: status.endpoint,
+      });
+    });
+
+    // Stats Endpoint
+    this.app.get('/api/v1/stats', requireAuth, (req, res) => {
+      res.json({
+        mode: 'local',
+        nodes: 1,
+        ollama: this.ollamaManager ? 'available' : 'unavailable',
+        sandbox: this.sandboxManager ? 'available' : 'unavailable',
+        ipfs: this.ipfsManager ? 'available' : 'unavailable',
+      });
+    });
+
+    // Nodes Endpoint (compatibility)
+    this.app.get('/api/v1/nodes', requireAuth, (req, res) => {
+      res.json({
+        nodes: [{
+          id: 'local',
+          name: 'Local Node',
+          status: 'online',
+          ollama: this.ollamaManager ? 'available' : 'unavailable',
+          sandbox: this.sandboxManager ? 'available' : 'unavailable',
+        }],
+      });
+    });
+
+    // My Nodes Endpoint (for web UI node detection)
+    this.app.get('/api/v1/my-nodes', requireAuth, async (req, res) => {
+      try {
+        // Get hardware info from Ollama manager or use defaults
+        const ollamaStatus = this.ollamaManager ? await this.ollamaManager.getStatus() : null;
+
+        res.json({
+          nodes: [{
+            id: 'local-node',
+            available: true,
+            workspaceIds: [],
+            workspaceNames: ['Local'],
+            isOwner: true,
+            isUnclaimed: false,
+            capabilities: {
+              cpu: {
+                model: 'Local CPU',
+                cores: require('os').cpus().length,
+                threads: require('os').cpus().length,
+              },
+              memory: {
+                total_mb: Math.round(require('os').totalmem() / 1024 / 1024),
+                available_mb: Math.round(require('os').freemem() / 1024 / 1024),
+              },
+              gpus: [],
+              storage: {
+                total_gb: 500,
+                available_gb: 100,
+              },
+              ollama: ollamaStatus?.running ? {
+                installed: true,
+                models: ollamaStatus.models || [],
+                endpoint: ollamaStatus.endpoint || 'http://localhost:11434',
+              } : undefined,
+            },
+          }],
+        });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Assign node to workspaces (stub - in local mode, node is always available)
+    this.app.post('/api/v1/nodes/:nodeId/workspaces', requireAuth, (req, res) => {
+      const nodeId = req.params.nodeId as string;
+      const { workspaceIds } = req.body;
+      // In local mode, we just acknowledge the request
+      // UI expects { workspaces: [...] } with .length property
+      const assignedWorkspaces = (workspaceIds || []).map((id: string) => ({ id, name: 'Workspace' }));
+      res.json({
+        success: true,
+        nodeId,
+        workspaces: assignedWorkspaces,
+        message: 'Node assignment acknowledged (local mode)',
+      });
+    });
+
+    // ============ Web3 / Blockchain Endpoints ============
+
+    // Get contract addresses for the frontend
+    this.app.get('/api/v1/web3/contracts', (req, res) => {
+      res.json({
+        sepolia: CONTRACT_ADDRESSES.sepolia,
+        localhost: CONTRACT_ADDRESSES.localhost,
+        // Include ABIs endpoint info
+        abiEndpoints: {
+          OTT: '/api/v1/web3/abi/ott',
+          NodeRegistry: '/api/v1/web3/abi/node-registry',
+          TaskEscrow: '/api/v1/web3/abi/task-escrow',
+        },
+      });
+    });
+
+    // Set contract addresses (after deployment)
+    this.app.post('/api/v1/web3/contracts', requireAuth, (req, res) => {
+      const { network, addresses } = req.body;
+      if (!network || !addresses) {
+        res.status(400).json({ error: 'Network and addresses required' });
+        return;
+      }
+      if (network !== 'sepolia' && network !== 'localhost') {
+        res.status(400).json({ error: 'Invalid network' });
+        return;
+      }
+      const networkKey = network as 'sepolia' | 'localhost';
+      CONTRACT_ADDRESSES[networkKey] = addresses;
+      res.json({ success: true, network, addresses });
+    });
+
+    // Get node hardware info for blockchain registration
+    this.app.get('/api/v1/web3/node-capabilities', requireAuth, async (req, res) => {
+      const os = require('os');
+      const cpus = os.cpus();
+      const totalMem = os.totalmem();
+
+      // Check Ollama status
+      let hasOllama = false;
+      if (this.ollamaManager) {
+        try {
+          const status = await this.ollamaManager.getStatus();
+          hasOllama = status.running;
+        } catch {
+          // Ignore
+        }
+      }
+
+      // Check Sandbox status
+      const hasSandbox = this.sandboxManager !== null;
+
+      res.json({
+        capabilities: {
+          cpuCores: cpus.length,
+          memoryMb: Math.round(totalMem / 1024 / 1024),
+          gpuCount: 0, // TODO: Detect GPU
+          gpuVramMb: 0,
+          hasOllama,
+          hasSandbox,
+        },
+        hostname: os.hostname(),
+        platform: os.platform(),
+      });
+    });
+
+    // Supported networks info
+    this.app.get('/api/v1/web3/networks', (req, res) => {
+      res.json({
+        networks: [
+          {
+            name: 'Sepolia Testnet',
+            chainId: 11155111,
+            rpcUrl: 'https://rpc.sepolia.org',
+            explorer: 'https://sepolia.etherscan.io',
+            faucet: 'https://sepoliafaucet.com',
+            currency: 'ETH',
+          },
+          {
+            name: 'Localhost (Hardhat)',
+            chainId: 31337,
+            rpcUrl: 'http://127.0.0.1:8545',
+            explorer: null,
+            faucet: null,
+            currency: 'ETH',
+          },
+        ],
+      });
+    });
+
+    // ============ On-Chain Node Verification Routes ============
+
+    // Verify and link an on-chain node
+    this.app.post('/api/v1/web3/nodes/verify', requireAuth, async (req, res) => {
+      const { onChainNodeId, walletAddress, signature, challenge, localNodeId } = req.body;
+
+      if (!onChainNodeId || !walletAddress || !signature || !challenge || !localNodeId) {
+        res.status(400).json({ error: 'Missing required fields: onChainNodeId, walletAddress, signature, challenge, localNodeId' });
+        return;
+      }
+
+      try {
+        // Initialize web3 service for verification
+        await web3Service.initWithRpc('https://ethereum-sepolia-rpc.publicnode.com', 'sepolia');
+
+        // Verify the signature
+        const signatureValid = web3Service.verifySignature(challenge, signature, walletAddress);
+        if (!signatureValid) {
+          res.status(401).json({ error: 'Invalid signature - wallet ownership not proven' });
+          return;
+        }
+
+        // Verify node ownership on-chain
+        const isOwner = await web3Service.verifyNodeOwnership(onChainNodeId, walletAddress);
+        if (!isOwner) {
+          res.status(401).json({ error: 'Wallet does not own this on-chain node' });
+          return;
+        }
+
+        // Verify node is eligible (active, not slashed)
+        const isEligible = await web3Service.isNodeEligible(onChainNodeId);
+        if (!isEligible) {
+          res.status(400).json({ error: 'On-chain node is not eligible (inactive or slashed)' });
+          return;
+        }
+
+        // Get node details from chain
+        const nodeDetails = await web3Service.getNode(onChainNodeId);
+
+        // Store the verified node
+        const record: OnChainNodeRecord = {
+          nodeId: onChainNodeId,
+          walletAddress,
+          localNodeId,
+          verifiedAt: new Date().toISOString(),
+          computeSeconds: 0,
+          lastReported: new Date().toISOString(),
+        };
+        this.onChainNodes.set(localNodeId, record);
+
+        console.log(`[ApiServer] On-chain node verified: ${onChainNodeId.slice(0, 16)}... for local node ${localNodeId}`);
+
+        res.json({
+          success: true,
+          verified: true,
+          onChainNodeId,
+          walletAddress,
+          nodeDetails: {
+            stakedAmount: web3Service.formatOtt(nodeDetails.stakedAmount),
+            pendingRewards: web3Service.formatOtt(nodeDetails.pendingRewards),
+            reputation: Number(nodeDetails.reputation) / 100,
+            isActive: nodeDetails.isActive,
+            capabilities: nodeDetails.capabilities,
+          },
+        });
+      } catch (err) {
+        console.error('[ApiServer] On-chain verification error:', err);
+        res.status(500).json({ error: 'Failed to verify on-chain node', details: String(err) });
+      }
+    });
+
+    // Get on-chain verified nodes
+    this.app.get('/api/v1/web3/nodes/verified', requireAuth, (req, res) => {
+      const nodes = Array.from(this.onChainNodes.values()).map(n => ({
+        onChainNodeId: n.nodeId,
+        walletAddress: n.walletAddress,
+        localNodeId: n.localNodeId,
+        verifiedAt: n.verifiedAt,
+        computeSeconds: n.computeSeconds,
+        lastReported: n.lastReported,
+      }));
+      res.json({ nodes });
+    });
+
+    // Report compute time for a node (called after job completion)
+    this.app.post('/api/v1/web3/nodes/:localNodeId/compute', requireAuth, (req, res) => {
+      const localNodeId = req.params.localNodeId as string;
+      const { seconds } = req.body;
+
+      if (typeof seconds !== 'number' || seconds < 0) {
+        res.status(400).json({ error: 'Invalid seconds value' });
+        return;
+      }
+
+      const record = this.onChainNodes.get(localNodeId);
+      if (!record) {
+        res.status(404).json({ error: 'Node not verified on-chain' });
+        return;
+      }
+
+      record.computeSeconds += seconds;
+      console.log(`[ApiServer] Added ${seconds}s compute time to node ${localNodeId}, total: ${record.computeSeconds}s`);
+
+      res.json({
+        success: true,
+        localNodeId,
+        totalComputeSeconds: record.computeSeconds,
+      });
+    });
+
+    // Get pending compute time to report
+    this.app.get('/api/v1/web3/nodes/:localNodeId/pending-compute', requireAuth, (req, res) => {
+      const localNodeId = req.params.localNodeId as string;
+      const record = this.onChainNodes.get(localNodeId);
+
+      if (!record) {
+        res.status(404).json({ error: 'Node not verified on-chain' });
+        return;
+      }
+
+      res.json({
+        localNodeId,
+        onChainNodeId: record.nodeId,
+        pendingComputeSeconds: record.computeSeconds,
+        lastReported: record.lastReported,
+      });
+    });
+
+    // Unlink an on-chain node
+    this.app.delete('/api/v1/web3/nodes/:localNodeId', requireAuth, (req, res) => {
+      const localNodeId = req.params.localNodeId as string;
+      const existed = this.onChainNodes.delete(localNodeId);
+
+      if (!existed) {
+        res.status(404).json({ error: 'Node not found' });
+        return;
+      }
+
+      console.log(`[ApiServer] On-chain node unlinked: ${localNodeId}`);
+      res.json({ success: true });
+    });
+
+    // Submit compute report to blockchain
+    // Note: This requires the reporter wallet to be an authorized reporter on the contract
+    this.app.post('/api/v1/web3/nodes/:localNodeId/report', requireAuth, async (req, res) => {
+      const localNodeId = req.params.localNodeId as string;
+      const { privateKey } = req.body; // Reporter's private key (should be an authorized reporter)
+
+      if (!privateKey) {
+        res.status(400).json({ error: 'Private key required for blockchain transaction' });
+        return;
+      }
+
+      const record = this.onChainNodes.get(localNodeId);
+      if (!record) {
+        res.status(404).json({ error: 'Node not verified on-chain' });
+        return;
+      }
+
+      if (record.computeSeconds <= 0) {
+        res.json({ success: true, message: 'No compute time to report', computeSeconds: 0 });
+        return;
+      }
+
+      try {
+        // Initialize web3 with the reporter's private key
+        await web3Service.initWithPrivateKey(
+          privateKey,
+          'https://ethereum-sepolia-rpc.publicnode.com',
+          'sepolia'
+        );
+
+        // Check if this wallet is an authorized reporter
+        const isAuthorized = await web3Service.isAuthorizedReporter(web3Service.address!);
+        if (!isAuthorized) {
+          res.status(403).json({ error: 'Wallet is not an authorized reporter on the contract' });
+          return;
+        }
+
+        // Report compute time to blockchain
+        const tx = await web3Service.reportCompute(record.nodeId, record.computeSeconds);
+        const receipt = await tx.wait();
+
+        const reportedSeconds = record.computeSeconds;
+        record.computeSeconds = 0;
+        record.lastReported = new Date().toISOString();
+
+        console.log(`[ApiServer] Reported ${reportedSeconds}s compute time for node ${record.nodeId.slice(0, 16)}... tx: ${receipt?.hash}`);
+
+        res.json({
+          success: true,
+          onChainNodeId: record.nodeId,
+          reportedComputeSeconds: reportedSeconds,
+          txHash: receipt?.hash,
+        });
+      } catch (err) {
+        console.error('[ApiServer] Failed to report compute:', err);
+        res.status(500).json({ error: 'Failed to submit compute report', details: String(err) });
+      }
+    });
+
+    // Get all on-chain stats (for dashboard)
+    this.app.get('/api/v1/web3/stats', requireAuth, async (req, res) => {
+      try {
+        await web3Service.initWithRpc('https://ethereum-sepolia-rpc.publicnode.com', 'sepolia');
+
+        const totalVerifiedNodes = this.onChainNodes.size;
+        let totalPendingCompute = 0;
+        for (const record of this.onChainNodes.values()) {
+          totalPendingCompute += record.computeSeconds;
+        }
+
+        res.json({
+          verifiedNodes: totalVerifiedNodes,
+          pendingComputeSeconds: totalPendingCompute,
+          contracts: CONTRACT_ADDRESSES.sepolia,
+        });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to get stats', details: String(err) });
+      }
+    });
+  }
+
+  private async runAgentExecution(execution: AgentExecutionLocal): Promise<void> {
+    try {
+      // Update status to running
+      execution.status = 'running';
+      execution.progressMessage = 'Agent is thinking...';
+      this.broadcastAgentProgress(execution);
+
+      // Use the agentService to run the execution
+      const result = await agentService.executeAgent(
+        execution.workspaceId,
+        execution.id,
+        execution.goal,
+        {
+          model: execution.model,
+          maxIterations: 10,
+        }
+      );
+
+      // Subscribe to updates from agentService
+      agentService.subscribe(execution.workspaceId, (exec) => {
+        // Update our local execution with the service's execution data
+        const localExec = this.agentExecutions.get(exec.id);
+        if (localExec) {
+          localExec.status = exec.status as AgentExecutionLocal['status'];
+          localExec.progress = exec.progress || 0;
+          localExec.progressMessage = exec.progressMessage || '';
+          localExec.result = exec.result;
+          localExec.error = exec.error;
+          localExec.tokensUsed = exec.tokensUsed || 0;
+          localExec.iterations = exec.iterations || 0;
+          if (exec.status === 'completed' || exec.status === 'failed') {
+            localExec.completedAt = new Date().toISOString();
+          }
+          this.broadcastAgentProgress(localExec);
+        }
+      });
+
+    } catch (err) {
+      execution.status = 'failed';
+      execution.error = String(err);
+      execution.completedAt = new Date().toISOString();
+      this.broadcastAgentProgress(execution);
+    }
+  }
+
+  private broadcastAgentProgress(execution: AgentExecutionLocal): void {
+    const clients = this.agentsWsClients.get(execution.workspaceId);
+    if (!clients) return;
+
+    const message = JSON.stringify({
+      type: 'agent_progress',
+      agentId: execution.id,
+      progress: execution.progress,
+      message: execution.progressMessage,
+      action: execution.status === 'completed' || execution.status === 'failed' ? {
+        final: true,
+        result: { status: execution.status, result: execution.result },
+      } : undefined,
+    });
+
+    for (const client of clients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    }
+  }
+
+  private broadcastAgentUpdate(workspaceId: string, execution: AgentExecution): void {
+    const clients = this.agentsWsClients.get(workspaceId);
+    if (!clients) return;
+
+    const message = JSON.stringify({
+      type: 'agent_update',
+      execution: {
+        id: execution.id,
+        agentId: execution.agentId,
+        status: execution.status,
+        result: execution.result,
+        error: execution.error,
+        tokensUsed: execution.tokensUsed,
+        iterations: execution.iterations,
+        sandboxCid: execution.sandboxCid,
+        computeInfo: execution.computeInfo,
+      },
+    });
+
+    for (const client of clients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    }
+  }
+
+  start(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.server = http.createServer(this.app);
+
+      this.wss = new WebSocketServer({ server: this.server, path: '/ws/agents' });
+
+      this.wss.on('connection', (ws) => {
+        console.log('[ApiServer] WebSocket client connected');
+
+        ws.on('message', (data) => {
+          try {
+            const msg = JSON.parse(data.toString());
+            if (msg.type === 'subscribe' && msg.workspaceId) {
+              if (!this.agentsWsClients.has(msg.workspaceId)) {
+                this.agentsWsClients.set(msg.workspaceId, new Set());
+              }
+              this.agentsWsClients.get(msg.workspaceId)!.add(ws);
+              console.log(`[ApiServer] Client subscribed to workspace ${msg.workspaceId}`);
+            }
+          } catch (err) {
+            console.error('[ApiServer] Invalid WebSocket message:', err);
+          }
+        });
+
+        ws.on('close', () => {
+          for (const clients of this.agentsWsClients.values()) {
+            clients.delete(ws);
+          }
+        });
+      });
+
+      this.server.listen(PORT, () => {
+        console.log(`[ApiServer] HTTP API listening on http://localhost:${PORT}`);
+        console.log(`[ApiServer] WebSocket at ws://localhost:${PORT}/ws/agents`);
+        resolve();
+      });
+
+      this.server.on('error', (err: any) => {
+        if (err.code === 'EADDRINUSE') {
+          console.log(`[ApiServer] Port ${PORT} in use, trying ${PORT + 1}`);
+          this.server?.listen(PORT + 1);
+        } else {
+          reject(err);
+        }
+      });
+    });
+  }
+
+  stop(): Promise<void> {
+    return new Promise((resolve) => {
+      if (this.wss) this.wss.close();
+      if (this.server) {
+        this.server.close(() => resolve());
+      } else {
+        resolve();
+      }
+    });
+  }
+}
+
+export const apiServer = new ApiServer();

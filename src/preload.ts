@@ -25,6 +25,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopNode: () => ipcRenderer.invoke('stop-node'),
   getWorkspaces: () => ipcRenderer.invoke('get-workspaces'),
 
+  // Network connection (optional - node works locally without this)
+  connectToNetwork: (config: { url?: string; workspaceIds?: string[] }) =>
+    ipcRenderer.invoke('connect-to-network', config),
+  disconnectFromNetwork: () => ipcRenderer.invoke('disconnect-from-network'),
+  isNetworkConnected: () => ipcRenderer.invoke('is-network-connected'),
+
   // Resource limits
   getResourceLimits: () => ipcRenderer.invoke('get-resource-limits'),
   setResourceLimits: (limits: ResourceLimits) => ipcRenderer.invoke('set-resource-limits', limits),
@@ -143,6 +149,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimizeWindow: () => ipcRenderer.invoke('window-minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window-maximize'),
   closeWindow: () => ipcRenderer.invoke('window-close'),
+  toggleFullscreen: () => ipcRenderer.invoke('window-fullscreen'),
+  isFullscreen: (): Promise<boolean> => ipcRenderer.invoke('window-is-fullscreen'),
+  onFullscreenChange: (callback: (isFullscreen: boolean) => void) => {
+    ipcRenderer.on('fullscreen-change', (_, isFullscreen) => callback(isFullscreen));
+  },
 
   // Remote control opt-in
   getRemoteControlEnabled: () => ipcRenderer.invoke('get-remote-control'),

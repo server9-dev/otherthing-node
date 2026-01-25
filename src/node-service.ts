@@ -4,6 +4,7 @@ import { HardwareDetector, HardwareInfo } from './hardware';
 import { IPFSManager, IPFSStats } from './ipfs-manager';
 import { OllamaManager, OllamaStatus, OllamaModel } from './ollama-manager';
 import { SandboxManager, FileInfo, ExecutionResult } from './sandbox-manager';
+import { Web3Service } from './services/web3-service';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -24,6 +25,9 @@ interface NodeConfig {
   resourceLimits: ResourceLimits;
   remoteControlEnabled: boolean;
   storagePath: string | null;  // Selected drive/path for shared storage
+  // On-chain credentials (optional - for blockchain-verified nodes)
+  onChainNodeId: string | null;  // bytes32 nodeId from NodeRegistry contract
+  walletAddress: string | null;  // Wallet address that owns the on-chain node
 }
 
 interface Job {
@@ -48,13 +52,13 @@ interface ResourceLimits {
 
 export class NodeService extends EventEmitter {
   private ws: WebSocket | null = null;
-  private running = false;
-  private connected = false;
+  private running = false;        // Local services running
+  private networkConnected = false;  // Connected to remote network (optional)
   private nodeId: string;
   private shareKey: string; // Share key for adding this node to workspaces (locally generated)
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
-  private orchestratorUrl: string;
+  private orchestratorUrl: string | null = null;
   private workspaceIds: string[] = [];
   private hardware: HardwareInfo | null = null;
   private currentJobs: Map<string, Job> = new Map();
@@ -67,10 +71,14 @@ export class NodeService extends EventEmitter {
   private ollamaManager: OllamaManager;
   private sandboxManager: SandboxManager | null = null;
   private joinedWorkspaces: Set<string> = new Set(); // Track workspaces we've joined to avoid duplicate processing
+  // On-chain integration
+  private onChainNodeId: string | null = null;
+  private walletAddress: string | null = null;
+  private web3Service: Web3Service;
+  private jobComputeTime: Map<string, number> = new Map(); // Track compute time per job
 
-  constructor(defaultOrchestratorUrl: string) {
+  constructor() {
     super();
-    this.orchestratorUrl = defaultOrchestratorUrl;
 
     // Load or create config with persistent share key
     this.configPath = path.join(app.getPath('userData'), 'node-config.json');
@@ -80,6 +88,11 @@ export class NodeService extends EventEmitter {
     this.resourceLimits = config.resourceLimits;
     this.remoteControlEnabled = config.remoteControlEnabled;
     this.storagePath = config.storagePath;
+    this.onChainNodeId = config.onChainNodeId;
+    this.walletAddress = config.walletAddress;
+
+    // Initialize Web3 service
+    this.web3Service = new Web3Service();
 
     // Initialize IPFS manager and Sandbox manager if storage path is set
     if (this.storagePath) {
@@ -142,6 +155,8 @@ export class NodeService extends EventEmitter {
           resourceLimits: config.resourceLimits || {},
           remoteControlEnabled: config.remoteControlEnabled ?? false,
           storagePath: config.storagePath ?? null,
+          onChainNodeId: config.onChainNodeId ?? null,
+          walletAddress: config.walletAddress ?? null,
         };
       }
     } catch (err) {
@@ -155,6 +170,8 @@ export class NodeService extends EventEmitter {
       resourceLimits: {},
       remoteControlEnabled: false,
       storagePath: null,
+      onChainNodeId: null,
+      walletAddress: null,
     };
     this.saveConfig(config);
     return config;
@@ -168,6 +185,8 @@ export class NodeService extends EventEmitter {
         resourceLimits: this.resourceLimits,
         remoteControlEnabled: this.remoteControlEnabled,
         storagePath: this.storagePath,
+        onChainNodeId: this.onChainNodeId,
+        walletAddress: this.walletAddress,
       };
       fs.writeFileSync(this.configPath, JSON.stringify(toSave, null, 2));
     } catch (err) {
@@ -180,15 +199,17 @@ export class NodeService extends EventEmitter {
     this.emit('log', { time, message, type });
   }
 
-  async start(orchestratorUrl: string, workspaceIds: string[]): Promise<void> {
+  /**
+   * Start the node in local mode (no network connection).
+   * This initializes hardware detection and local services.
+   */
+  async startLocal(): Promise<void> {
     if (this.running) {
-      this.log('Node is already running', 'error');
+      this.log('Node is already running', 'info');
       return;
     }
 
-    this.orchestratorUrl = orchestratorUrl;
-    this.workspaceIds = workspaceIds;
-
+    this.log('Starting in local mode...', 'info');
     this.log('Detecting hardware...', 'info');
     this.hardware = await HardwareDetector.detect();
     this.log(`CPU: ${this.hardware.cpu.model} (${this.hardware.cpu.cores} cores)`, 'info');
@@ -200,13 +221,73 @@ export class NodeService extends EventEmitter {
     }
 
     this.running = true;
+    this.log('Local node ready', 'success');
     this.emit('statusChange');
+  }
 
+  /**
+   * Connect to a remote orchestrator network (optional).
+   * The node works fully locally without this.
+   */
+  async connectToNetwork(orchestratorUrl: string, workspaceIds: string[] = []): Promise<void> {
+    if (this.networkConnected) {
+      this.log('Already connected to network', 'error');
+      return;
+    }
+
+    // Ensure local mode is started first
+    if (!this.running) {
+      await this.startLocal();
+    }
+
+    this.orchestratorUrl = orchestratorUrl;
+    this.workspaceIds = workspaceIds;
+
+    this.log(`Connecting to network: ${orchestratorUrl}...`, 'info');
     await this.connect();
   }
 
+  /**
+   * Disconnect from the network but keep local services running.
+   */
+  disconnectFromNetwork(): void {
+    if (!this.networkConnected) {
+      this.log('Not connected to network', 'info');
+      return;
+    }
+
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+
+    this.networkConnected = false;
+    this.orchestratorUrl = null;
+    this.log('Disconnected from network (local mode active)', 'info');
+    this.emit('statusChange');
+  }
+
+  /**
+   * Legacy start method for backwards compatibility.
+   * Now calls startLocal + connectToNetwork.
+   */
+  async start(orchestratorUrl: string, workspaceIds: string[]): Promise<void> {
+    await this.startLocal();
+    await this.connectToNetwork(orchestratorUrl, workspaceIds);
+  }
+
   private async connect(): Promise<void> {
-    if (!this.running) return;
+    if (!this.running || !this.orchestratorUrl) return;
 
     this.log(`Connecting to ${this.orchestratorUrl}...`, 'info');
 
@@ -214,14 +295,32 @@ export class NodeService extends EventEmitter {
       this.ws = new WebSocket(this.orchestratorUrl);
 
       this.ws.on('open', async () => {
-        this.log('WebSocket connected', 'success');
-        this.connected = true;
+        this.log('Connected to network', 'success');
+        this.networkConnected = true;
         this.emit('statusChange');
 
         // Send registration with persistent nodeId and shareKey
         // Get Ollama status for registration
         const ollamaStatus = await this.ollamaManager.getStatus();
         this.log(`Ollama status: installed=${ollamaStatus.installed}, running=${ollamaStatus.running}, models=${ollamaStatus.models?.length || 0}`, 'info');
+
+        // Generate on-chain authentication if we have an on-chain node linked
+        let onChainAuth: { nodeId: string; walletAddress: string; signature: string; challenge: string } | undefined;
+        if (this.onChainNodeId && this.walletAddress && this.web3Service.connected) {
+          try {
+            const challenge = Web3Service.generateChallenge(this.onChainNodeId);
+            const signature = await this.web3Service.signChallenge(challenge);
+            onChainAuth = {
+              nodeId: this.onChainNodeId,
+              walletAddress: this.walletAddress,
+              signature,
+              challenge,
+            };
+            this.log(`On-chain auth generated for node ${this.onChainNodeId.slice(0, 10)}...`, 'info');
+          } catch (err) {
+            this.log(`Failed to generate on-chain auth: ${err}`, 'error');
+          }
+        }
 
         const registerMsg = {
           type: 'register',
@@ -270,6 +369,8 @@ export class NodeService extends EventEmitter {
           workspace_ids: this.workspaceIds,
           resource_limits: this.resourceLimits,
           remote_control_enabled: this.remoteControlEnabled,
+          // On-chain authentication (if linked)
+          on_chain_auth: onChainAuth,
         };
 
         this.ws?.send(JSON.stringify(registerMsg));
@@ -455,7 +556,9 @@ export class NodeService extends EventEmitter {
 
             case 'sandbox_write_file':
               // Write a file to workspace sandbox
+              this.log(`Sandbox write request: ${msg.path}`, 'info');
               if (!this.sandboxManager) {
+                this.log('Sandbox write failed: no storage path configured', 'error');
                 this.ws?.send(JSON.stringify({
                   type: 'sandbox_write_file_result',
                   request_id: msg.request_id,
@@ -470,12 +573,14 @@ export class NodeService extends EventEmitter {
                   msg.path,
                   msg.content
                 );
+                this.log(`Sandbox write result: ${result.success ? 'success' : result.error}`, result.success ? 'info' : 'error');
                 this.ws?.send(JSON.stringify({
                   type: 'sandbox_write_file_result',
                   request_id: msg.request_id,
                   ...result,
                 }));
               } catch (err) {
+                this.log(`Sandbox write error: ${err}`, 'error');
                 this.ws?.send(JSON.stringify({
                   type: 'sandbox_write_file_result',
                   request_id: msg.request_id,
@@ -742,8 +847,8 @@ export class NodeService extends EventEmitter {
       });
 
       this.ws.on('close', () => {
-        this.log('Disconnected from orchestrator', 'info');
-        this.connected = false;
+        this.log('Disconnected from network', 'info');
+        this.networkConnected = false;
         // Keep nodeId - it's a persistent local value
         this.emit('statusChange');
 
@@ -752,8 +857,8 @@ export class NodeService extends EventEmitter {
           this.heartbeatInterval = null;
         }
 
-        // Attempt to reconnect if still running
-        if (this.running) {
+        // Attempt to reconnect if we have an orchestrator URL set
+        if (this.running && this.orchestratorUrl) {
           this.log('Reconnecting in 5 seconds...', 'info');
           this.reconnectTimeout = setTimeout(() => this.connect(), 5000);
         }
@@ -846,21 +951,10 @@ export class NodeService extends EventEmitter {
     if (!this.running) return;
 
     this.log('Stopping node...', 'info');
-    this.running = false;
 
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    // Disconnect from network if connected
+    if (this.networkConnected) {
+      this.disconnectFromNetwork();
     }
 
     // Stop IPFS daemon
@@ -868,7 +962,7 @@ export class NodeService extends EventEmitter {
       await this.ipfsManager.stop();
     }
 
-    this.connected = false;
+    this.running = false;
     // Keep nodeId and shareKey - they are persistent local values
     this.log('Node stopped', 'info');
     this.emit('statusChange');
@@ -879,7 +973,11 @@ export class NodeService extends EventEmitter {
   }
 
   isConnected(): boolean {
-    return this.connected;
+    return this.networkConnected;
+  }
+
+  isNetworkConnected(): boolean {
+    return this.networkConnected;
   }
 
   getNodeId(): string {
@@ -1192,5 +1290,139 @@ export class NodeService extends EventEmitter {
       return 0;
     }
     return this.sandboxManager.getSandboxSize(workspaceId);
+  }
+
+  // Manager getters for API server
+  getOllamaManager(): OllamaManager | null {
+    return this.ollamaManager;
+  }
+
+  getSandboxManager(): SandboxManager | null {
+    return this.sandboxManager;
+  }
+
+  getIPFSManager(): IPFSManager | null {
+    return this.ipfsManager;
+  }
+
+  // ============ On-Chain Node Methods ============
+
+  /**
+   * Link this node to an on-chain registered node.
+   * The wallet must have already registered the node on-chain via the desktop UI.
+   */
+  async linkOnChainNode(onChainNodeId: string, walletAddress: string, privateKey: string): Promise<boolean> {
+    try {
+      // Initialize web3 service with private key for signing
+      await this.web3Service.initWithPrivateKey(
+        privateKey,
+        'https://ethereum-sepolia-rpc.publicnode.com',
+        'sepolia'
+      );
+
+      // Verify ownership
+      const isOwner = await this.web3Service.verifyNodeOwnership(onChainNodeId, walletAddress);
+      if (!isOwner) {
+        this.log(`Wallet ${walletAddress} does not own on-chain node ${onChainNodeId}`, 'error');
+        return false;
+      }
+
+      // Verify node is eligible
+      const isEligible = await this.web3Service.isNodeEligible(onChainNodeId);
+      if (!isEligible) {
+        this.log(`On-chain node ${onChainNodeId} is not eligible (inactive or slashed)`, 'error');
+        return false;
+      }
+
+      // Save the on-chain credentials
+      this.onChainNodeId = onChainNodeId;
+      this.walletAddress = walletAddress;
+      this.saveConfig();
+
+      this.log(`Linked to on-chain node ${onChainNodeId.slice(0, 10)}...`, 'success');
+      this.emit('statusChange');
+      return true;
+    } catch (err) {
+      this.log(`Failed to link on-chain node: ${err}`, 'error');
+      return false;
+    }
+  }
+
+  /**
+   * Unlink from on-chain node
+   */
+  unlinkOnChainNode(): void {
+    this.onChainNodeId = null;
+    this.walletAddress = null;
+    this.web3Service.disconnect();
+    this.saveConfig();
+    this.log('Unlinked from on-chain node', 'info');
+    this.emit('statusChange');
+  }
+
+  /**
+   * Get on-chain node info
+   */
+  async getOnChainNodeInfo(): Promise<any | null> {
+    if (!this.onChainNodeId) return null;
+    try {
+      return await this.web3Service.getNode(this.onChainNodeId);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Check if node is linked to on-chain
+   */
+  isOnChainLinked(): boolean {
+    return this.onChainNodeId !== null && this.walletAddress !== null;
+  }
+
+  /**
+   * Get on-chain node ID
+   */
+  getOnChainNodeId(): string | null {
+    return this.onChainNodeId;
+  }
+
+  /**
+   * Get linked wallet address
+   */
+  getWalletAddress(): string | null {
+    return this.walletAddress;
+  }
+
+  /**
+   * Get Web3 service for advanced operations
+   */
+  getWeb3Service(): Web3Service {
+    return this.web3Service;
+  }
+
+  /**
+   * Track compute time for a job (for on-chain reporting)
+   */
+  trackJobComputeTime(jobId: string, seconds: number): void {
+    const current = this.jobComputeTime.get(jobId) || 0;
+    this.jobComputeTime.set(jobId, current + seconds);
+  }
+
+  /**
+   * Get total compute time tracked
+   */
+  getTotalComputeTime(): number {
+    let total = 0;
+    for (const seconds of this.jobComputeTime.values()) {
+      total += seconds;
+    }
+    return total;
+  }
+
+  /**
+   * Clear compute time tracking (after reporting to chain)
+   */
+  clearComputeTime(): void {
+    this.jobComputeTime.clear();
   }
 }

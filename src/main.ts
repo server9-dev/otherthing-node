@@ -1,35 +1,48 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, globalShortcut, session } from 'electron';
 import * as path from 'path';
 import { NodeService } from './node-service';
 import { HardwareDetector } from './hardware';
 import { createServer } from 'http';
+import { apiServer } from './api-server';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let nodeService: NodeService | null = null;
 let httpServer: ReturnType<typeof createServer> | null = null;
 
-const DEFAULT_ORCHESTRATOR = 'ws://localhost:8080/ws/node';
+const DEFAULT_NETWORK_URL = 'ws://155.117.46.228/ws/node';  // Optional network connection
 const HTTP_PORT = 3847;
+
+const isDev = !app.isPackaged;
+const VITE_DEV_SERVER_URL = 'http://localhost:1420';
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
-    minWidth: 600,
-    minHeight: 500,
-    backgroundColor: '#0a0a0f',
+    width: 1200,
+    height: 800,
+    minWidth: 800,
+    minHeight: 600,
+    backgroundColor: '#09090b',
     titleBarStyle: 'hiddenInset',
-    frame: process.platform === 'darwin' ? true : false,
+    frame: true,
+    fullscreenable: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      webSecurity: false, // Required for WalletConnect
+      allowRunningInsecureContent: true,
     },
     icon: path.join(__dirname, '../assets/icon.png'),
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  // In development, load Vite dev server; in production, load built files
+  if (isDev) {
+    mainWindow.loadURL(VITE_DEV_SERVER_URL);
+    // DevTools can be opened manually with Ctrl+Shift+I if needed
+  } else {
+    mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  }
 
   mainWindow.on('close', (event) => {
     if (nodeService?.isRunning()) {
@@ -40,6 +53,23 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Notify renderer of fullscreen state changes
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow?.webContents.send('fullscreen-change', true);
+  });
+
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow?.webContents.send('fullscreen-change', false);
+  });
+
+  // Register F11 for fullscreen toggle
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F11' && input.type === 'keyDown') {
+      mainWindow?.setFullScreen(!mainWindow.isFullScreen());
+      event.preventDefault();
+    }
   });
 }
 
@@ -153,11 +183,48 @@ function startHttpServer() {
 }
 
 app.whenReady().then(async () => {
+  // Remove CSP headers to allow WalletConnect
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = { ...details.responseHeaders };
+    // Remove CSP headers that might block WalletConnect
+    delete responseHeaders['content-security-policy'];
+    delete responseHeaders['Content-Security-Policy'];
+    delete responseHeaders['x-content-security-policy'];
+    delete responseHeaders['X-Content-Security-Policy'];
+    callback({ responseHeaders });
+  });
+
+  // Allow loading WalletConnect verification URLs
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    callback({ cancel: false });
+  });
+
   createWindow();
   const updateTray = createTray();
   startHttpServer();
 
-  nodeService = new NodeService(DEFAULT_ORCHESTRATOR);
+  nodeService = new NodeService();
+
+  // Auto-start in local mode
+  nodeService.startLocal().then(() => {
+    console.log('[Main] Node started in local mode');
+
+    // Set managers for API server after node is initialized
+    apiServer.setManagers(
+      nodeService!.getOllamaManager(),
+      nodeService!.getSandboxManager(),
+      nodeService!.getIPFSManager()
+    );
+  }).catch(err => {
+    console.error('[Main] Failed to start node:', err);
+  });
+
+  // Start the API server (embedded orchestrator)
+  apiServer.start().then(() => {
+    console.log('[Main] API server started on http://localhost:8080');
+  }).catch(err => {
+    console.error('[Main] Failed to start API server:', err);
+  });
 
   nodeService.on('statusChange', () => {
     updateTray();
@@ -204,11 +271,12 @@ app.whenReady().then(async () => {
     };
   });
 
+  // Legacy start-node handler - now connects to network
   ipcMain.handle('start-node', async (_, { orchestratorUrl, workspaceIds }) => {
     if (!nodeService) return { success: false, error: 'Node service not initialized' };
 
     try {
-      await nodeService.start(orchestratorUrl || DEFAULT_ORCHESTRATOR, workspaceIds);
+      await nodeService.connectToNetwork(orchestratorUrl || DEFAULT_NETWORK_URL, workspaceIds);
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -224,6 +292,31 @@ app.whenReady().then(async () => {
     } catch (error) {
       return { success: false, error: String(error) };
     }
+  });
+
+  // New network handlers
+  ipcMain.handle('connect-to-network', async (_, { url, workspaceIds }) => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      await nodeService.connectToNetwork(url || DEFAULT_NETWORK_URL, workspaceIds || []);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('disconnect-from-network', () => {
+    if (!nodeService) return { success: false, error: 'Node service not initialized' };
+    try {
+      nodeService.disconnectFromNetwork();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('is-network-connected', () => {
+    return nodeService?.isNetworkConnected() ?? false;
   });
 
   ipcMain.handle('get-workspaces', async () => {
@@ -271,6 +364,16 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('window-close', () => {
     mainWindow?.close();
+  });
+
+  ipcMain.handle('window-fullscreen', () => {
+    if (mainWindow) {
+      mainWindow.setFullScreen(!mainWindow.isFullScreen());
+    }
+  });
+
+  ipcMain.handle('window-is-fullscreen', () => {
+    return mainWindow?.isFullScreen() ?? false;
   });
 
   // Remote control opt-in
@@ -572,5 +675,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   await nodeService?.stop();
+  await apiServer.stop();
   httpServer?.close();
 });

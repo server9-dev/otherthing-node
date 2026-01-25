@@ -564,6 +564,11 @@ export class SandboxManager extends EventEmitter {
       const manifest: Record<string, string> = {};
       const files = await this.listFilesRecursive(workspaceId);
 
+      // Don't sync if there are no files
+      if (files.length === 0 || files.every(f => f.isDirectory)) {
+        return { success: false, error: 'No files to sync' };
+      }
+
       // Add each file to IPFS and record CID
       for (const file of files) {
         if (!file.isDirectory) {

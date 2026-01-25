@@ -1301,18 +1301,18 @@
           </svg>
         </div>
         <div class="status-text">
-          <h2 id="status-title">Node Offline</h2>
-          <p id="status-subtitle">Click Start to connect</p>
+          <h2 id="status-title">Node Starting...</h2>
+          <p id="status-subtitle">Initializing local services</p>
         </div>
       </div>
       <div class="status-indicators">
         <div class="indicator">
-          <div id="orch-dot" class="indicator-dot"></div>
-          <span>Orchestrator</span>
+          <div id="local-dot" class="indicator-dot online"></div>
+          <span>Local</span>
         </div>
         <div class="indicator">
-          <div id="conn-dot" class="indicator-dot"></div>
-          <span>WebSocket</span>
+          <div id="network-dot" class="indicator-dot"></div>
+          <span>Network</span>
         </div>
       </div>
     </div>
@@ -1334,20 +1334,37 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           Node Control
         </div>
+        <span style="font-size:0.7rem;color:var(--success);">Local Mode Active</span>
       </div>
       <div class="card-body">
-        <div style="margin-bottom: 12px;">
-          <label style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Orchestrator URL</label>
-          <input type="text" id="orchestrator-url" value="ws://localhost:8080/ws/node"
-            style="width: 100%; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-family: var(--font-mono); font-size: 0.85rem;"
-            placeholder="ws://localhost:8080/ws/node">
-          <div style="margin-top: 4px; font-size: 0.7rem; color: var(--text-muted);">
-            Local: ws://localhost:8080/ws/node | Production: ws://155.117.46.228/ws/node
+        <div style="padding: 12px; background: rgba(0,255,65,0.05); border: 1px solid rgba(0,255,65,0.2); border-radius: 8px; margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+            <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 8px var(--success);"></div>
+            <span style="font-size: 0.85rem; font-weight: 500;">Running Locally</span>
           </div>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin-left: 16px;">
+            API server at http://localhost:8080 — All features work without network
+          </p>
         </div>
-        <button id="start-btn" class="btn btn-start" disabled>Start Node</button>
-        <button id="stop-btn" class="btn btn-stop" style="display:none;">Stop Node</button>
-        <button id="open-dashboard-btn" class="btn-dashboard">
+
+        <div id="network-section" style="padding-top: 12px; border-top: 1px solid var(--border-subtle);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 0.8rem; color: var(--text-secondary);">Join Network (Optional)</span>
+            <span id="network-status-text" style="font-size: 0.7rem; color: var(--text-muted);">Not connected</span>
+          </div>
+          <div id="network-url-section" style="margin-bottom: 12px;">
+            <input type="text" id="orchestrator-url" value="ws://155.117.46.228/ws/node"
+              style="width: 100%; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--text-primary); font-family: var(--font-mono); font-size: 0.8rem;"
+              placeholder="ws://155.117.46.228/ws/node">
+            <div style="margin-top: 4px; font-size: 0.65rem; color: var(--text-muted);">
+              Connect to share compute with others or access remote workspaces
+            </div>
+          </div>
+          <button id="join-network-btn" class="btn btn-start">Join Network</button>
+          <button id="leave-network-btn" class="btn btn-stop" style="display:none;">Leave Network</button>
+        </div>
+
+        <button id="open-dashboard-btn" class="btn-dashboard" style="margin-top: 16px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
             <polyline points="15 3 21 3 21 9"/>
@@ -1565,18 +1582,19 @@
       document.getElementById('hardware-info').innerHTML = '<div style="color:var(--error)">Error: electronAPI not available</div>';
     } else {
       const log = document.getElementById('log');
-      const startBtn = document.getElementById('start-btn');
-      const stopBtn = document.getElementById('stop-btn');
       const statusBanner = document.getElementById('status-banner');
       const statusIcon = document.getElementById('status-icon');
       const statusTitle = document.getElementById('status-title');
       const statusSubtitle = document.getElementById('status-subtitle');
-      const orchDot = document.getElementById('orch-dot');
-      const connDot = document.getElementById('conn-dot');
+      const localDot = document.getElementById('local-dot');
+      const networkDot = document.getElementById('network-dot');
       const shareKeyCard = document.getElementById('share-key-card');
       const shareKeyValue = document.getElementById('share-key-value');
       const copyKeyBtn = document.getElementById('copy-key-btn');
       const workspaceList = document.getElementById('workspace-list');
+      const joinNetworkBtn = document.getElementById('join-network-btn');
+      const leaveNetworkBtn = document.getElementById('leave-network-btn');
+      const networkStatusText = document.getElementById('network-status-text');
 
       function addLog(msg, type = 'info') {
         const entry = document.createElement('div');
@@ -1612,7 +1630,6 @@
         }
 
         document.getElementById('hardware-info').innerHTML = html;
-        startBtn.disabled = false;
 
         // Setup sliders
         document.getElementById('cpu-slider').max = hw.cpu.cores;
@@ -1634,66 +1651,85 @@
         document.getElementById('hardware-info').innerHTML = '<div style="color:var(--error)">Failed to detect hardware</div>';
       });
 
-      // Start node
-      startBtn.addEventListener('click', async () => {
-        startBtn.disabled = true;
-        addLog('Starting node...');
-        orchDot.className = 'indicator-dot connecting';
+      // Node is auto-started in local mode - update UI to reflect this
+      statusBanner.classList.add('connected');
+      statusIcon.classList.add('online');
+      statusTitle.textContent = 'Node Active';
+      statusSubtitle.textContent = 'Running locally on http://localhost:8080';
+      localDot.className = 'indicator-dot online';
+
+      // Join network (optional)
+      joinNetworkBtn.addEventListener('click', async () => {
+        joinNetworkBtn.disabled = true;
+        addLog('Joining network...');
+        networkDot.className = 'indicator-dot connecting';
+        networkStatusText.textContent = 'Connecting...';
         try {
           const orchestratorUrl = document.getElementById('orchestrator-url').value.trim();
           addLog(`Connecting to ${orchestratorUrl}...`);
-          const result = await window.electronAPI.startNode({ orchestratorUrl, workspaceIds: [] });
+          const result = await window.electronAPI.connectToNetwork({ url: orchestratorUrl, workspaceIds: [] });
           if (result.success) {
-            addLog('Node started', 'success');
-            startBtn.style.display = 'none';
-            stopBtn.style.display = 'block';
+            addLog('Joined network', 'success');
+            joinNetworkBtn.style.display = 'none';
+            leaveNetworkBtn.style.display = 'block';
+            networkStatusText.textContent = 'Connected';
+            networkStatusText.style.color = 'var(--success)';
           } else {
             addLog('Failed: ' + result.error, 'error');
-            startBtn.disabled = false;
-            orchDot.className = 'indicator-dot';
+            joinNetworkBtn.disabled = false;
+            networkDot.className = 'indicator-dot';
+            networkStatusText.textContent = 'Connection failed';
+            networkStatusText.style.color = 'var(--error)';
           }
         } catch (err) {
           addLog('Error: ' + err, 'error');
-          startBtn.disabled = false;
-          orchDot.className = 'indicator-dot';
+          joinNetworkBtn.disabled = false;
+          networkDot.className = 'indicator-dot';
+          networkStatusText.textContent = 'Error';
+          networkStatusText.style.color = 'var(--error)';
         }
       });
 
-      // Stop node
-      stopBtn.addEventListener('click', async () => {
-        stopBtn.disabled = true;
-        addLog('Stopping node...');
-        await window.electronAPI.stopNode();
-        addLog('Node stopped');
-        stopBtn.style.display = 'none';
-        startBtn.style.display = 'block';
-        startBtn.disabled = false;
-        stopBtn.disabled = false;
+      // Leave network
+      leaveNetworkBtn.addEventListener('click', async () => {
+        leaveNetworkBtn.disabled = true;
+        addLog('Leaving network...');
+        await window.electronAPI.disconnectFromNetwork();
+        addLog('Disconnected from network (local mode still active)');
+        leaveNetworkBtn.style.display = 'none';
+        joinNetworkBtn.style.display = 'block';
+        joinNetworkBtn.disabled = false;
+        leaveNetworkBtn.disabled = false;
 
-        statusBanner.classList.remove('connected');
-        statusIcon.classList.remove('online');
-        statusTitle.textContent = 'Node Offline';
-        statusSubtitle.textContent = 'Click Start to connect';
-        orchDot.className = 'indicator-dot';
-        connDot.className = 'indicator-dot';
-        shareKeyCard.classList.remove('visible');
-        workspaceList.innerHTML = '<div class="workspace-empty">Start node to see assigned workspaces</div>';
+        networkDot.className = 'indicator-dot';
+        networkStatusText.textContent = 'Not connected';
+        networkStatusText.style.color = 'var(--text-muted)';
       });
 
       // Status updates
       window.electronAPI.onNodeStatus(status => {
+        // Local mode is always on when app is running
         if (status.running) {
-          orchDot.className = 'indicator-dot online';
-          connDot.className = 'indicator-dot ' + (status.connected ? 'online' : 'connecting');
+          localDot.className = 'indicator-dot online';
+          statusBanner.classList.add('connected');
+          statusIcon.classList.add('online');
+          statusTitle.textContent = 'Node Active';
 
+          // Update network connection status
           if (status.connected) {
-            statusBanner.classList.add('connected');
-            statusIcon.classList.add('online');
-            statusTitle.textContent = 'Node Active';
-            statusSubtitle.textContent = status.nodeId || 'Connected to orchestrator';
+            networkDot.className = 'indicator-dot online';
+            statusSubtitle.textContent = status.nodeId ? `${status.nodeId} (networked)` : 'Connected to network';
+            networkStatusText.textContent = 'Connected';
+            networkStatusText.style.color = 'var(--success)';
+            joinNetworkBtn.style.display = 'none';
+            leaveNetworkBtn.style.display = 'block';
           } else {
-            statusTitle.textContent = 'Connecting...';
-            statusSubtitle.textContent = 'Establishing connection';
+            networkDot.className = 'indicator-dot';
+            statusSubtitle.textContent = 'Running locally on http://localhost:8080';
+            networkStatusText.textContent = 'Not connected';
+            networkStatusText.style.color = 'var(--text-muted)';
+            joinNetworkBtn.style.display = 'block';
+            leaveNetworkBtn.style.display = 'none';
           }
 
           if (status.shareKey) {
@@ -1703,14 +1739,13 @@
 
           updateWorkspaceDisplay(status.workspaceIds || []);
         } else {
+          // This shouldn't happen in normal operation since local mode auto-starts
+          localDot.className = 'indicator-dot';
+          networkDot.className = 'indicator-dot';
           statusBanner.classList.remove('connected');
           statusIcon.classList.remove('online');
-          statusTitle.textContent = 'Node Offline';
-          statusSubtitle.textContent = 'Click Start to connect';
-          orchDot.className = 'indicator-dot';
-          connDot.className = 'indicator-dot';
-          shareKeyCard.classList.remove('visible');
-          workspaceList.innerHTML = '<div class="workspace-empty">Start node to see assigned workspaces</div>';
+          statusTitle.textContent = 'Node Starting...';
+          statusSubtitle.textContent = 'Initializing local services';
         }
       });
 
