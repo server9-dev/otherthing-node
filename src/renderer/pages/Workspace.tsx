@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Plus, UserPlus, Copy, CheckCircle, Server,
-  Globe, Lock, LogOut, RefreshCw, Zap, ChevronRight, Wallet, AlertCircle
+  Globe, Lock, LogOut, RefreshCw, Zap, ChevronRight, Wallet, AlertCircle, Trash2
 } from 'lucide-react';
 import { CyberButton } from '../components';
 import { useWeb3, OnChainWorkspace } from '../context/Web3Context';
@@ -20,6 +20,7 @@ export function WorkspacePage() {
     joinWorkspaceWithCode,
     joinPublicWorkspace,
     leaveWorkspace,
+    deleteWorkspace,
     fetchPublicWorkspaces,
     setWorkspaceInviteCode,
     connectWallet,
@@ -165,6 +166,24 @@ export function WorkspacePage() {
       await leaveWorkspace(workspaceId);
     } catch (err: any) {
       setError(err.message || 'Failed to leave workspace');
+    }
+  };
+
+  const handleDeleteWorkspace = async (workspaceId: string) => {
+    if (!confirm('Are you sure you want to DELETE this workspace? This will remove it from the blockchain and cannot be undone.')) return;
+
+    setActionLoading(true);
+    try {
+      await deleteWorkspace(workspaceId);
+      // Remove invite code from localStorage
+      const updated = { ...inviteCodes };
+      delete updated[workspaceId];
+      setInviteCodes(updated);
+      localStorage.setItem('workspace-invite-codes', JSON.stringify(updated));
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete workspace');
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -393,7 +412,24 @@ export function WorkspacePage() {
                         </p>
                       </div>
                       <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
-                        {!isOwner && (
+                        {isOwner ? (
+                          <button
+                            onClick={() => handleDeleteWorkspace(ws.id)}
+                            disabled={actionLoading}
+                            style={{
+                              background: 'var(--bg-elevated)',
+                              border: '1px solid rgba(255, 0, 0, 0.3)',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '6px',
+                              cursor: actionLoading ? 'wait' : 'pointer',
+                              color: 'var(--error)',
+                              opacity: actionLoading ? 0.5 : 1,
+                            }}
+                            title="Delete workspace"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        ) : (
                           <button
                             onClick={() => handleLeaveWorkspace(ws.id)}
                             style={{

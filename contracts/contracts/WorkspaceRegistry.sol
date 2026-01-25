@@ -100,6 +100,11 @@ contract WorkspaceRegistry is Ownable, ReentrancyGuard {
         string description
     );
 
+    event WorkspaceDeleted(
+        bytes32 indexed workspaceId,
+        address indexed owner
+    );
+
     // ============ Errors ============
 
     error WorkspaceNotFound();
@@ -235,6 +240,54 @@ contract WorkspaceRegistry is Ownable, ReentrancyGuard {
         if (workspace.owner == msg.sender) revert CannotLeaveAsOwner();
 
         _removeMember(workspaceId, msg.sender);
+    }
+
+    /**
+     * @notice Delete a workspace (owner only)
+     * @param workspaceId The workspace to delete
+     */
+    function deleteWorkspace(bytes32 workspaceId) external nonReentrant {
+        Workspace storage workspace = workspaces[workspaceId];
+
+        if (!workspace.exists) revert WorkspaceNotFound();
+        if (workspace.owner != msg.sender) revert NotAuthorized();
+
+        // Remove all members
+        address[] memory members = workspaceMemberList[workspaceId];
+        for (uint256 i = 0; i < members.length; i++) {
+            address member = members[i];
+
+            // Remove from user's workspaces
+            bytes32[] storage userWs = userWorkspaces[member];
+            for (uint256 j = 0; j < userWs.length; j++) {
+                if (userWs[j] == workspaceId) {
+                    userWs[j] = userWs[userWs.length - 1];
+                    userWs.pop();
+                    break;
+                }
+            }
+
+            // Delete member record
+            delete workspaceMembers[workspaceId][member];
+        }
+
+        // Clear member list
+        delete workspaceMemberList[workspaceId];
+
+        // Remove from allWorkspaceIds
+        for (uint256 i = 0; i < allWorkspaceIds.length; i++) {
+            if (allWorkspaceIds[i] == workspaceId) {
+                allWorkspaceIds[i] = allWorkspaceIds[allWorkspaceIds.length - 1];
+                allWorkspaceIds.pop();
+                break;
+            }
+        }
+
+        // Mark as deleted (keep some data for history, but mark not exists)
+        workspace.exists = false;
+        workspaceCount--;
+
+        emit WorkspaceDeleted(workspaceId, msg.sender);
     }
 
     /**

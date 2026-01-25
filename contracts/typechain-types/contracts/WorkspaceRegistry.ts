@@ -76,6 +76,7 @@ export interface WorkspaceRegistryInterface extends Interface {
   getFunction(
     nameOrSignature:
       | "createWorkspace"
+      | "deleteWorkspace"
       | "getMember"
       | "getPublicWorkspaces"
       | "getUserWorkspaces"
@@ -107,12 +108,17 @@ export interface WorkspaceRegistryInterface extends Interface {
       | "MemberRoleChanged"
       | "OwnershipTransferred"
       | "WorkspaceCreated"
+      | "WorkspaceDeleted"
       | "WorkspaceUpdated"
   ): EventFragment;
 
   encodeFunctionData(
     functionFragment: "createWorkspace",
     values: [string, string, boolean, string]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "deleteWorkspace",
+    values: [BytesLike]
   ): string;
   encodeFunctionData(
     functionFragment: "getMember",
@@ -198,6 +204,10 @@ export interface WorkspaceRegistryInterface extends Interface {
 
   decodeFunctionResult(
     functionFragment: "createWorkspace",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "deleteWorkspace",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "getMember", data: BytesLike): Result;
@@ -377,6 +387,19 @@ export namespace WorkspaceCreatedEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace WorkspaceDeletedEvent {
+  export type InputTuple = [workspaceId: BytesLike, owner: AddressLike];
+  export type OutputTuple = [workspaceId: string, owner: string];
+  export interface OutputObject {
+    workspaceId: string;
+    owner: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export namespace WorkspaceUpdatedEvent {
   export type InputTuple = [
     workspaceId: BytesLike,
@@ -445,6 +468,12 @@ export interface WorkspaceRegistry extends BaseContract {
   createWorkspace: TypedContractMethod<
     [name: string, description: string, isPublic: boolean, inviteCode: string],
     [string],
+    "nonpayable"
+  >;
+
+  deleteWorkspace: TypedContractMethod<
+    [workspaceId: BytesLike],
+    [void],
     "nonpayable"
   >;
 
@@ -607,6 +636,9 @@ export interface WorkspaceRegistry extends BaseContract {
     [string],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "deleteWorkspace"
+  ): TypedContractMethod<[workspaceId: BytesLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "getMember"
   ): TypedContractMethod<
@@ -800,6 +832,13 @@ export interface WorkspaceRegistry extends BaseContract {
     WorkspaceCreatedEvent.OutputObject
   >;
   getEvent(
+    key: "WorkspaceDeleted"
+  ): TypedContractEvent<
+    WorkspaceDeletedEvent.InputTuple,
+    WorkspaceDeletedEvent.OutputTuple,
+    WorkspaceDeletedEvent.OutputObject
+  >;
+  getEvent(
     key: "WorkspaceUpdated"
   ): TypedContractEvent<
     WorkspaceUpdatedEvent.InputTuple,
@@ -872,6 +911,17 @@ export interface WorkspaceRegistry extends BaseContract {
       WorkspaceCreatedEvent.InputTuple,
       WorkspaceCreatedEvent.OutputTuple,
       WorkspaceCreatedEvent.OutputObject
+    >;
+
+    "WorkspaceDeleted(bytes32,address)": TypedContractEvent<
+      WorkspaceDeletedEvent.InputTuple,
+      WorkspaceDeletedEvent.OutputTuple,
+      WorkspaceDeletedEvent.OutputObject
+    >;
+    WorkspaceDeleted: TypedContractEvent<
+      WorkspaceDeletedEvent.InputTuple,
+      WorkspaceDeletedEvent.OutputTuple,
+      WorkspaceDeletedEvent.OutputObject
     >;
 
     "WorkspaceUpdated(bytes32,string,string)": TypedContractEvent<

@@ -610,6 +610,45 @@
       "artifacts": [
         "OTT"
       ]
+    },
+    "/mnt/d/github/node/contracts/contracts/WorkspaceRegistry.sol": {
+      "lastModificationDate": 1769359901145,
+      "contentHash": "2e6f059d644a3b5a44b92e6b2f2047ba",
+      "sourceName": "contracts/WorkspaceRegistry.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/access/Ownable.sol",
+        "@openzeppelin/contracts/utils/ReentrancyGuard.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "WorkspaceRegistry"
+      ]
     }
   }
 }

@@ -11,7 +11,7 @@ const CONTRACT_ADDRESSES: Record<string, { OTT: string; NodeRegistry: string; Ta
     OTT: '0x201333A5C882751a98E483f9B763DF4D8e5A1055',
     NodeRegistry: '0xFaCB01A565ea526FC8CAC87D5D4622983735e8F3',
     TaskEscrow: '0x246127F9743AC938baB7fc221546a785C880ad86',
-    WorkspaceRegistry: '0xe409937dcc6101225952F6723Ce46ba9fDe9f6cB',
+    WorkspaceRegistry: '0x8433285448DB684b9a37b4bc97DBDcd72e148DCa',
   },
   localhost: {
     OTT: '',
@@ -46,6 +46,7 @@ const WORKSPACE_REGISTRY_ABI = [
   'function joinPublicWorkspace(bytes32 workspaceId)',
   'function joinWithInviteCode(bytes32 workspaceId, string inviteCode)',
   'function leaveWorkspace(bytes32 workspaceId)',
+  'function deleteWorkspace(bytes32 workspaceId)',
   'function setInviteCode(bytes32 workspaceId, string newInviteCode)',
   'function getWorkspace(bytes32 workspaceId) view returns (tuple(bytes32 id, string name, string description, address owner, uint256 createdAt, bool isPublic, uint256 memberCount))',
   'function getWorkspaceMembers(bytes32 workspaceId) view returns (address[])',
@@ -171,6 +172,7 @@ interface Web3ContextType {
   joinWorkspaceWithCode: (workspaceId: string, inviteCode: string) => Promise<void>;
   joinPublicWorkspace: (workspaceId: string) => Promise<void>;
   leaveWorkspace: (workspaceId: string) => Promise<void>;
+  deleteWorkspace: (workspaceId: string) => Promise<void>;
   getWorkspaceMembers: (workspaceId: string) => Promise<string[]>;
   setWorkspaceInviteCode: (workspaceId: string, inviteCode: string) => Promise<void>;
   fetchPublicWorkspaces: () => Promise<void>;
@@ -805,6 +807,14 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     await refreshWorkspaces();
   };
 
+  // Delete a workspace (owner only)
+  const deleteWorkspace = async (workspaceId: string): Promise<void> => {
+    if (!workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    const tx = await workspaceRegistryContract.deleteWorkspace(workspaceId);
+    await tx.wait();
+    await refreshWorkspaces();
+  };
+
   // Get workspace members
   const getWorkspaceMembers = async (workspaceId: string): Promise<string[]> => {
     if (!workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
@@ -889,6 +899,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       joinWorkspaceWithCode,
       joinPublicWorkspace,
       leaveWorkspace,
+      deleteWorkspace,
       getWorkspaceMembers,
       setWorkspaceInviteCode,
       fetchPublicWorkspaces,

@@ -13,7 +13,7 @@ export const CONTRACT_ADDRESSES = {
     OTT: '0x201333A5C882751a98E483f9B763DF4D8e5A1055',
     NodeRegistry: '0xFaCB01A565ea526FC8CAC87D5D4622983735e8F3',
     TaskEscrow: '0x246127F9743AC938baB7fc221546a785C880ad86',
-    WorkspaceRegistry: '0xe409937dcc6101225952F6723Ce46ba9fDe9f6cB',
+    WorkspaceRegistry: '0x8433285448DB684b9a37b4bc97DBDcd72e148DCa',
   },
   localhost: {
     OTT: '',
@@ -112,10 +112,11 @@ export const WORKSPACE_REGISTRY_ABI = [
   // Create workspace
   'function createWorkspace(string name, string description, bool isPublic, string inviteCode) returns (bytes32)',
 
-  // Join/Leave
+  // Join/Leave/Delete
   'function joinPublicWorkspace(bytes32 workspaceId)',
   'function joinWithInviteCode(bytes32 workspaceId, string inviteCode)',
   'function leaveWorkspace(bytes32 workspaceId)',
+  'function deleteWorkspace(bytes32 workspaceId)',
 
   // Management
   'function setInviteCode(bytes32 workspaceId, string newInviteCode)',
