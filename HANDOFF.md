@@ -1,230 +1,461 @@
-# OtherThing Node - Production Handoff Document
+# OtherThing Node - Comprehensive Handoff Document
 
-## Overview
+## Project Overview
 
-OtherThing Node is an Electron desktop application that allows users to contribute compute resources (CPU, GPU, storage) to the OtherThing distributed compute network. Users can run local AI models via Ollama, share IPFS storage, and earn OTT tokens for their contributions.
+**OtherThing Node** is a decentralized compute network where users can:
+- Share their computer's processing power
+- Earn OTT tokens for providing compute
+- Create/join workspaces to collaborate with others
+- Run AI agents using distributed compute resources
+
+The project consists of:
+1. **Electron Desktop App** - Node software users run on their machines
+2. **Smart Contracts** - On-chain logic for staking, rewards, tasks, and workspaces
+3. **Local Services** - Ollama (LLM), IPFS, Sandbox execution
+
+---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Electron Main Process                     │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐  │
-│  │ NodeService │  │  ApiServer   │  │  HardwareDetector │  │
-│  │  - IPFS     │  │  :8080       │  │                   │  │
-│  │  - Ollama   │  │  REST + WS   │  │                   │  │
-│  │  - Sandbox  │  └──────────────┘  └───────────────────┘  │
-│  └─────────────┘                                            │
-└─────────────────────────────────────────────────────────────┘
-                              ↕ IPC
-┌─────────────────────────────────────────────────────────────┐
-│                   Electron Renderer (React)                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │Dashboard │  │NodeCtrl  │  │Workspace │  │Marketplace │  │
-│  │          │  │-IPFS     │  │-Agents   │  │-Blockchain │  │
-│  │          │  │-Ollama   │  │-Files    │  │            │  │
-│  └──────────┘  └──────────┘  └──────────┘  └────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     BLOCKCHAIN (Sepolia)                        │
+│  ┌──────────────┐ ┌───────────────┐ ┌────────────────────────┐  │
+│  │     OTT      │ │ NodeRegistry  │ │   WorkspaceRegistry    │  │
+│  │   (ERC-20)   │ │  (Staking)    │ │  (On-chain groups)     │  │
+│  └──────────────┘ └───────────────┘ └────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                     TaskEscrow                            │   │
+│  │              (Bounties, milestones, payments)             │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    ELECTRON NODE APP                            │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                    React Frontend                         │   │
+│  │   - Dashboard (node status, earnings)                     │   │
+│  │   - Workspaces (on-chain management)                      │   │
+│  │   - Agents (AI task execution)                            │   │
+│  │   - Blockchain (wallet, staking, registration)            │   │
+│  │   - Settings                                              │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                    Main Process                           │   │
+│  │   - API Server (Express on :8080)                         │   │
+│  │   - Ollama Manager (LLM inference)                        │   │
+│  │   - IPFS Manager (decentralized storage)                  │   │
+│  │   - Sandbox Manager (isolated code execution)             │   │
+│  │   - Agent Service (ReAct agent execution)                 │   │
+│  │   - Web3 Service (blockchain interactions)                │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    LOCAL SERVICES                               │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐     │
+│  │    Ollama    │ │     IPFS     │ │      Sandbox         │     │
+│  │  (LLM host)  │ │  (storage)   │ │  (code execution)    │     │
+│  └──────────────┘ └──────────────┘ └──────────────────────┘     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Tech Stack
+---
 
-- **Framework**: Electron 36.x
-- **Frontend**: React 18 + TypeScript + Vite
-- **Styling**: Custom CSS (cyberpunk theme)
-- **State**: React Context (Web3, Modules, Credentials)
-- **Backend Services**:
-  - IPFS (Kubo) for distributed storage
-  - Ollama for local LLM inference
-  - Sandbox for isolated code execution
-- **Blockchain**: Ethereum (Sepolia testnet) via ethers.js
+## Smart Contracts (Sepolia Testnet)
+
+| Contract | Address | Purpose |
+|----------|---------|---------|
+| **OTT** | `0x201333A5C882751a98E483f9B763DF4D8e5A1055` | ERC-20 token for payments/staking |
+| **NodeRegistry** | `0xFaCB01A565ea526FC8CAC87D5D4622983735e8F3` | Node registration, staking, rewards |
+| **TaskEscrow** | `0x246127F9743AC938baB7fc221546a785C880ad86` | Task bounties and milestone payments |
+| **WorkspaceRegistry** | `0xe409937dcc6101225952F6723Ce46ba9fDe9f6cB` | On-chain workspace management |
+
+### Deployer/Funder Wallet
+- **Address**: `0x683B811965A1225309e876bf82F1c6831C2311Aa`
+- **Private Key**: `0x8ccc85bee32302669e4fed58d038a8373634dee36de8ae168f7cf07739b21979`
+- **Used for**: Deploying contracts, funding test wallets
+
+---
 
 ## Directory Structure
 
 ```
-src/
-├── main.ts                 # Electron main process entry
-├── preload.ts              # IPC bridge (exposes electronAPI)
-├── node-service.ts         # Core node functionality
-├── api-server.ts           # REST/WebSocket API server
-├── hardware.ts             # Hardware detection
-├── adapters/               # LLM adapters (OpenAI, Claude, etc.)
-├── renderer/
-│   ├── App.tsx             # Main React app
-│   ├── pages/
-│   │   ├── Dashboard.tsx   # Overview & stats
-│   │   ├── NodeControl.tsx # IPFS/Ollama/Hardware
-│   │   ├── Workspace.tsx   # Workspace management
-│   │   ├── Agents.tsx      # AI agent chat
-│   │   ├── Marketplace.tsx # Node registry
-│   │   └── Settings.tsx    # Configuration
-│   ├── components/
-│   │   ├── IPFSPanel.tsx   # IPFS controls
-│   │   ├── OllamaPanel.tsx # Ollama model management
-│   │   ├── NodeBlockchain.tsx # On-chain registration
-│   │   └── WalletButton.tsx   # Web3 wallet connect
-│   ├── context/
-│   │   ├── Web3Context.tsx    # Ethereum provider
-│   │   ├── ModuleContext.tsx  # Module state
-│   │   └── CredentialContext.tsx # API keys
-│   └── styles/
-│       ├── cyberpunk.css      # Main theme
-│       └── animations.css     # Animations
+/mnt/d/github/node/
+├── contracts/                    # Solidity smart contracts
+│   ├── contracts/
+│   │   ├── OTT.sol              # ERC-20 token
+│   │   ├── NodeRegistry.sol     # Node staking/rewards
+│   │   ├── TaskEscrow.sol       # Task bounties
+│   │   └── WorkspaceRegistry.sol # On-chain workspaces
+│   ├── scripts/
+│   │   ├── deploy.ts            # Main deployment script
+│   │   ├── deploy-workspace-registry.ts
+│   │   ├── test-register.ts     # Test node registration
+│   │   └── test-workspace.ts    # Test workspace creation
+│   ├── hardhat.config.ts
+│   └── typechain-types/         # Generated TypeScript types
+│
+├── src/
+│   ├── main.ts                  # Electron main process entry
+│   ├── preload.ts               # Electron preload script
+│   ├── api-server.ts            # Express API server
+│   ├── ollama-manager.ts        # Ollama LLM integration
+│   ├── ipfs-manager.ts          # IPFS storage
+│   ├── sandbox-manager.ts       # Isolated code execution
+│   │
+│   ├── services/
+│   │   ├── web3-service.ts      # Blockchain interactions
+│   │   ├── workspace-manager.ts # Local workspace storage
+│   │   └── agent-service.ts     # AI agent execution
+│   │
+│   └── renderer/                # React frontend
+│       ├── App.tsx
+│       ├── main.tsx
+│       ├── context/
+│       │   └── Web3Context.tsx  # Wallet & contract state
+│       ├── pages/
+│       │   ├── Dashboard.tsx
+│       │   ├── Workspace.tsx    # On-chain workspaces
+│       │   ├── WorkspaceDetail.tsx
+│       │   ├── Agents.tsx
+│       │   └── Settings.tsx
+│       └── components/
+│           ├── NodeBlockchain.tsx  # Blockchain tab
+│           ├── WalletButton.tsx    # Wallet connection
+│           └── CyberButton.tsx     # UI components
+│
+├── dist/                        # Compiled output
+├── release/                     # Electron builds
+├── package.json
+├── tsconfig.json
+├── tsconfig.main.json
+├── vite.config.ts
+└── electron-builder.json
 ```
 
-## Smart Contracts (Sepolia)
-
-| Contract | Address | Purpose |
-|----------|---------|---------|
-| OTT Token | `0x7e3b8A0A1f3b2f3C4D5E6F7A8B9C0D1E2F3A4B5C` | ERC-20 utility token |
-| NodeRegistry | `0x1a2B3c4D5e6F7A8B9C0D1E2F3a4B5C6D7E8F9A0B` | Node registration |
-| TaskEscrow | `0x2b3C4d5E6f7A8B9c0D1e2F3A4b5C6D7e8F9A0B1C` | Payment escrow |
-
-*Note: Update these addresses for mainnet deployment*
-
-## API Endpoints
-
-### REST API (localhost:8080)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/api/v1/workspaces` | GET/POST | Workspace CRUD |
-| `/api/v1/workspaces/:id/agents` | GET/POST | Agent management |
-| `/api/v1/workspaces/:id/sandbox/files` | GET/POST | File operations |
-| `/api/v1/blockchain/nodes` | GET | Registered nodes |
-
-### WebSocket (ws://localhost:8080/ws/agents)
-
-- Real-time agent communication
-- Streaming LLM responses
-
-### Hardware API (localhost:3847)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/hardware` | GET | Detect CPU/GPU/RAM/Storage |
-| `/status` | GET | Node running status |
-
-## Environment Variables
-
-```env
-# Optional - network connection
-ORCHESTRATOR_URL=ws://155.117.46.228/ws/node
-
-# Blockchain (for mainnet, change these)
-CHAIN_ID=11155111
-RPC_URL=https://sepolia.infura.io/v3/YOUR_KEY
-
-# API Keys (stored in electron-store, not env)
-# Users configure in Settings page
-```
-
-## Build & Deploy
-
-### Development
-```bash
-npm install
-npm run dev        # Starts Vite + Electron concurrently
-```
-
-### Production Build (Windows)
-```bash
-npm run build      # TypeScript + Vite build
-npm run dist:win   # electron-builder for Windows
-```
-
-Output: `release/OtherThing-Node-Setup.exe`
-
-### Production Build (macOS)
-```bash
-npm run dist:mac
-```
-
-### Production Build (Linux)
-```bash
-npm run dist:linux
-```
-
-## Configuration Files
-
-### electron-builder.yml
-```yaml
-appId: com.otherthing.node
-productName: OtherThing Node
-directories:
-  output: release
-win:
-  target: nsis
-  icon: assets/icon.ico
-mac:
-  target: dmg
-  icon: assets/icon.icns
-```
-
-### vite.config.ts
-- Entry: `src/renderer/main.tsx`
-- Build output: `dist/renderer`
-- Port: 1420 (dev)
+---
 
 ## Key Features
 
-### 1. IPFS Storage Node
-- Download/install IPFS binary automatically
-- Select storage drive
-- Configure storage limit (10-500 GB)
-- Start/stop IPFS daemon
-- Real-time stats (repo size, objects, peer ID)
+### 1. Wallet Management
+- **Create New Wallet**: Generates random wallet, shows private key
+- **Import Private Key**: Connect with existing key
+- **WalletConnect**: QR code connection to mobile wallets
+- **Auto-Fund**: Test wallets receive 0.01 ETH + 500 OTT for testing
 
-### 2. Ollama LLM Engine
-- Auto-detect or manual install
-- Pull models from registry (llama3.2, mistral, codellama, etc.)
-- Custom model support
-- Select models to share on network
-- Start/stop Ollama server
+**Files**: `src/renderer/context/Web3Context.tsx`, `src/renderer/components/WalletButton.tsx`
 
-### 3. Workspace Management
-- Create/join workspaces
-- File browser with sandbox isolation
-- Agent chat interface
-- IPFS sync for persistence
+### 2. Node Registration (On-Chain)
+Users stake OTT tokens to register their node:
+- Minimum stake: 100 OTT
+- Reports hardware capabilities (CPU, RAM, GPU)
+- Earns rewards for compute time
 
-### 4. Blockchain Integration
-- Wallet connect (MetaMask)
-- Register node on-chain
-- Stake OTT tokens
-- View earnings
+**Flow**:
+1. Connect wallet
+2. Approve OTT spending
+3. Call `NodeRegistry.registerNode()`
+4. Node gets unique `bytes32` nodeId
 
-## Security Considerations
+**Files**: `contracts/contracts/NodeRegistry.sol`, `src/renderer/components/NodeBlockchain.tsx`
 
-1. **Sandbox Isolation**: All code execution happens in isolated containers
-2. **IPC Security**: Context isolation enabled, no nodeIntegration
-3. **API CORS**: Configured for localhost only
-4. **Private Network Access**: Headers set for browser security
+### 3. Workspaces (On-Chain)
+Workspaces are now fully on-chain (no central server needed):
 
-## Monitoring & Logging
+- **Create**: Deploys workspace to blockchain
+- **Public/Private**: Public = anyone joins, Private = invite code required
+- **Invite Codes**: Hash stored on-chain, plaintext in localStorage
+- **Join Format**: `workspaceId:INVITECODE`
 
-- Main process logs to console
-- Renderer logs to DevTools (Ctrl+Shift+I)
-- Node activity logs in UI (Node Control page)
+**Flow**:
+1. Connect wallet
+2. Create workspace (gas fee ~0.001 ETH)
+3. Share invite code with friends
+4. They paste full code to join
+
+**Files**:
+- `contracts/contracts/WorkspaceRegistry.sol`
+- `src/renderer/pages/Workspace.tsx`
+- `src/renderer/context/Web3Context.tsx`
+
+### 4. Agent Execution
+ReAct-style AI agents that can:
+- Use tools (file read/write, web search, code execution)
+- Run in sandboxed environment
+- Store results to IPFS
+
+**Files**: `src/services/agent-service.ts`
+
+### 5. Task Escrow
+On-chain bounty system:
+- Create tasks with OTT bounty
+- Define milestones
+- Workers apply and get assigned
+- Milestone-based payments
+- Dispute resolution
+
+**Files**: `contracts/contracts/TaskEscrow.sol`
+
+---
+
+## API Endpoints (localhost:8080)
+
+### Health
+```
+GET /health
+GET /api/v1/status
+```
+
+### Wallet/Web3
+```
+GET  /api/v1/web3/contracts     # Get contract addresses
+POST /api/v1/web3/fund-wallet   # Fund wallet with ETH + OTT (testing)
+```
+
+### Workspaces (Legacy - Local Storage)
+```
+GET    /api/v1/workspaces
+POST   /api/v1/workspaces
+POST   /api/v1/workspaces/join
+GET    /api/v1/workspaces/:id
+DELETE /api/v1/workspaces/:id
+POST   /api/v1/workspaces/:id/leave
+```
+
+### Agents
+```
+GET  /api/v1/workspaces/:workspaceId/agents
+POST /api/v1/workspaces/:workspaceId/agents
+GET  /api/v1/workspaces/:workspaceId/agents/:agentId
+```
+
+### Ollama
+```
+GET  /api/v1/ollama/status
+GET  /api/v1/ollama/models
+POST /api/v1/ollama/pull
+```
+
+---
+
+## Development Setup
+
+### Prerequisites
+- Node.js 18+
+- npm or pnpm
+- Ollama (for LLM)
+- IPFS (optional)
+
+### Install & Run
+```bash
+cd /mnt/d/github/node
+
+# Install dependencies
+npm install
+
+# Run in development mode
+npm run dev
+
+# Build for production
+npm run build
+
+# Build Windows installer
+npx electron-builder --win
+```
+
+### Contract Development
+```bash
+cd contracts
+
+# Install
+npm install
+
+# Compile
+npx hardhat compile
+
+# Deploy to Sepolia
+PRIVATE_KEY=0x... npx hardhat run scripts/deploy.ts --network sepolia
+
+# Test workspace contract
+PRIVATE_KEY=0x... npx hardhat run scripts/test-workspace.ts --network sepolia
+```
+
+---
+
+## Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `FUNDER_PRIVATE_KEY` | Key for funding test wallets | Deployer key |
+| `OLLAMA_HOST` | Ollama API endpoint | `http://localhost:11434` |
+| `IPFS_API` | IPFS API endpoint | `http://localhost:5001` |
+
+---
+
+## Contract ABIs (Key Functions)
+
+### OTT (ERC-20)
+```solidity
+function balanceOf(address) view returns (uint256)
+function approve(address spender, uint256 amount) returns (bool)
+function transfer(address to, uint256 amount) returns (bool)
+```
+
+### NodeRegistry
+```solidity
+function registerNode(Capabilities capabilities, string endpoint, uint256 stakeAmount) returns (bytes32)
+function getOwnerNodes(address owner) view returns (bytes32[])
+function getNode(bytes32 nodeId) view returns (NodeInfo)
+function claimRewards(bytes32 nodeId)
+function addStake(bytes32 nodeId, uint256 amount)
+function withdrawStake(bytes32 nodeId, uint256 amount)
+```
+
+### WorkspaceRegistry
+```solidity
+function createWorkspace(string name, string description, bool isPublic, string inviteCode) returns (bytes32)
+function joinPublicWorkspace(bytes32 workspaceId)
+function joinWithInviteCode(bytes32 workspaceId, string inviteCode)
+function leaveWorkspace(bytes32 workspaceId)
+function getUserWorkspaces(address user) view returns (bytes32[])
+function getWorkspace(bytes32 workspaceId) view returns (WorkspaceInfo)
+function getPublicWorkspaces() view returns (WorkspaceInfo[])
+function setInviteCode(bytes32 workspaceId, string newInviteCode)
+```
+
+### TaskEscrow
+```solidity
+function createTask(bytes32 workspaceId, string title, string descriptionCid, uint256 bounty, uint256 deadline, string[] milestoneDescriptions, uint256[] milestoneAmounts) returns (bytes32)
+function applyForTask(bytes32 taskId, string applicationCid)
+function assignWorker(bytes32 taskId, address worker)
+function submitWork(bytes32 taskId, string workCid)
+function approveMilestone(bytes32 taskId, uint256 milestoneIndex)
+```
+
+---
+
+## Testing Flows
+
+### Test Node Registration
+```bash
+cd contracts
+PRIVATE_KEY=0x8ccc85bee32302669e4fed58d038a8373634dee36de8ae168f7cf07739b21979 \
+npx hardhat run scripts/test-register.ts --network sepolia
+```
+
+### Test Workspace Creation
+```bash
+cd contracts
+PRIVATE_KEY=0x8ccc85bee32302669e4fed58d038a8373634dee36de8ae168f7cf07739b21979 \
+npx hardhat run scripts/test-workspace.ts --network sepolia
+```
+
+### Manual Testing in App
+1. Start app: `npm run dev`
+2. Create wallet (or import deployer key for testing)
+3. Fund wallet (click "Fund Wallet" button)
+4. Go to Blockchain tab, register node
+5. Go to Workspaces tab, create workspace
+6. Share invite code with another user
+
+---
+
+## Recent Changes (January 2026)
+
+### WorkspaceRegistry Contract
+- **Deployed**: `0xe409937dcc6101225952F6723Ce46ba9fDe9f6cB`
+- **Features**:
+  - Create workspaces on-chain
+  - Public/private workspaces
+  - Invite code validation (hashed on-chain)
+  - Member management (Owner/Admin/Member roles)
+  - Transfer ownership
+  - Leave workspace
+
+### UI Updates
+- Workspace page now uses on-chain data
+- Wallet connection required to view workspaces
+- "ON-CHAIN" badge in UI
+- Browse public workspaces modal
+- Full invite code format: `workspaceId:INVITECODE`
+
+### Wallet Features
+- Create new wallet button
+- Fund wallet for testing (0.01 ETH + 500 OTT)
+- Sepolia faucet link in modal
+
+---
 
 ## Known Issues / TODOs
 
-1. Auto-update mechanism not yet implemented
-2. macOS notarization needed for distribution
-3. Linux AppImage needs testing
+### Current Limitations
+1. **Invite codes stored locally** - If you clear localStorage, you lose plaintext codes (only hash on-chain)
+2. **No P2P networking yet** - Nodes can't communicate directly without orchestrator
+3. **Gas fees required** - Every on-chain action costs Sepolia ETH
 
-## Support
+### Future Improvements
+1. **libp2p/WebRTC** - Direct node-to-node communication
+2. **Compute verification** - Prove compute was actually done
+3. **Mainnet deployment** - Move from Sepolia to Ethereum mainnet
+4. **Mobile app** - React Native version
 
-- GitHub Issues: [repo-url]/issues
-- Discord: [discord-link]
+---
 
-## Changelog
+## Quick Reference
 
-### v1.0.0 (Current)
-- Initial release
-- IPFS integration with drive selection
-- Ollama model management
-- Workspace/Agent system
-- Blockchain node registration
-- Cyberpunk UI theme
+### Start Development
+```bash
+cd /mnt/d/github/node && npm run dev
+```
+
+### Deploy Contract
+```bash
+cd contracts
+PRIVATE_KEY=0x... npx hardhat run scripts/deploy-workspace-registry.ts --network sepolia
+```
+
+### Build Windows Installer
+```bash
+npm run build && npx electron-builder --win
+```
+
+### Fund Test Wallet
+```bash
+curl -X POST http://localhost:8080/api/v1/web3/fund-wallet \
+  -H "Content-Type: application/json" \
+  -d '{"address": "0x..."}'
+```
+
+### Verify Contract on Etherscan
+```bash
+npx hardhat verify --network sepolia 0xe409937dcc6101225952F6723Ce46ba9fDe9f6cB
+```
+
+---
+
+## Git Repository
+
+- **Location**: `/mnt/d/github/node`
+- **Branch**: `main`
+- **Remote**: Check with `git remote -v`
+
+### Recent Commits
+- `feat: add on-chain WorkspaceRegistry contract`
+- `fix: add missing join/leave workspace API endpoints`
+- `feat: add create wallet and auto-fund for testing`
+
+---
+
+## Contact / Resources
+
+- **Sepolia Faucet**: https://cloud.google.com/application/web3/faucet/ethereum/sepolia
+- **Etherscan (Sepolia)**: https://sepolia.etherscan.io
+- **Ollama**: https://ollama.ai
+- **IPFS**: https://ipfs.io
+
+---
+
+*Last updated: January 25, 2026*
