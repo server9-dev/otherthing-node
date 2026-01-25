@@ -84,9 +84,15 @@ interface Web3ContextType {
   showQRModal: boolean;
   setShowQRModal: (show: boolean) => void;
 
+  // New wallet state
+  newWalletPrivateKey: string | null;
+  showNewWalletModal: boolean;
+  setShowNewWalletModal: (show: boolean) => void;
+
   // Actions
   connectWallet: () => Promise<void>;
   connectWithPrivateKey: (privateKey: string) => Promise<void>;
+  createNewWallet: () => Promise<void>;
   disconnectWallet: () => void;
   refreshBalances: () => Promise<void>;
   refreshNodes: () => Promise<void>;
@@ -132,6 +138,8 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [wcUri, setWcUri] = useState<string | null>(null);
   const [showQRModal, setShowQRModal] = useState(false);
+  const [newWalletPrivateKey, setNewWalletPrivateKey] = useState<string | null>(null);
+  const [showNewWalletModal, setShowNewWalletModal] = useState(false);
 
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
@@ -294,6 +302,77 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     setIsConnecting(false);
     setShowQRModal(false);
     setWcUri(null);
+    setNewWalletPrivateKey(null);
+    setShowNewWalletModal(false);
+  };
+
+  // Create a new wallet
+  const createNewWallet = async () => {
+    setIsConnecting(true);
+    setError(null);
+
+    try {
+      // Generate a random wallet
+      const wallet = ethers.Wallet.createRandom();
+      const privateKey = wallet.privateKey;
+
+      // Store the private key to show to user
+      setNewWalletPrivateKey(privateKey);
+      setShowNewWalletModal(true);
+
+      // Connect with the new wallet
+      const rpcProvider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
+      const connectedWallet = new ethers.Wallet(privateKey, rpcProvider);
+
+      const addr = connectedWallet.address;
+      const network = await rpcProvider.getNetwork();
+      const chain = Number(network.chainId);
+
+      setAddress(addr);
+      setChainId(chain);
+      setConnected(true);
+
+      // Set up contracts
+      const networkKey = getNetworkKey(chain);
+      const addresses = CONTRACT_ADDRESSES[networkKey];
+
+      if (addresses.OTT && addresses.NodeRegistry) {
+        const ott = new ethers.Contract(addresses.OTT, OTT_ABI, connectedWallet);
+        const nodeRegistry = new ethers.Contract(addresses.NodeRegistry, NODE_REGISTRY_ABI, connectedWallet);
+
+        setOttContract(ott);
+        setNodeRegistryContract(nodeRegistry);
+
+        try {
+          const stake = await nodeRegistry.minStake();
+          setMinStake(formatOtt(stake));
+        } catch (err) {
+          console.error('Failed to load min stake:', err);
+        }
+
+        // Get OTT balance (will be 0 for new wallet)
+        try {
+          const ottBal = await ott.balanceOf(addr);
+          setOttBalance(formatOtt(ottBal));
+        } catch (err) {
+          console.error('Failed to load OTT balance:', err);
+        }
+      }
+
+      // Get ETH balance (will be 0 for new wallet)
+      const ethBalance = await rpcProvider.getBalance(addr);
+      setBalance(ethers.formatEther(ethBalance));
+
+      setProvider(rpcProvider as any);
+      setSigner(connectedWallet as any);
+
+      setIsConnecting(false);
+    } catch (err) {
+      console.error('Failed to create wallet:', err);
+      setError('Failed to create wallet');
+      setIsConnecting(false);
+      throw err;
+    }
   };
 
   // Connect with private key (for desktop use)
@@ -570,8 +649,12 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       wcUri,
       showQRModal,
       setShowQRModal,
+      newWalletPrivateKey,
+      showNewWalletModal,
+      setShowNewWalletModal,
       connectWallet,
       connectWithPrivateKey,
+      createNewWallet,
       disconnectWallet,
       refreshBalances,
       refreshNodes,

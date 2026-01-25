@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Link2, Shield, Coins, Clock, Zap,
   AlertTriangle, Loader2, Plus, Minus,
-  Award, Activity
+  Award, Activity, Key, Copy, Check, Wallet
 } from 'lucide-react';
 import { useWeb3, OnChainNode } from '../context/Web3Context';
 import { CyberButton } from './CyberButton';
@@ -39,7 +39,10 @@ export function NodeBlockchain({ localCapabilities, nodeEndpoint, gpus }: Props)
     myNodes,
     loadingNodes,
     connectWallet,
+    connectWithPrivateKey,
+    createNewWallet,
     refreshNodes,
+    refreshBalances,
     registerNode,
     claimRewards,
     addStake,
@@ -47,6 +50,10 @@ export function NodeBlockchain({ localCapabilities, nodeEndpoint, gpus }: Props)
     formatOtt,
     error,
     clearError,
+    newWalletPrivateKey,
+    showNewWalletModal,
+    setShowNewWalletModal,
+    isConnecting,
   } = useWeb3();
 
   const [registering, setRegistering] = useState(false);
@@ -57,6 +64,12 @@ export function NodeBlockchain({ localCapabilities, nodeEndpoint, gpus }: Props)
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [showStakeModal, setShowStakeModal] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showPrivateKeyInput, setShowPrivateKeyInput] = useState(false);
+  const [privateKeyInput, setPrivateKeyInput] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [funding, setFunding] = useState(false);
+  const [funded, setFunded] = useState(false);
+  const [fundError, setFundError] = useState<string | null>(null);
 
   const isWrongNetwork = connected && chainId !== 11155111 && chainId !== 31337;
   const hasEnoughOtt = ottBalance ? parseFloat(ottBalance) >= parseFloat(stakeAmount) : false;
@@ -134,6 +147,49 @@ export function NodeBlockchain({ localCapabilities, nodeEndpoint, gpus }: Props)
     return `${(hrs / 24).toFixed(1)} days`;
   };
 
+  const handleCopyPrivateKey = () => {
+    if (newWalletPrivateKey) {
+      navigator.clipboard.writeText(newWalletPrivateKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleFundWallet = async () => {
+    if (!address) return;
+    setFunding(true);
+    setFundError(null);
+    try {
+      const res = await fetch('http://localhost:8080/api/v1/web3/fund-wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to fund wallet');
+      }
+      setFunded(true);
+      // Refresh balances after funding
+      await refreshBalances();
+    } catch (err: any) {
+      setFundError(err.message || 'Failed to fund wallet');
+    } finally {
+      setFunding(false);
+    }
+  };
+
+  const handleConnectWithPrivateKey = async () => {
+    if (!privateKeyInput) return;
+    try {
+      await connectWithPrivateKey(privateKeyInput);
+      setPrivateKeyInput('');
+      setShowPrivateKeyInput(false);
+    } catch (err) {
+      setActionError('Invalid private key');
+    }
+  };
+
   if (!connected) {
     return (
       <div className="cyber-card" style={{ marginBottom: 'var(--gap-lg)' }}>
@@ -149,15 +205,222 @@ export function NodeBlockchain({ localCapabilities, nodeEndpoint, gpus }: Props)
           <div style={{ marginBottom: 'var(--gap-md)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
             Connect a wallet to register on-chain and earn OTT tokens (optional).
           </div>
-          <div style={{ display: 'flex', gap: 'var(--gap-sm)', justifyContent: 'center' }}>
-            <CyberButton onClick={connectWallet}>
-              Connect Wallet
+
+          <div style={{ display: 'flex', gap: 'var(--gap-sm)', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <CyberButton
+              icon={Wallet}
+              onClick={createNewWallet}
+              disabled={isConnecting}
+              variant="primary"
+            >
+              {isConnecting ? 'Creating...' : 'Create Wallet'}
+            </CyberButton>
+            <CyberButton onClick={connectWallet} disabled={isConnecting}>
+              WalletConnect
+            </CyberButton>
+            <CyberButton
+              icon={Key}
+              onClick={() => setShowPrivateKeyInput(!showPrivateKeyInput)}
+            >
+              Import Key
             </CyberButton>
           </div>
+
+          {showPrivateKeyInput && (
+            <div style={{ marginTop: 'var(--gap-md)', maxWidth: '400px', margin: 'var(--gap-md) auto 0' }}>
+              <input
+                type="password"
+                value={privateKeyInput}
+                onChange={(e) => setPrivateKeyInput(e.target.value)}
+                placeholder="Enter private key (0x...)"
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.9rem',
+                  fontFamily: 'var(--font-mono)',
+                  marginBottom: 'var(--gap-sm)',
+                }}
+              />
+              <CyberButton
+                onClick={handleConnectWithPrivateKey}
+                disabled={!privateKeyInput}
+                style={{ width: '100%' }}
+              >
+                Connect
+              </CyberButton>
+            </div>
+          )}
+
+          {actionError && (
+            <div style={{ marginTop: 'var(--gap-md)', color: 'var(--error)', fontSize: '0.85rem' }}>
+              {actionError}
+            </div>
+          )}
+
           <p style={{ marginTop: 'var(--gap-md)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
             Your node works fine without blockchain registration.
           </p>
         </div>
+
+        {/* New Wallet Modal */}
+        {showNewWalletModal && newWalletPrivateKey && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}>
+            <div style={{
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--primary)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 'var(--gap-xl)',
+              maxWidth: '500px',
+              width: '90%',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--gap-sm)',
+                marginBottom: 'var(--gap-lg)',
+              }}>
+                <Wallet size={24} style={{ color: 'var(--primary)' }} />
+                <h3 style={{ margin: 0, fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
+                  New Wallet Created!
+                </h3>
+              </div>
+
+              <div style={{
+                padding: 'var(--gap-md)',
+                background: 'rgba(255, 200, 0, 0.1)',
+                border: '1px solid var(--warning)',
+                borderRadius: 'var(--radius-sm)',
+                marginBottom: 'var(--gap-lg)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--gap-sm)', marginBottom: 'var(--gap-sm)' }}>
+                  <AlertTriangle size={16} style={{ color: 'var(--warning)' }} />
+                  <span style={{ color: 'var(--warning)', fontWeight: 600 }}>Important!</span>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>
+                  Save your private key now! It won't be shown again. Anyone with this key has full control of your wallet.
+                </p>
+              </div>
+
+              <div style={{ marginBottom: 'var(--gap-md)' }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                  Your Address
+                </label>
+                <div style={{
+                  padding: '10px',
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.85rem',
+                  color: 'var(--primary)',
+                  wordBreak: 'break-all',
+                }}>
+                  {address}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 'var(--gap-lg)' }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                  Private Key (SAVE THIS!)
+                </label>
+                <div style={{
+                  display: 'flex',
+                  gap: 'var(--gap-sm)',
+                }}>
+                  <div style={{
+                    flex: 1,
+                    padding: '10px',
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--warning)',
+                    borderRadius: 'var(--radius-sm)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.75rem',
+                    color: 'var(--warning)',
+                    wordBreak: 'break-all',
+                  }}>
+                    {newWalletPrivateKey}
+                  </div>
+                  <CyberButton
+                    icon={copied ? Check : Copy}
+                    onClick={handleCopyPrivateKey}
+                    variant={copied ? 'success' : undefined}
+                  >
+                    {copied ? 'Copied!' : 'Copy'}
+                  </CyberButton>
+                </div>
+              </div>
+
+              <div style={{
+                  padding: 'var(--gap-md)',
+                  background: 'var(--bg-elevated)',
+                  borderRadius: 'var(--radius-sm)',
+                  marginBottom: 'var(--gap-lg)',
+                }}>
+                  {funded ? (
+                    <div style={{ color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: 'var(--gap-sm)', fontSize: '0.9rem' }}>
+                      <Check size={18} />
+                      Wallet funded with 0.01 ETH + 500 OTT!
+                    </div>
+                  ) : (
+                    <>
+                      <p style={{ margin: '0 0 var(--gap-sm) 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                        Your wallet needs ETH (gas) and OTT (staking) to register a node.
+                      </p>
+                      <CyberButton
+                        icon={funding ? Activity : Coins}
+                        onClick={handleFundWallet}
+                        disabled={funding}
+                        variant="success"
+                        style={{ width: '100%', marginBottom: 'var(--gap-sm)' }}
+                      >
+                        {funding ? 'Funding...' : 'Fund Wallet (0.01 ETH + 500 OTT)'}
+                      </CyberButton>
+                      {fundError && (
+                        <p style={{ margin: 'var(--gap-sm) 0 0 0', color: 'var(--error)', fontSize: '0.8rem' }}>
+                          {fundError}
+                        </p>
+                      )}
+                      <p style={{ margin: 'var(--gap-sm) 0 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        Or get ETH manually from{' '}
+                        <a
+                          href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--primary)' }}
+                        >
+                          Sepolia Faucet
+                        </a>
+                      </p>
+                    </>
+                  )}
+                </div>
+
+              
+              <CyberButton
+                onClick={() => setShowNewWalletModal(false)}
+                variant="primary"
+                style={{ width: '100%' }}
+              >
+                I've Saved My Key - Continue
+              </CyberButton>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

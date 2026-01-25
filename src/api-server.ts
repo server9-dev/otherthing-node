@@ -1017,6 +1017,73 @@ export class ApiServer {
       res.json({ success: true, network, addresses });
     });
 
+    // Fund wallet with test ETH and OTT (TESTING ONLY)
+    this.app.post('/api/v1/web3/fund-wallet', localAuth, async (req, res) => {
+      const { address } = req.body;
+      if (!address) {
+        res.status(400).json({ error: 'Address required' });
+        return;
+      }
+
+      try {
+        const { ethers } = await import('ethers');
+
+        // Test funder wallet - REMOVE IN PRODUCTION
+        const FUNDER_KEY = process.env.FUNDER_PRIVATE_KEY || '0x8ccc85bee32302669e4fed58d038a8373634dee36de8ae168f7cf07739b21979';
+        const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
+        const funderWallet = new ethers.Wallet(FUNDER_KEY, provider);
+
+        const OTT_ADDRESS = CONTRACT_ADDRESSES.sepolia.OTT;
+        const OTT_ABI = [
+          'function transfer(address to, uint256 amount) returns (bool)',
+          'function balanceOf(address) view returns (uint256)',
+        ];
+
+        // Check funder balances
+        const funderEth = await provider.getBalance(funderWallet.address);
+        const ottContract = new ethers.Contract(OTT_ADDRESS, OTT_ABI, funderWallet);
+        const funderOtt = await ottContract.balanceOf(funderWallet.address);
+
+        const ethAmount = ethers.parseEther('0.01'); // 0.01 ETH for gas
+        const ottAmount = ethers.parseEther('500');  // 500 OTT for staking + testing
+
+        if (funderEth < ethAmount) {
+          res.status(400).json({ error: 'Funder wallet has insufficient ETH' });
+          return;
+        }
+        if (funderOtt < ottAmount) {
+          res.status(400).json({ error: 'Funder wallet has insufficient OTT' });
+          return;
+        }
+
+        // Send ETH
+        console.log(`[Fund] Sending 0.01 ETH to ${address}...`);
+        const ethTx = await funderWallet.sendTransaction({
+          to: address,
+          value: ethAmount,
+        });
+        await ethTx.wait();
+
+        // Send OTT
+        console.log(`[Fund] Sending 500 OTT to ${address}...`);
+        const ottTx = await ottContract.transfer(address, ottAmount);
+        await ottTx.wait();
+
+        console.log(`[Fund] Wallet ${address} funded successfully`);
+        res.json({
+          success: true,
+          address,
+          ethSent: '0.01',
+          ottSent: '500',
+          ethTx: ethTx.hash,
+          ottTx: ottTx.hash,
+        });
+      } catch (err: any) {
+        console.error('[Fund] Error funding wallet:', err);
+        res.status(500).json({ error: err.message || 'Failed to fund wallet' });
+      }
+    });
+
     // Get node hardware info for blockchain registration
     this.app.get('/api/v1/web3/node-capabilities', localAuth, async (req, res) => {
       const os = require('os');

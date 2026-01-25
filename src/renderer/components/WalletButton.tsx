@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Wallet, LogOut, ExternalLink, Copy, Check, AlertCircle, Loader, X, Smartphone, Key, QrCode } from 'lucide-react';
+import { Wallet, LogOut, ExternalLink, Copy, Check, AlertCircle, Loader, X, Smartphone, Key, QrCode, Plus } from 'lucide-react';
 import { useWeb3 } from '../context/Web3Context';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -9,7 +9,7 @@ const NETWORKS: Record<number, { name: string; explorer: string }> = {
   1: { name: 'Ethereum', explorer: 'https://etherscan.io' },
 };
 
-type ConnectionMethod = 'choose' | 'walletconnect' | 'manual';
+type ConnectionMethod = 'choose' | 'walletconnect' | 'manual' | 'newwallet';
 
 export function WalletButton() {
   const {
@@ -22,16 +22,61 @@ export function WalletButton() {
     isConnecting,
     connectWallet,
     connectWithPrivateKey,
+    createNewWallet,
     wcUri,
     showQRModal,
     setShowQRModal,
+    newWalletPrivateKey,
+    showNewWalletModal,
+    setShowNewWalletModal,
     error,
   } = useWeb3();
   const [showDropdown, setShowDropdown] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedNewKey, setCopiedNewKey] = useState(false);
   const [connectionMethod, setConnectionMethod] = useState<ConnectionMethod>('choose');
   const [privateKey, setPrivateKey] = useState('');
   const [manualError, setManualError] = useState<string | null>(null);
+  const [funding, setFunding] = useState(false);
+  const [funded, setFunded] = useState(false);
+  const [fundError, setFundError] = useState<string | null>(null);
+
+  const handleCreateWallet = async () => {
+    setConnectionMethod('newwallet');
+    setFunded(false);
+    setFundError(null);
+    await createNewWallet();
+  };
+
+  const copyNewPrivateKey = () => {
+    if (newWalletPrivateKey) {
+      navigator.clipboard.writeText(newWalletPrivateKey);
+      setCopiedNewKey(true);
+      setTimeout(() => setCopiedNewKey(false), 2000);
+    }
+  };
+
+  const handleFundWallet = async () => {
+    if (!address) return;
+    setFunding(true);
+    setFundError(null);
+    try {
+      const res = await fetch('http://localhost:8080/api/v1/web3/fund-wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to fund wallet');
+      }
+      setFunded(true);
+    } catch (err: any) {
+      setFundError(err.message || 'Failed to fund wallet');
+    } finally {
+      setFunding(false);
+    }
+  };
 
   const handleConnect = () => {
     setConnectionMethod('choose');
@@ -165,6 +210,44 @@ export function WalletButton() {
             {connectionMethod === 'choose' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <button
+                  onClick={handleCreateWallet}
+                  disabled={isConnecting}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    padding: '16px',
+                    background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.1), rgba(155, 89, 182, 0.05))',
+                    border: '1px solid var(--primary)',
+                    borderRadius: 'var(--radius-md)',
+                    cursor: isConnecting ? 'wait' : 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.2s',
+                    opacity: isConnecting ? 0.7 : 1,
+                  }}
+                >
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'linear-gradient(135deg, #00D4FF 0%, #9B59B6 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    {isConnecting ? <Loader size={24} color="white" className="spin" /> : <Plus size={24} color="white" />}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, color: 'var(--primary)', marginBottom: '4px' }}>
+                      Create New Wallet
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                      Generate a fresh wallet instantly
+                    </div>
+                  </div>
+                </button>
+
+                <button
                   onClick={handleWalletConnect}
                   style={{
                     display: 'flex',
@@ -232,10 +315,10 @@ export function WalletButton() {
                   </div>
                   <div>
                     <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
-                      Private Key
+                      Import Private Key
                     </div>
                     <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      Enter your wallet private key
+                      Use existing wallet private key
                     </div>
                   </div>
                 </button>
@@ -248,6 +331,172 @@ export function WalletButton() {
                 }}>
                   Your keys are stored locally and never sent to any server
                 </p>
+              </div>
+            )}
+
+            {(connectionMethod === 'newwallet' || showNewWalletModal) && newWalletPrivateKey && (
+              <div>
+                <div style={{
+                  padding: '16px',
+                  background: 'rgba(255, 200, 0, 0.1)',
+                  border: '1px solid var(--warning)',
+                  borderRadius: 'var(--radius-sm)',
+                  marginBottom: '20px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <AlertCircle size={18} style={{ color: 'var(--warning)' }} />
+                    <span style={{ color: 'var(--warning)', fontWeight: 600 }}>Save Your Private Key!</span>
+                  </div>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>
+                    This key won't be shown again. Anyone with this key controls your wallet.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Your Address
+                  </label>
+                  <div style={{
+                    padding: '12px',
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-sm)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.8rem',
+                    color: 'var(--primary)',
+                    wordBreak: 'break-all',
+                  }}>
+                    {address}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Private Key
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{
+                      flex: 1,
+                      padding: '12px',
+                      background: 'var(--bg-primary)',
+                      border: '1px solid var(--warning)',
+                      borderRadius: 'var(--radius-sm)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '0.7rem',
+                      color: 'var(--warning)',
+                      wordBreak: 'break-all',
+                    }}>
+                      {newWalletPrivateKey}
+                    </div>
+                    <button
+                      onClick={copyNewPrivateKey}
+                      style={{
+                        padding: '12px 16px',
+                        background: copiedNewKey ? 'var(--primary)' : 'var(--bg-elevated)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: 'var(--radius-sm)',
+                        color: copiedNewKey ? 'white' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      {copiedNewKey ? <Check size={16} /> : <Copy size={16} />}
+                      {copiedNewKey ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{
+                  padding: '12px',
+                  background: 'var(--bg-elevated)',
+                  borderRadius: 'var(--radius-sm)',
+                  marginBottom: '20px',
+                  fontSize: '0.85rem',
+                }}>
+                  {funded ? (
+                    <div style={{ color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Check size={18} />
+                      Wallet funded with 0.01 ETH + 500 OTT!
+                    </div>
+                  ) : (
+                    <>
+                      <p style={{ margin: '0 0 12px 0', color: 'var(--text-muted)' }}>
+                        Your wallet needs ETH (gas) and OTT (staking) to register a node.
+                      </p>
+                      <button
+                        onClick={handleFundWallet}
+                        disabled={funding}
+                        style={{
+                          width: '100%',
+                          padding: '12px',
+                          background: funding ? 'var(--bg-tertiary)' : 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                          border: 'none',
+                          borderRadius: 'var(--radius-sm)',
+                          color: 'white',
+                          cursor: funding ? 'wait' : 'pointer',
+                          fontSize: '0.9rem',
+                          fontWeight: 500,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                        }}
+                      >
+                        {funding ? (
+                          <>
+                            <Loader size={16} className="spin" />
+                            Funding Wallet...
+                          </>
+                        ) : (
+                          <>
+                            <Wallet size={16} />
+                            Fund Wallet (0.01 ETH + 500 OTT)
+                          </>
+                        )}
+                      </button>
+                      {fundError && (
+                        <p style={{ margin: '8px 0 0 0', color: 'var(--error)', fontSize: '0.8rem' }}>
+                          {fundError}
+                        </p>
+                      )}
+                      <p style={{ margin: '12px 0 0 0', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                        Or get ETH manually from{' '}
+                        <a
+                          href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--primary)' }}
+                        >
+                          Sepolia Faucet
+                        </a>
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => {
+                    setShowNewWalletModal(false);
+                    setShowQRModal(false);
+                    setConnectionMethod('choose');
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%)',
+                    border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontSize: '0.95rem',
+                    fontWeight: 500,
+                  }}
+                >
+                  I've Saved My Key - Continue
+                </button>
               </div>
             )}
 
