@@ -6,16 +6,18 @@ import EthereumProvider from '@walletconnect/ethereum-provider';
 const WALLETCONNECT_PROJECT_ID = 'e8c2c97bc93e37d1d5a4c6f48c0e75a7';
 
 // Contract addresses - update after deployment
-const CONTRACT_ADDRESSES: Record<string, { OTT: string; NodeRegistry: string; TaskEscrow: string }> = {
+const CONTRACT_ADDRESSES: Record<string, { OTT: string; NodeRegistry: string; TaskEscrow: string; WorkspaceRegistry: string }> = {
   sepolia: {
     OTT: '0x201333A5C882751a98E483f9B763DF4D8e5A1055',
     NodeRegistry: '0xFaCB01A565ea526FC8CAC87D5D4622983735e8F3',
     TaskEscrow: '0x246127F9743AC938baB7fc221546a785C880ad86',
+    WorkspaceRegistry: '0xe409937dcc6101225952F6723Ce46ba9fDe9f6cB',
   },
   localhost: {
     OTT: '',
     NodeRegistry: '',
     TaskEscrow: '',
+    WorkspaceRegistry: '',
   },
 };
 
@@ -38,6 +40,50 @@ const NODE_REGISTRY_ABI = [
   'function reactivateNode(bytes32 nodeId)',
   'event NodeRegistered(bytes32 indexed nodeId, address indexed owner, uint256 stake)',
 ];
+
+const WORKSPACE_REGISTRY_ABI = [
+  'function createWorkspace(string name, string description, bool isPublic, string inviteCode) returns (bytes32)',
+  'function joinPublicWorkspace(bytes32 workspaceId)',
+  'function joinWithInviteCode(bytes32 workspaceId, string inviteCode)',
+  'function leaveWorkspace(bytes32 workspaceId)',
+  'function setInviteCode(bytes32 workspaceId, string newInviteCode)',
+  'function getWorkspace(bytes32 workspaceId) view returns (tuple(bytes32 id, string name, string description, address owner, uint256 createdAt, bool isPublic, uint256 memberCount))',
+  'function getWorkspaceMembers(bytes32 workspaceId) view returns (address[])',
+  'function getMember(bytes32 workspaceId, address member) view returns (tuple(address memberAddress, uint256 joinedAt, uint8 role, bool exists))',
+  'function isMember(bytes32 workspaceId, address user) view returns (bool)',
+  'function getUserWorkspaces(address user) view returns (bytes32[])',
+  'function getPublicWorkspaces() view returns (tuple(bytes32 id, string name, string description, address owner, uint256 createdAt, bool isPublic, uint256 memberCount)[])',
+  'function verifyInviteCode(bytes32 workspaceId, string inviteCode) view returns (bool)',
+  'event WorkspaceCreated(bytes32 indexed workspaceId, string name, address indexed owner, bool isPublic)',
+  'event MemberJoined(bytes32 indexed workspaceId, address indexed member, uint8 role)',
+  'event MemberLeft(bytes32 indexed workspaceId, address indexed member)',
+];
+
+// Workspace member roles
+export enum MemberRole {
+  Member = 0,
+  Admin = 1,
+  Owner = 2,
+}
+
+// On-chain workspace
+export interface OnChainWorkspace {
+  id: string;
+  name: string;
+  description: string;
+  owner: string;
+  createdAt: bigint;
+  isPublic: boolean;
+  memberCount: bigint;
+}
+
+// Workspace member
+export interface WorkspaceMember {
+  memberAddress: string;
+  joinedAt: bigint;
+  role: MemberRole;
+  exists: boolean;
+}
 
 // Types
 export interface OnChainNode {
@@ -114,6 +160,21 @@ interface Web3ContextType {
   formatOtt: (wei: bigint) => string;
   parseOtt: (amount: string) => bigint;
 
+  // Workspace state
+  myWorkspaces: OnChainWorkspace[];
+  loadingWorkspaces: boolean;
+  publicWorkspaces: OnChainWorkspace[];
+
+  // Workspace actions
+  refreshWorkspaces: () => Promise<void>;
+  createWorkspace: (name: string, description: string, isPublic: boolean, inviteCode?: string) => Promise<string>;
+  joinWorkspaceWithCode: (workspaceId: string, inviteCode: string) => Promise<void>;
+  joinPublicWorkspace: (workspaceId: string) => Promise<void>;
+  leaveWorkspace: (workspaceId: string) => Promise<void>;
+  getWorkspaceMembers: (workspaceId: string) => Promise<string[]>;
+  setWorkspaceInviteCode: (workspaceId: string, inviteCode: string) => Promise<void>;
+  fetchPublicWorkspaces: () => Promise<void>;
+
   // Errors
   error: string | null;
   clearError: () => void;
@@ -145,6 +206,10 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
   const [ottContract, setOttContract] = useState<ethers.Contract | null>(null);
   const [nodeRegistryContract, setNodeRegistryContract] = useState<ethers.Contract | null>(null);
+  const [workspaceRegistryContract, setWorkspaceRegistryContract] = useState<ethers.Contract | null>(null);
+  const [myWorkspaces, setMyWorkspaces] = useState<OnChainWorkspace[]>([]);
+  const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
+  const [publicWorkspaces, setPublicWorkspaces] = useState<OnChainWorkspace[]>([]);
 
   const getNetworkKey = (chainId: number): string => {
     if (chainId === 11155111) return 'sepolia';
@@ -191,6 +256,11 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         } catch (err) {
           console.error('Failed to load min stake:', err);
         }
+      }
+
+      if (addresses.WorkspaceRegistry) {
+        const workspaceRegistry = new ethers.Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, jsonRpcSigner);
+        setWorkspaceRegistryContract(workspaceRegistry);
       }
 
       // Get ETH balance
@@ -298,7 +368,10 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     setSigner(null);
     setOttContract(null);
     setNodeRegistryContract(null);
+    setWorkspaceRegistryContract(null);
     setMyNodes([]);
+    setMyWorkspaces([]);
+    setPublicWorkspaces([]);
     setIsConnecting(false);
     setShowQRModal(false);
     setWcUri(null);
@@ -357,6 +430,11 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         } catch (err) {
           console.error('Failed to load OTT balance:', err);
         }
+      }
+
+      if (addresses.WorkspaceRegistry) {
+        const workspaceRegistry = new ethers.Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, connectedWallet);
+        setWorkspaceRegistryContract(workspaceRegistry);
       }
 
       // Get ETH balance (will be 0 for new wallet)
@@ -420,6 +498,11 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         } catch (err) {
           console.error('Failed to load OTT balance:', err);
         }
+      }
+
+      if (addresses.WorkspaceRegistry) {
+        const workspaceRegistry = new ethers.Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, wallet);
+        setWorkspaceRegistryContract(workspaceRegistry);
       }
 
       // Get ETH balance
@@ -606,6 +689,135 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     await refreshBalances();
   };
 
+  // ============ Workspace Functions ============
+
+  // Refresh user's workspaces from chain
+  const refreshWorkspaces = async () => {
+    if (!workspaceRegistryContract || !address) return;
+
+    setLoadingWorkspaces(true);
+    try {
+      const workspaceIds = await workspaceRegistryContract.getUserWorkspaces(address);
+      const workspaces: OnChainWorkspace[] = [];
+
+      for (const wsId of workspaceIds) {
+        try {
+          const ws = await workspaceRegistryContract.getWorkspace(wsId);
+          workspaces.push({
+            id: ws[0],
+            name: ws[1],
+            description: ws[2],
+            owner: ws[3],
+            createdAt: ws[4],
+            isPublic: ws[5],
+            memberCount: ws[6],
+          });
+        } catch (err) {
+          console.error('Failed to load workspace:', wsId, err);
+        }
+      }
+
+      setMyWorkspaces(workspaces);
+    } catch (err) {
+      console.error('Failed to load workspaces:', err);
+    } finally {
+      setLoadingWorkspaces(false);
+    }
+  };
+
+  // Fetch public workspaces
+  const fetchPublicWorkspaces = async () => {
+    if (!workspaceRegistryContract) return;
+
+    try {
+      const workspaces = await workspaceRegistryContract.getPublicWorkspaces();
+      const parsed: OnChainWorkspace[] = workspaces.map((ws: any) => ({
+        id: ws[0],
+        name: ws[1],
+        description: ws[2],
+        owner: ws[3],
+        createdAt: ws[4],
+        isPublic: ws[5],
+        memberCount: ws[6],
+      }));
+      setPublicWorkspaces(parsed);
+    } catch (err) {
+      console.error('Failed to fetch public workspaces:', err);
+    }
+  };
+
+  // Create a new workspace on-chain
+  const createWorkspace = async (
+    name: string,
+    description: string,
+    isPublic: boolean,
+    inviteCode?: string
+  ): Promise<string> => {
+    if (!workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+
+    const tx = await workspaceRegistryContract.createWorkspace(
+      name,
+      description,
+      isPublic,
+      inviteCode || ''
+    );
+
+    const receipt = await tx.wait();
+
+    // Get workspaceId from event
+    for (const log of receipt.logs) {
+      try {
+        const parsed = workspaceRegistryContract.interface.parseLog(log);
+        if (parsed?.name === 'WorkspaceCreated') {
+          const workspaceId = parsed.args[0];
+          await refreshWorkspaces();
+          return workspaceId;
+        }
+      } catch {
+        // Not our event
+      }
+    }
+
+    throw new Error('WorkspaceCreated event not found');
+  };
+
+  // Join a public workspace
+  const joinPublicWorkspace = async (workspaceId: string): Promise<void> => {
+    if (!workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    const tx = await workspaceRegistryContract.joinPublicWorkspace(workspaceId);
+    await tx.wait();
+    await refreshWorkspaces();
+  };
+
+  // Join workspace with invite code
+  const joinWorkspaceWithCode = async (workspaceId: string, inviteCode: string): Promise<void> => {
+    if (!workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    const tx = await workspaceRegistryContract.joinWithInviteCode(workspaceId, inviteCode);
+    await tx.wait();
+    await refreshWorkspaces();
+  };
+
+  // Leave a workspace
+  const leaveWorkspace = async (workspaceId: string): Promise<void> => {
+    if (!workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    const tx = await workspaceRegistryContract.leaveWorkspace(workspaceId);
+    await tx.wait();
+    await refreshWorkspaces();
+  };
+
+  // Get workspace members
+  const getWorkspaceMembers = async (workspaceId: string): Promise<string[]> => {
+    if (!workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await workspaceRegistryContract.getWorkspaceMembers(workspaceId);
+  };
+
+  // Set workspace invite code
+  const setWorkspaceInviteCode = async (workspaceId: string, inviteCode: string): Promise<void> => {
+    if (!workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    const tx = await workspaceRegistryContract.setInviteCode(workspaceId, inviteCode);
+    await tx.wait();
+  };
+
   // Auto-refresh when connected
   useEffect(() => {
     if (connected && address) {
@@ -613,8 +825,11 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       if (contractsReady) {
         refreshNodes();
       }
+      if (workspaceRegistryContract) {
+        refreshWorkspaces();
+      }
     }
-  }, [connected, address, contractsReady]);
+  }, [connected, address, contractsReady, workspaceRegistryContract]);
 
   // Try to set contract addresses from API on mount
   useEffect(() => {
@@ -664,6 +879,19 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       withdrawStake,
       formatOtt,
       parseOtt,
+      // Workspace state
+      myWorkspaces,
+      loadingWorkspaces,
+      publicWorkspaces,
+      // Workspace actions
+      refreshWorkspaces,
+      createWorkspace,
+      joinWorkspaceWithCode,
+      joinPublicWorkspace,
+      leaveWorkspace,
+      getWorkspaceMembers,
+      setWorkspaceInviteCode,
+      fetchPublicWorkspaces,
       error,
       clearError,
       isConnecting,

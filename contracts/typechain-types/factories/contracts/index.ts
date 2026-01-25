@@ -4,3 +4,4 @@
 export { NodeRegistry__factory } from "./NodeRegistry__factory";
 export { OTT__factory } from "./OTT__factory";
 export { TaskEscrow__factory } from "./TaskEscrow__factory";
+export { WorkspaceRegistry__factory } from "./WorkspaceRegistry__factory";

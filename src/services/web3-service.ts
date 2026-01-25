@@ -13,11 +13,13 @@ export const CONTRACT_ADDRESSES = {
     OTT: '0x201333A5C882751a98E483f9B763DF4D8e5A1055',
     NodeRegistry: '0xFaCB01A565ea526FC8CAC87D5D4622983735e8F3',
     TaskEscrow: '0x246127F9743AC938baB7fc221546a785C880ad86',
+    WorkspaceRegistry: '0xe409937dcc6101225952F6723Ce46ba9fDe9f6cB',
   },
   localhost: {
     OTT: '',
     NodeRegistry: '',
     TaskEscrow: '',
+    WorkspaceRegistry: '',
   },
 };
 
@@ -106,6 +108,41 @@ export const TASK_ESCROW_ABI = [
   'event TaskDisputed(bytes32 indexed taskId, address indexed disputer)',
 ];
 
+export const WORKSPACE_REGISTRY_ABI = [
+  // Create workspace
+  'function createWorkspace(string name, string description, bool isPublic, string inviteCode) returns (bytes32)',
+
+  // Join/Leave
+  'function joinPublicWorkspace(bytes32 workspaceId)',
+  'function joinWithInviteCode(bytes32 workspaceId, string inviteCode)',
+  'function leaveWorkspace(bytes32 workspaceId)',
+
+  // Management
+  'function setInviteCode(bytes32 workspaceId, string newInviteCode)',
+  'function updateWorkspace(bytes32 workspaceId, string name, string description, bool isPublic)',
+  'function setMemberRole(bytes32 workspaceId, address member, uint8 newRole)',
+  'function removeMember(bytes32 workspaceId, address member)',
+  'function transferOwnership(bytes32 workspaceId, address newOwner)',
+
+  // View functions
+  'function getWorkspace(bytes32 workspaceId) view returns (tuple(bytes32 id, string name, string description, address owner, uint256 createdAt, bool isPublic, uint256 memberCount))',
+  'function getWorkspaceMembers(bytes32 workspaceId) view returns (address[])',
+  'function getMember(bytes32 workspaceId, address member) view returns (tuple(address memberAddress, uint256 joinedAt, uint8 role, bool exists))',
+  'function isMember(bytes32 workspaceId, address user) view returns (bool)',
+  'function getUserWorkspaces(address user) view returns (bytes32[])',
+  'function getPublicWorkspaces() view returns (tuple(bytes32 id, string name, string description, address owner, uint256 createdAt, bool isPublic, uint256 memberCount)[])',
+  'function verifyInviteCode(bytes32 workspaceId, string inviteCode) view returns (bool)',
+  'function workspaceCount() view returns (uint256)',
+
+  // Events
+  'event WorkspaceCreated(bytes32 indexed workspaceId, string name, address indexed owner, bool isPublic)',
+  'event MemberJoined(bytes32 indexed workspaceId, address indexed member, uint8 role)',
+  'event MemberLeft(bytes32 indexed workspaceId, address indexed member)',
+  'event MemberRoleChanged(bytes32 indexed workspaceId, address indexed member, uint8 newRole)',
+  'event InviteCodeUpdated(bytes32 indexed workspaceId)',
+  'event WorkspaceUpdated(bytes32 indexed workspaceId, string name, string description)',
+];
+
 // Node capabilities interface
 export interface NodeCapabilities {
   cpuCores: number;
@@ -167,6 +204,32 @@ export interface Milestone {
   paid: boolean;
 }
 
+// Workspace member roles
+export enum MemberRole {
+  Member = 0,
+  Admin = 1,
+  Owner = 2,
+}
+
+// On-chain workspace info
+export interface OnChainWorkspace {
+  id: string;
+  name: string;
+  description: string;
+  owner: string;
+  createdAt: bigint;
+  isPublic: boolean;
+  memberCount: bigint;
+}
+
+// Workspace member info
+export interface WorkspaceMember {
+  memberAddress: string;
+  joinedAt: bigint;
+  role: MemberRole;
+  exists: boolean;
+}
+
 /**
  * Web3 Service class
  */
@@ -178,6 +241,7 @@ export class Web3Service {
   private ottContract: Contract | null = null;
   private nodeRegistryContract: Contract | null = null;
   private taskEscrowContract: Contract | null = null;
+  private workspaceRegistryContract: Contract | null = null;
 
   // Connection state
   public connected: boolean = false;
@@ -196,6 +260,9 @@ export class Web3Service {
       this.ottContract = new Contract(addresses.OTT, OTT_ABI, this.provider);
       this.nodeRegistryContract = new Contract(addresses.NodeRegistry, NODE_REGISTRY_ABI, this.provider);
       this.taskEscrowContract = new Contract(addresses.TaskEscrow, TASK_ESCROW_ABI, this.provider);
+    }
+    if (addresses.WorkspaceRegistry) {
+      this.workspaceRegistryContract = new Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, this.provider);
     }
   }
 
@@ -235,6 +302,9 @@ export class Web3Service {
       this.nodeRegistryContract = new Contract(addresses.NodeRegistry, NODE_REGISTRY_ABI, this.signer);
       this.taskEscrowContract = new Contract(addresses.TaskEscrow, TASK_ESCROW_ABI, this.signer);
     }
+    if (addresses.WorkspaceRegistry) {
+      this.workspaceRegistryContract = new Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, this.signer);
+    }
 
     this.connected = true;
     return this.address;
@@ -251,12 +321,13 @@ export class Web3Service {
     this.ottContract = null;
     this.nodeRegistryContract = null;
     this.taskEscrowContract = null;
+    this.workspaceRegistryContract = null;
   }
 
   /**
    * Set contract addresses (after deployment)
    */
-  setAddresses(network: 'sepolia' | 'localhost', addresses: { OTT: string; NodeRegistry: string; TaskEscrow: string }): void {
+  setAddresses(network: 'sepolia' | 'localhost', addresses: { OTT: string; NodeRegistry: string; TaskEscrow: string; WorkspaceRegistry: string }): void {
     CONTRACT_ADDRESSES[network] = addresses;
 
     // Reinitialize contracts if connected
@@ -264,6 +335,9 @@ export class Web3Service {
       this.ottContract = new Contract(addresses.OTT, OTT_ABI, this.signer);
       this.nodeRegistryContract = new Contract(addresses.NodeRegistry, NODE_REGISTRY_ABI, this.signer);
       this.taskEscrowContract = new Contract(addresses.TaskEscrow, TASK_ESCROW_ABI, this.signer);
+      if (addresses.WorkspaceRegistry) {
+        this.workspaceRegistryContract = new Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, this.signer);
+      }
     }
   }
 
@@ -605,6 +679,207 @@ export class Web3Service {
       this.nodeRegistryContract = new Contract(addresses.NodeRegistry, NODE_REGISTRY_ABI, wallet);
       this.taskEscrowContract = new Contract(addresses.TaskEscrow, TASK_ESCROW_ABI, wallet);
     }
+    if (addresses.WorkspaceRegistry) {
+      this.workspaceRegistryContract = new Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, wallet);
+    }
+  }
+
+  // ============ Workspace Registry Functions ============
+
+  /**
+   * Create a new workspace on-chain
+   */
+  async createWorkspace(
+    name: string,
+    description: string,
+    isPublic: boolean,
+    inviteCode?: string
+  ): Promise<string> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+
+    const tx = await this.workspaceRegistryContract.createWorkspace(
+      name,
+      description,
+      isPublic,
+      inviteCode || ''
+    );
+
+    const receipt = await tx.wait();
+
+    // Get workspaceId from event
+    const event = receipt.logs.find((log: any) => {
+      try {
+        const parsed = this.workspaceRegistryContract!.interface.parseLog(log);
+        return parsed?.name === 'WorkspaceCreated';
+      } catch {
+        return false;
+      }
+    });
+
+    if (event) {
+      const parsed = this.workspaceRegistryContract.interface.parseLog(event);
+      return parsed?.args[0]; // workspaceId
+    }
+
+    throw new Error('WorkspaceCreated event not found');
+  }
+
+  /**
+   * Join a public workspace
+   */
+  async joinPublicWorkspace(workspaceId: string): Promise<ethers.TransactionResponse> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await this.workspaceRegistryContract.joinPublicWorkspace(workspaceId);
+  }
+
+  /**
+   * Join a workspace with an invite code
+   */
+  async joinWorkspaceWithCode(workspaceId: string, inviteCode: string): Promise<ethers.TransactionResponse> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await this.workspaceRegistryContract.joinWithInviteCode(workspaceId, inviteCode);
+  }
+
+  /**
+   * Leave a workspace
+   */
+  async leaveWorkspace(workspaceId: string): Promise<ethers.TransactionResponse> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await this.workspaceRegistryContract.leaveWorkspace(workspaceId);
+  }
+
+  /**
+   * Set or update workspace invite code
+   */
+  async setWorkspaceInviteCode(workspaceId: string, newInviteCode: string): Promise<ethers.TransactionResponse> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await this.workspaceRegistryContract.setInviteCode(workspaceId, newInviteCode);
+  }
+
+  /**
+   * Get workspace details
+   */
+  async getWorkspace(workspaceId: string): Promise<OnChainWorkspace> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    const ws = await this.workspaceRegistryContract.getWorkspace(workspaceId);
+
+    return {
+      id: ws[0],
+      name: ws[1],
+      description: ws[2],
+      owner: ws[3],
+      createdAt: ws[4],
+      isPublic: ws[5],
+      memberCount: ws[6],
+    };
+  }
+
+  /**
+   * Get workspace members
+   */
+  async getWorkspaceMembers(workspaceId: string): Promise<string[]> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await this.workspaceRegistryContract.getWorkspaceMembers(workspaceId);
+  }
+
+  /**
+   * Get member details
+   */
+  async getWorkspaceMember(workspaceId: string, memberAddress: string): Promise<WorkspaceMember> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    const member = await this.workspaceRegistryContract.getMember(workspaceId, memberAddress);
+
+    return {
+      memberAddress: member[0],
+      joinedAt: member[1],
+      role: Number(member[2]) as MemberRole,
+      exists: member[3],
+    };
+  }
+
+  /**
+   * Check if address is a member of workspace
+   */
+  async isWorkspaceMember(workspaceId: string, userAddress: string): Promise<boolean> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await this.workspaceRegistryContract.isMember(workspaceId, userAddress);
+  }
+
+  /**
+   * Get all workspaces for a user
+   */
+  async getUserWorkspaces(userAddress?: string): Promise<string[]> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    const addr = userAddress || this.address;
+    if (!addr) throw new Error('No address');
+    return await this.workspaceRegistryContract.getUserWorkspaces(addr);
+  }
+
+  /**
+   * Get all public workspaces
+   */
+  async getPublicWorkspaces(): Promise<OnChainWorkspace[]> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    const workspaces = await this.workspaceRegistryContract.getPublicWorkspaces();
+
+    return workspaces.map((ws: any) => ({
+      id: ws[0],
+      name: ws[1],
+      description: ws[2],
+      owner: ws[3],
+      createdAt: ws[4],
+      isPublic: ws[5],
+      memberCount: ws[6],
+    }));
+  }
+
+  /**
+   * Verify an invite code without joining
+   */
+  async verifyWorkspaceInviteCode(workspaceId: string, inviteCode: string): Promise<boolean> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await this.workspaceRegistryContract.verifyInviteCode(workspaceId, inviteCode);
+  }
+
+  /**
+   * Update workspace details (owner only)
+   */
+  async updateWorkspace(
+    workspaceId: string,
+    name: string,
+    description: string,
+    isPublic: boolean
+  ): Promise<ethers.TransactionResponse> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await this.workspaceRegistryContract.updateWorkspace(workspaceId, name, description, isPublic);
+  }
+
+  /**
+   * Set member role (owner only)
+   */
+  async setMemberRole(
+    workspaceId: string,
+    memberAddress: string,
+    role: MemberRole
+  ): Promise<ethers.TransactionResponse> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await this.workspaceRegistryContract.setMemberRole(workspaceId, memberAddress, role);
+  }
+
+  /**
+   * Remove a member from workspace (admin/owner only)
+   */
+  async removeWorkspaceMember(workspaceId: string, memberAddress: string): Promise<ethers.TransactionResponse> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await this.workspaceRegistryContract.removeMember(workspaceId, memberAddress);
+  }
+
+  /**
+   * Get total workspace count
+   */
+  async getWorkspaceCount(): Promise<bigint> {
+    if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
+    return await this.workspaceRegistryContract.workspaceCount();
   }
 
   // ============ Utility Functions ============

@@ -2,187 +2,230 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Plus, UserPlus, Copy, CheckCircle, Server,
-  Globe, Lock, LogOut, RefreshCw, Zap, Trash2, ChevronRight
+  Globe, Lock, LogOut, RefreshCw, Zap, ChevronRight, Wallet, AlertCircle
 } from 'lucide-react';
 import { CyberButton } from '../components';
-
-const API_BASE = 'http://localhost:8080';
-
-interface WorkspaceMember {
-  userId: string;
-  username: string;
-  role: 'owner' | 'admin' | 'member';
-  joinedAt: string;
-}
-
-interface Workspace {
-  id: string;
-  name: string;
-  description: string;
-  isPrivate: boolean;
-  inviteCode?: string;
-  members: WorkspaceMember[];
-  nodeCount: number;
-  createdAt: string;
-}
+import { useWeb3, OnChainWorkspace } from '../context/Web3Context';
 
 export function WorkspacePage() {
   const navigate = useNavigate();
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    connected,
+    address,
+    myWorkspaces,
+    loadingWorkspaces,
+    publicWorkspaces,
+    refreshWorkspaces,
+    createWorkspace,
+    joinWorkspaceWithCode,
+    joinPublicWorkspace,
+    leaveWorkspace,
+    fetchPublicWorkspaces,
+    setWorkspaceInviteCode,
+    connectWallet,
+    isConnecting,
+  } = useWeb3();
+
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
   // UI state
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [showJoinWorkspace, setShowJoinWorkspace] = useState(false);
+  const [showBrowsePublic, setShowBrowsePublic] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [newWorkspaceDesc, setNewWorkspaceDesc] = useState('');
+  const [newWorkspacePublic, setNewWorkspacePublic] = useState(false);
+  const [newInviteCode, setNewInviteCode] = useState('');
+  const [joinWorkspaceId, setJoinWorkspaceId] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Load workspaces from local API
-  const loadWorkspaces = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch(`${API_BASE}/api/v1/workspaces`);
-      if (!res.ok) {
-        throw new Error('Failed to load workspaces');
+  // Invite codes stored locally (since they're hashed on-chain)
+  const [inviteCodes, setInviteCodes] = useState<Record<string, string>>({});
+
+  // Load invite codes from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem('workspace-invite-codes');
+    if (stored) {
+      try {
+        setInviteCodes(JSON.parse(stored));
+      } catch {
+        // ignore
       }
-      const data = await res.json();
-      setWorkspaces(data.workspaces || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load workspaces');
-      setWorkspaces([]);
-    } finally {
-      setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadWorkspaces();
-  }, [loadWorkspaces]);
+  // Save invite code to localStorage
+  const saveInviteCode = (workspaceId: string, code: string) => {
+    const updated = { ...inviteCodes, [workspaceId]: code };
+    setInviteCodes(updated);
+    localStorage.setItem('workspace-invite-codes', JSON.stringify(updated));
+  };
 
-  const copyInviteCode = (code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopied(code);
+  // Load public workspaces
+  useEffect(() => {
+    if (connected) {
+      fetchPublicWorkspaces();
+    }
+  }, [connected]);
+
+  const copyInviteCode = (workspaceId: string, code: string) => {
+    // Copy format: workspaceId:inviteCode
+    const fullCode = `${workspaceId}:${code}`;
+    navigator.clipboard.writeText(fullCode);
+    setCopied(workspaceId);
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const createWorkspace = async () => {
+  const handleCreateWorkspace = async () => {
     if (!newWorkspaceName.trim()) return;
+
+    // Generate invite code if private
+    const inviteCode = !newWorkspacePublic
+      ? newInviteCode || Math.random().toString(36).substring(2, 10).toUpperCase()
+      : '';
 
     setActionLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/workspaces`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newWorkspaceName,
-          description: newWorkspaceDesc,
-        }),
-      });
+      const workspaceId = await createWorkspace(
+        newWorkspaceName,
+        newWorkspaceDesc,
+        newWorkspacePublic,
+        inviteCode
+      );
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to create workspace');
+      // Store invite code locally
+      if (inviteCode) {
+        saveInviteCode(workspaceId, inviteCode);
       }
 
       setNewWorkspaceName('');
       setNewWorkspaceDesc('');
+      setNewWorkspacePublic(false);
+      setNewInviteCode('');
       setShowCreateWorkspace(false);
-      loadWorkspaces();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create workspace');
+    } catch (err: any) {
+      setError(err.message || 'Failed to create workspace');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const joinWorkspace = async () => {
+  const handleJoinWorkspace = async () => {
     if (!joinCode.trim()) return;
 
     setActionLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/workspaces/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inviteCode: joinCode }),
-      });
+      // Parse the join code format: workspaceId:inviteCode
+      let workspaceId: string;
+      let inviteCode: string;
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to join workspace');
+      if (joinCode.includes(':')) {
+        [workspaceId, inviteCode] = joinCode.split(':');
+      } else {
+        // Old format or just invite code - need workspace ID
+        if (!joinWorkspaceId) {
+          setError('Please enter the full invite code (workspaceId:inviteCode)');
+          setActionLoading(false);
+          return;
+        }
+        workspaceId = joinWorkspaceId;
+        inviteCode = joinCode;
       }
 
+      await joinWorkspaceWithCode(workspaceId, inviteCode);
+
       setJoinCode('');
+      setJoinWorkspaceId('');
       setShowJoinWorkspace(false);
-      loadWorkspaces();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to join workspace');
+    } catch (err: any) {
+      setError(err.message || 'Failed to join workspace');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const leaveWorkspace = async (workspaceId: string) => {
-    if (!confirm('Are you sure you want to leave this workspace?')) return;
-
+  const handleJoinPublicWorkspace = async (workspaceId: string) => {
+    setActionLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/workspaces/${workspaceId}/leave`, {
-        method: 'POST',
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to leave workspace');
-      }
-
-      loadWorkspaces();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to leave workspace');
+      await joinPublicWorkspace(workspaceId);
+      setShowBrowsePublic(false);
+    } catch (err: any) {
+      setError(err.message || 'Failed to join workspace');
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const deleteWorkspace = async (workspaceId: string) => {
-    if (!confirm('Are you sure you want to delete this workspace? This cannot be undone.')) return;
+  const handleLeaveWorkspace = async (workspaceId: string) => {
+    if (!confirm('Are you sure you want to leave this workspace?')) return;
 
     try {
-      const res = await fetch(`${API_BASE}/api/v1/workspaces/${workspaceId}`, {
-        method: 'DELETE',
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to delete workspace');
-      }
-
-      loadWorkspaces();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete workspace');
+      await leaveWorkspace(workspaceId);
+    } catch (err: any) {
+      setError(err.message || 'Failed to leave workspace');
     }
   };
 
   const regenerateInviteCode = async (workspaceId: string) => {
+    const newCode = Math.random().toString(36).substring(2, 10).toUpperCase();
     try {
-      const res = await fetch(`${API_BASE}/api/v1/workspaces/${workspaceId}/regenerate-invite`, {
-        method: 'POST',
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to regenerate invite code');
-      }
-
-      loadWorkspaces();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to regenerate invite code');
+      await setWorkspaceInviteCode(workspaceId, newCode);
+      saveInviteCode(workspaceId, newCode);
+    } catch (err: any) {
+      setError(err.message || 'Failed to regenerate invite code');
     }
   };
 
-  const totalNodes = workspaces.reduce((sum, ws) => sum + ws.nodeCount, 0);
-  const totalMembers = new Set(workspaces.flatMap(ws => ws.members.map(m => m.userId))).size;
+  const formatAddress = (addr: string) => {
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  };
+
+  const formatDate = (timestamp: bigint) => {
+    return new Date(Number(timestamp) * 1000).toLocaleDateString();
+  };
+
+  // Not connected state
+  if (!connected) {
+    return (
+      <div className="fade-in">
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: 'var(--gap-xl)',
+        }}>
+          <div>
+            <h2 className="page-title">Workspaces</h2>
+            <p style={{ color: 'var(--text-muted)', marginTop: 'var(--gap-sm)', fontSize: '0.85rem' }}>
+              On-chain workspace management
+            </p>
+          </div>
+        </div>
+
+        <div className="cyber-card">
+          <div className="cyber-card-body" style={{ textAlign: 'center', padding: 'var(--gap-xl)' }}>
+            <Wallet size={48} style={{ color: 'var(--primary)', opacity: 0.5, marginBottom: 'var(--gap-md)' }} />
+            <h3 style={{ marginBottom: 'var(--gap-md)', color: 'var(--text-primary)' }}>
+              Connect Wallet to View Workspaces
+            </h3>
+            <p style={{ color: 'var(--text-muted)', marginBottom: 'var(--gap-lg)' }}>
+              Workspaces are managed on-chain. Connect your wallet to create or join workspaces.
+            </p>
+            <CyberButton
+              variant="primary"
+              icon={Wallet}
+              onClick={connectWallet}
+              disabled={isConnecting}
+            >
+              {isConnecting ? 'CONNECTING...' : 'CONNECT WALLET'}
+            </CyberButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fade-in">
@@ -194,20 +237,23 @@ export function WorkspacePage() {
         marginBottom: 'var(--gap-xl)',
       }}>
         <div>
-          <h2 className="page-title">Workspace</h2>
+          <h2 className="page-title">Workspaces</h2>
           <p style={{ color: 'var(--text-muted)', marginTop: 'var(--gap-sm)', fontSize: '0.85rem' }}>
-            Connect with friends and share compute resources
+            On-chain workspace management • {formatAddress(address!)}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 'var(--gap-sm)' }}>
-          <CyberButton icon={RefreshCw} onClick={loadWorkspaces} disabled={loading}>
+          <CyberButton icon={RefreshCw} onClick={refreshWorkspaces} disabled={loadingWorkspaces}>
             REFRESH
+          </CyberButton>
+          <CyberButton icon={Globe} onClick={() => setShowBrowsePublic(true)}>
+            BROWSE
           </CyberButton>
           <CyberButton icon={UserPlus} onClick={() => setShowJoinWorkspace(true)}>
             JOIN
           </CyberButton>
           <CyberButton variant="primary" icon={Plus} onClick={() => setShowCreateWorkspace(true)}>
-            CREATE WORKSPACE
+            CREATE
           </CyberButton>
         </div>
       </div>
@@ -221,11 +267,15 @@ export function WorkspacePage() {
           borderRadius: 'var(--radius-sm)',
           color: 'var(--error)',
           marginBottom: 'var(--gap-lg)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--gap-sm)',
         }}>
+          <AlertCircle size={16} />
           {error}
           <button
             onClick={() => setError(null)}
-            style={{ marginLeft: '1rem', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
           >
             ×
           </button>
@@ -236,31 +286,26 @@ export function WorkspacePage() {
       <div className="cyber-card" style={{ marginBottom: 'var(--gap-xl)' }}>
         <div className="cyber-card-header">
           <span className="cyber-card-title">NETWORK OVERVIEW</span>
+          <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontFamily: 'var(--font-mono)' }}>
+            ON-CHAIN
+          </span>
         </div>
         <div className="cyber-card-body">
           <div style={{ display: 'flex', gap: 'var(--gap-xl)' }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-display)', color: 'var(--primary)' }}>
-                {workspaces.length}
+                {myWorkspaces.length}
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Workspaces
+                My Workspaces
               </div>
             </div>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-display)', color: 'var(--primary)' }}>
-                {totalMembers}
+                {publicWorkspaces.length}
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Connections
-              </div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-display)', color: 'var(--primary-light)' }}>
-                {totalNodes}
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Active Nodes
+                Public Available
               </div>
             </div>
           </div>
@@ -280,18 +325,18 @@ export function WorkspacePage() {
           Your Workspaces
         </h3>
 
-        {loading ? (
+        {loadingWorkspaces ? (
           <div className="cyber-card">
             <div className="cyber-card-body" style={{ textAlign: 'center', padding: 'var(--gap-xl)' }}>
-              <p style={{ color: 'var(--text-muted)' }}>Loading workspaces...</p>
+              <p style={{ color: 'var(--text-muted)' }}>Loading from blockchain...</p>
             </div>
           </div>
-        ) : workspaces.length === 0 ? (
+        ) : myWorkspaces.length === 0 ? (
           <div className="cyber-card">
             <div className="cyber-card-body" style={{ textAlign: 'center', padding: 'var(--gap-xl)' }}>
               <Users size={48} style={{ color: 'var(--text-muted)', opacity: 0.3, marginBottom: 'var(--gap-md)' }} />
               <p style={{ color: 'var(--text-muted)', marginBottom: 'var(--gap-md)' }}>
-                No workspaces yet. Create one to start collaborating!
+                No workspaces yet. Create one on-chain to start collaborating!
               </p>
               <CyberButton variant="primary" icon={Plus} onClick={() => setShowCreateWorkspace(true)}>
                 CREATE YOUR FIRST WORKSPACE
@@ -304,207 +349,154 @@ export function WorkspacePage() {
             gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
             gap: 'var(--gap-md)',
           }}>
-            {workspaces.map(ws => (
-              <div
-                key={ws.id}
-                className="cyber-card hover-lift"
-                style={{ cursor: 'pointer', position: 'relative' }}
-                onClick={() => navigate(`/workspace/${ws.id}`)}
-              >
-                <div className="cyber-card-body" style={{ padding: 'var(--gap-lg)' }}>
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    marginBottom: 'var(--gap-md)',
-                  }}>
-                    <div>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 'var(--gap-sm)',
-                        marginBottom: '4px',
-                      }}>
-                        {ws.isPrivate ? <Lock size={14} style={{ color: 'var(--text-muted)' }} /> : <Globe size={14} style={{ color: 'var(--primary)' }} />}
-                        <span style={{
-                          fontFamily: 'var(--font-display)',
-                          fontSize: '1.1rem',
-                          color: 'var(--text-primary)',
-                        }}>
-                          {ws.name}
-                        </span>
-                        <ChevronRight size={16} style={{ color: 'var(--text-muted)', marginLeft: 'auto' }} />
-                      </div>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        {ws.description || 'No description'}
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
-                      {ws.inviteCode && (
-                        <button
-                          onClick={() => deleteWorkspace(ws.id)}
-                          style={{
-                            background: 'var(--bg-elevated)',
-                            border: '1px solid rgba(255, 0, 0, 0.3)',
-                            borderRadius: 'var(--radius-sm)',
-                            padding: '6px',
-                            cursor: 'pointer',
-                            color: 'var(--error)',
-                          }}
-                          title="Delete workspace"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                      {!ws.inviteCode && (
-                        <button
-                          onClick={() => leaveWorkspace(ws.id)}
-                          style={{
-                            background: 'var(--bg-elevated)',
-                            border: '1px solid rgba(255, 0, 0, 0.3)',
-                            borderRadius: 'var(--radius-sm)',
-                            padding: '6px',
-                            cursor: 'pointer',
-                            color: 'var(--error)',
-                          }}
-                          title="Leave workspace"
-                        >
-                          <LogOut size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
+            {myWorkspaces.map(ws => {
+              const isOwner = ws.owner.toLowerCase() === address?.toLowerCase();
+              const inviteCode = inviteCodes[ws.id];
 
-                  {/* Invite Code (only for owners) */}
-                  {ws.inviteCode && (
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 'var(--gap-sm)',
-                        marginBottom: 'var(--gap-md)',
-                        padding: 'var(--gap-sm)',
-                        background: 'var(--bg-void)',
-                        borderRadius: 'var(--radius-sm)',
-                      }}
-                    >
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>INVITE:</span>
-                      <code style={{
-                        flex: 1,
-                        fontSize: '0.9rem',
-                        fontFamily: 'var(--font-mono)',
-                        color: 'var(--primary)',
-                        letterSpacing: '0.1em',
-                      }}>
-                        {ws.inviteCode}
-                      </code>
-                      <button
-                        onClick={() => copyInviteCode(ws.inviteCode!)}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          cursor: 'pointer',
-                          color: copied === ws.inviteCode ? 'var(--primary)' : 'var(--text-muted)',
-                          padding: '4px',
-                        }}
-                        title="Copy invite code"
-                      >
-                        {copied === ws.inviteCode ? <CheckCircle size={14} /> : <Copy size={14} />}
-                      </button>
-                      <button
-                        onClick={() => regenerateInviteCode(ws.id)}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          cursor: 'pointer',
-                          color: 'var(--text-muted)',
-                          padding: '4px',
-                        }}
-                        title="Regenerate invite code"
-                      >
-                        <RefreshCw size={14} />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Members */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--gap-sm)',
-                    marginBottom: 'var(--gap-md)',
-                  }}>
-                    <div style={{ display: 'flex' }}>
-                      {ws.members.slice(0, 5).map((member, i) => (
-                        <div
-                          key={member.userId}
-                          style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: '50%',
-                            background: member.role === 'owner' ? 'var(--primary)' : 'var(--bg-elevated)',
-                            border: '2px solid var(--bg-surface)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '0.7rem',
-                            color: member.role === 'owner' ? 'white' : 'var(--text-muted)',
-                            marginLeft: i > 0 ? '-8px' : 0,
-                            zIndex: 5 - i,
-                          }}
-                          title={`${member.username} (${member.role})`}
-                        >
-                          {member.username.charAt(0).toUpperCase()}
-                        </div>
-                      ))}
-                      {ws.members.length > 5 && (
+              return (
+                <div
+                  key={ws.id}
+                  className="cyber-card hover-lift"
+                  style={{ cursor: 'pointer', position: 'relative' }}
+                  onClick={() => navigate(`/workspace/${ws.id}`)}
+                >
+                  <div className="cyber-card-body" style={{ padding: 'var(--gap-lg)' }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      marginBottom: 'var(--gap-md)',
+                    }}>
+                      <div>
                         <div style={{
-                          width: 28,
-                          height: 28,
-                          borderRadius: '50%',
-                          background: 'var(--bg-void)',
-                          border: '2px solid var(--bg-surface)',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '0.6rem',
-                          color: 'var(--text-muted)',
-                          marginLeft: '-8px',
+                          gap: 'var(--gap-sm)',
+                          marginBottom: '4px',
                         }}>
-                          +{ws.members.length - 5}
+                          {ws.isPublic ? (
+                            <Globe size={14} style={{ color: 'var(--primary)' }} />
+                          ) : (
+                            <Lock size={14} style={{ color: 'var(--text-muted)' }} />
+                          )}
+                          <span style={{
+                            fontFamily: 'var(--font-display)',
+                            fontSize: '1.1rem',
+                            color: 'var(--text-primary)',
+                          }}>
+                            {ws.name}
+                          </span>
+                          <ChevronRight size={16} style={{ color: 'var(--text-muted)', marginLeft: 'auto' }} />
                         </div>
-                      )}
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                          {ws.description || 'No description'}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
+                        {!isOwner && (
+                          <button
+                            onClick={() => handleLeaveWorkspace(ws.id)}
+                            style={{
+                              background: 'var(--bg-elevated)',
+                              border: '1px solid rgba(255, 0, 0, 0.3)',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '6px',
+                              cursor: 'pointer',
+                              color: 'var(--error)',
+                            }}
+                            title="Leave workspace"
+                          >
+                            <LogOut size={14} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {ws.members.length} member{ws.members.length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
 
-                  {/* Stats */}
-                  <div style={{
-                    display: 'flex',
-                    gap: 'var(--gap-lg)',
-                    padding: 'var(--gap-sm)',
-                    background: 'var(--bg-void)',
-                    borderRadius: 'var(--radius-sm)',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Server size={14} style={{ color: 'var(--primary)' }} />
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        {ws.nodeCount} node{ws.nodeCount !== 1 ? 's' : ''}
-                      </span>
+                    {/* Invite Code (only for owners with stored code) */}
+                    {isOwner && inviteCode && !ws.isPublic && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 'var(--gap-sm)',
+                          marginBottom: 'var(--gap-md)',
+                          padding: 'var(--gap-sm)',
+                          background: 'var(--bg-void)',
+                          borderRadius: 'var(--radius-sm)',
+                        }}
+                      >
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>INVITE:</span>
+                        <code style={{
+                          flex: 1,
+                          fontSize: '0.75rem',
+                          fontFamily: 'var(--font-mono)',
+                          color: 'var(--primary)',
+                          letterSpacing: '0.05em',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}>
+                          {ws.id.slice(0, 10)}...:{inviteCode}
+                        </code>
+                        <button
+                          onClick={() => copyInviteCode(ws.id, inviteCode)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: copied === ws.id ? 'var(--primary)' : 'var(--text-muted)',
+                            padding: '4px',
+                          }}
+                          title="Copy invite code"
+                        >
+                          {copied === ws.id ? <CheckCircle size={14} /> : <Copy size={14} />}
+                        </button>
+                        <button
+                          onClick={() => regenerateInviteCode(ws.id)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: 'var(--text-muted)',
+                            padding: '4px',
+                          }}
+                          title="Regenerate invite code"
+                        >
+                          <RefreshCw size={14} />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Stats */}
+                    <div style={{
+                      display: 'flex',
+                      gap: 'var(--gap-lg)',
+                      padding: 'var(--gap-sm)',
+                      background: 'var(--bg-void)',
+                      borderRadius: 'var(--radius-sm)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Users size={14} style={{ color: 'var(--primary)' }} />
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                          {Number(ws.memberCount)} member{Number(ws.memberCount) !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Zap size={14} style={{ color: isOwner ? 'var(--primary)' : 'var(--text-muted)' }} />
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                          {isOwner ? 'Owner' : 'Member'}
+                        </span>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Zap size={14} style={{ color: ws.nodeCount > 0 ? 'var(--primary)' : 'var(--text-muted)' }} />
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        {ws.nodeCount > 0 ? 'Compute available' : 'No nodes'}
-                      </span>
+
+                    {/* Created date */}
+                    <div style={{ marginTop: 'var(--gap-sm)', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                      Created {formatDate(ws.createdAt)}
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -530,8 +522,21 @@ export function WorkspacePage() {
           >
             <div className="cyber-card-header">
               <span className="cyber-card-title">CREATE WORKSPACE</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--primary)' }}>ON-CHAIN</span>
             </div>
             <div className="cyber-card-body">
+              <div style={{
+                padding: 'var(--gap-sm)',
+                background: 'rgba(0, 255, 136, 0.1)',
+                border: '1px solid rgba(0, 255, 136, 0.3)',
+                borderRadius: 'var(--radius-sm)',
+                marginBottom: 'var(--gap-md)',
+                fontSize: '0.8rem',
+                color: 'var(--primary)',
+              }}>
+                This will create a workspace on the Sepolia blockchain. Gas fees apply.
+              </div>
+
               <div style={{ marginBottom: 'var(--gap-md)' }}>
                 <label style={{
                   display: 'block',
@@ -551,7 +556,8 @@ export function WorkspacePage() {
                   autoFocus
                 />
               </div>
-              <div style={{ marginBottom: 'var(--gap-lg)' }}>
+
+              <div style={{ marginBottom: 'var(--gap-md)' }}>
                 <label style={{
                   display: 'block',
                   fontSize: '0.75rem',
@@ -566,15 +572,61 @@ export function WorkspacePage() {
                   onChange={(e) => setNewWorkspaceDesc(e.target.value)}
                   placeholder="What's this workspace for?"
                   className="settings-input"
-                  rows={3}
+                  rows={2}
                   style={{ resize: 'vertical' }}
                 />
               </div>
+
+              <div style={{ marginBottom: 'var(--gap-md)' }}>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--gap-sm)',
+                  cursor: 'pointer',
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={newWorkspacePublic}
+                    onChange={(e) => setNewWorkspacePublic(e.target.checked)}
+                  />
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    Public workspace (anyone can join)
+                  </span>
+                </label>
+              </div>
+
+              {!newWorkspacePublic && (
+                <div style={{ marginBottom: 'var(--gap-lg)' }}>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.75rem',
+                    color: 'var(--text-muted)',
+                    marginBottom: '4px',
+                    textTransform: 'uppercase',
+                  }}>
+                    Invite Code (optional - auto-generated if empty)
+                  </label>
+                  <input
+                    type="text"
+                    value={newInviteCode}
+                    onChange={(e) => setNewInviteCode(e.target.value.toUpperCase())}
+                    placeholder="AUTO-GENERATED"
+                    className="settings-input"
+                    style={{ fontFamily: 'var(--font-mono)', letterSpacing: '0.1em' }}
+                  />
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: 'var(--gap-sm)', justifyContent: 'flex-end' }}>
                 <CyberButton onClick={() => setShowCreateWorkspace(false)} disabled={actionLoading}>
                   CANCEL
                 </CyberButton>
-                <CyberButton variant="primary" icon={Plus} onClick={createWorkspace} disabled={actionLoading || !newWorkspaceName.trim()}>
+                <CyberButton
+                  variant="primary"
+                  icon={Plus}
+                  onClick={handleCreateWorkspace}
+                  disabled={actionLoading || !newWorkspaceName.trim()}
+                >
                   {actionLoading ? 'CREATING...' : 'CREATE'}
                 </CyberButton>
               </div>
@@ -607,7 +659,7 @@ export function WorkspacePage() {
             </div>
             <div className="cyber-card-body">
               <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 'var(--gap-md)' }}>
-                Enter the invite code shared with you to join a workspace.
+                Enter the full invite code shared with you (format: workspaceId:inviteCode)
               </p>
               <div style={{ marginBottom: 'var(--gap-lg)' }}>
                 <label style={{
@@ -617,25 +669,131 @@ export function WorkspacePage() {
                   marginBottom: '4px',
                   textTransform: 'uppercase',
                 }}>
-                  Invite Code
+                  Full Invite Code
                 </label>
                 <input
                   type="text"
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value)}
-                  placeholder="Enter invite code..."
+                  placeholder="0x....:ABCD1234"
                   className="settings-input"
                   autoFocus
+                  style={{ fontFamily: 'var(--font-mono)' }}
                 />
               </div>
               <div style={{ display: 'flex', gap: 'var(--gap-sm)', justifyContent: 'flex-end' }}>
                 <CyberButton onClick={() => setShowJoinWorkspace(false)} disabled={actionLoading}>
                   CANCEL
                 </CyberButton>
-                <CyberButton variant="primary" icon={UserPlus} onClick={joinWorkspace} disabled={actionLoading || !joinCode.trim()}>
+                <CyberButton
+                  variant="primary"
+                  icon={UserPlus}
+                  onClick={handleJoinWorkspace}
+                  disabled={actionLoading || !joinCode.trim()}
+                >
                   {actionLoading ? 'JOINING...' : 'JOIN'}
                 </CyberButton>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Browse Public Workspaces Modal */}
+      {showBrowsePublic && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }} onClick={() => setShowBrowsePublic(false)}>
+          <div
+            className="cyber-card"
+            style={{ width: '100%', maxWidth: 600, maxHeight: '80vh', overflow: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="cyber-card-header">
+              <span className="cyber-card-title">PUBLIC WORKSPACES</span>
+              <button
+                onClick={() => fetchPublicWorkspaces()}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <RefreshCw size={14} />
+              </button>
+            </div>
+            <div className="cyber-card-body">
+              {publicWorkspaces.length === 0 ? (
+                <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 'var(--gap-xl)' }}>
+                  No public workspaces available
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--gap-md)' }}>
+                  {publicWorkspaces.map(ws => {
+                    const isMember = myWorkspaces.some(m => m.id === ws.id);
+
+                    return (
+                      <div
+                        key={ws.id}
+                        style={{
+                          padding: 'var(--gap-md)',
+                          background: 'var(--bg-void)',
+                          borderRadius: 'var(--radius-sm)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{
+                              fontFamily: 'var(--font-display)',
+                              fontSize: '1rem',
+                              color: 'var(--text-primary)',
+                              marginBottom: '4px',
+                            }}>
+                              {ws.name}
+                            </div>
+                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 'var(--gap-sm)' }}>
+                              {ws.description || 'No description'}
+                            </p>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              {Number(ws.memberCount)} members • Owner: {formatAddress(ws.owner)}
+                            </div>
+                          </div>
+                          {isMember ? (
+                            <span style={{
+                              padding: '4px 8px',
+                              background: 'rgba(0, 255, 136, 0.2)',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: '0.7rem',
+                              color: 'var(--primary)',
+                            }}>
+                              JOINED
+                            </span>
+                          ) : (
+                            <CyberButton
+                              size="sm"
+                              onClick={() => handleJoinPublicWorkspace(ws.id)}
+                              disabled={actionLoading}
+                            >
+                              JOIN
+                            </CyberButton>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>

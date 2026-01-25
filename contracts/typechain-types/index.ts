@@ -36,3 +36,5 @@ export type { OTT } from "./contracts/OTT";
 export { OTT__factory } from "./factories/contracts/OTT__factory";
 export type { TaskEscrow } from "./contracts/TaskEscrow";
 export { TaskEscrow__factory } from "./factories/contracts/TaskEscrow__factory";
+export type { WorkspaceRegistry } from "./contracts/WorkspaceRegistry";
+export { WorkspaceRegistry__factory } from "./factories/contracts/WorkspaceRegistry__factory";

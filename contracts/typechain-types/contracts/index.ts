@@ -4,3 +4,4 @@
 export type { NodeRegistry } from "./NodeRegistry";
 export type { OTT } from "./OTT";
 export type { TaskEscrow } from "./TaskEscrow";
+export type { WorkspaceRegistry } from "./WorkspaceRegistry";
