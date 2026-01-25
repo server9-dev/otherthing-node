@@ -223,6 +223,30 @@ export class ApiServer {
       res.status(201).json(workspace);
     });
 
+    // Join workspace by invite code (must be before :id routes)
+    this.app.post('/api/v1/workspaces/join', localAuth, (req, res) => {
+      const session = (req as any).session;
+      const inviteCode = req.body?.inviteCode;
+
+      if (!inviteCode) {
+        res.status(400).json({ error: 'Invite code is required' });
+        return;
+      }
+
+      const result = this.workspaceManager.joinWorkspace(
+        inviteCode.trim(),
+        session.userId,
+        session.username
+      );
+
+      if (!result.success) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+
+      res.json({ success: true, workspace: result.workspace });
+    });
+
     this.app.get('/api/v1/workspaces/:id', localAuth, (req, res) => {
       const workspaceId = req.params.id as string;
       const workspace = this.workspaceManager.getWorkspace(workspaceId);
@@ -247,30 +271,6 @@ export class ApiServer {
       }
       this.workspaceManager.deleteWorkspace(workspaceId, session.userId);
       res.json({ success: true });
-    });
-
-    // Join workspace by invite code
-    this.app.post('/api/v1/workspaces/join', localAuth, (req, res) => {
-      const session = (req as any).session;
-      const { inviteCode } = req.body;
-
-      if (!inviteCode) {
-        res.status(400).json({ error: 'Invite code is required' });
-        return;
-      }
-
-      const result = this.workspaceManager.joinWorkspace(
-        inviteCode.trim(),
-        session.userId,
-        session.username
-      );
-
-      if (!result.success) {
-        res.status(400).json({ error: result.error });
-        return;
-      }
-
-      res.json({ success: true, workspace: result.workspace });
     });
 
     // Leave workspace
