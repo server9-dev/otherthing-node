@@ -19,7 +19,18 @@
     "fs:allow-read",
     "fs:allow-write",
     "fs:allow-exists",
-    "http:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "http://localhost:*" },
+        { "url": "http://127.0.0.1:*" },
+        { "url": "https://*.sepolia.org/*" },
+        { "url": "https://*.etherscan.io/*" },
+        { "url": "https://*.publicnode.com/*" },
+        { "url": "https://*.infura.io/*" },
+        { "url": "https://*.alchemy.com/*" }
+      ]
+    },
     "dialog:allow-open",
     "dialog:allow-save",
     "process:default",
