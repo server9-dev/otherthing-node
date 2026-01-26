@@ -129,13 +129,36 @@ interface WorkspaceStore {
   workspaces: Workspace[];
 }
 
-// Use electron app data directory for storage
+// Use consistent app data directory for storage (works in Electron, Tauri sidecar, or standalone)
 const getWorkspacesPath = (): string => {
+  // Try Electron first
   try {
     const { app } = require('electron');
     return path.join(app.getPath('userData'), 'workspaces.json');
   } catch {
-    return path.join(process.cwd(), 'workspaces.json');
+    // Fall back to platform-specific app data directory
+    const appName = 'otherthing-node';
+    let appDataDir: string;
+
+    if (process.platform === 'win32') {
+      appDataDir = path.join(process.env.APPDATA || path.join(require('os').homedir(), 'AppData', 'Roaming'), appName);
+    } else if (process.platform === 'darwin') {
+      appDataDir = path.join(require('os').homedir(), 'Library', 'Application Support', appName);
+    } else {
+      appDataDir = path.join(process.env.XDG_CONFIG_HOME || path.join(require('os').homedir(), '.config'), appName);
+    }
+
+    // Ensure directory exists
+    try {
+      const fs = require('fs');
+      if (!fs.existsSync(appDataDir)) {
+        fs.mkdirSync(appDataDir, { recursive: true });
+      }
+    } catch (e) {
+      console.error('[WorkspaceManager] Failed to create app data dir:', e);
+    }
+
+    return path.join(appDataDir, 'workspaces.json');
   }
 };
 
