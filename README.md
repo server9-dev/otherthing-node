@@ -4,7 +4,7 @@
 
 Desktop application for the OtherThing distributed compute network. Run local AI models, share IPFS storage, and earn OTT tokens for your contributions.
 
-**[One-Pager](docs/ONE-PAGER.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Tokenomics](docs/TOKENOMICS.md)** · **[Go-to-Market](docs/GTM.md)**
+**[Pitch Deck](docs/PITCH-DECK.md)** · **[One-Pager](docs/ONE-PAGER.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Tokenomics](docs/TOKENOMICS.md)** · **[Go-to-Market](docs/GTM.md)**
 
 ## Features
 
