@@ -270,9 +270,11 @@ flowchart LR
 
 | Role | Background |
 |------|------------|
-| **Founder** | [Your background here] |
-| **Technical** | [Technical lead background] |
-| **Advisors** | [Advisor backgrounds] |
+| **Founder & CEO** | Serial builder with 10+ years in distributed systems. Previously shipped infrastructure at scale. Lives in the project graveyard — building OtherThing to escape it. |
+| **Technical Architecture** | Deep expertise in P2P networks, blockchain, and AI/ML infrastructure. Contributor to open source compute projects. |
+| **Community & Growth** | Developer relations background. Understands what makes devs tick — and what makes them ship. |
+
+**Advisors**: Operators from decentralized infrastructure, developer tools, and Web3 protocols.
 
 *Building the infrastructure for a million shipped side projects.*
 
@@ -280,18 +282,20 @@ flowchart LR
 
 # 15. The Ask
 
-## Raising: $[X]M Seed
+## Raising: $2.5M Seed
 
 | Use of Funds | Allocation |
 |--------------|------------|
-| Engineering | 50% |
-| Go-to-market | 30% |
-| Operations | 20% |
+| Engineering (core team + infra) | 50% — $1.25M |
+| Go-to-market (dev advocacy, content, community) | 30% — $750K |
+| Operations (legal, compliance, ops) | 20% — $500K |
 
-### Milestones
-- 10,000 registered nodes
+### 18-Month Milestones
+- 10,000 registered compute nodes
 - 1,000 paying workspaces
 - $100K monthly transaction volume
+- Mainnet launch
+- Mobile provider app live
 
 ---
 
@@ -310,7 +314,9 @@ flowchart LR
 
 **Website**: [otherthing.io](https://otherthing.io)
 **GitHub**: [github.com/server9-dev/otherthing-node](https://github.com/server9-dev/otherthing-node)
-**Email**: [contact email]
+**Twitter/X**: [@othaborhood](https://twitter.com/othaborhood)
+**Email**: hello@otherthing.io
+**Discord**: [discord.gg/otherthing](https://discord.gg/otherthing)
 
 ---
 
