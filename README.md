@@ -1,6 +1,10 @@
 # OtherThing Node
 
+> **Every developer has a graveyard of unfinished projects.** Not because they lack skill, but because compute is expensive, cloud providers see your code, and there's no safe way to outsource work without losing control. OtherThing is a peer-to-peer compute marketplace where developers finally ship their "other things" using trusted, distributed resources — while keeping their IP locked down.
+
 Desktop application for the OtherThing distributed compute network. Run local AI models, share IPFS storage, and earn OTT tokens for your contributions.
+
+**[One-Pager](docs/ONE-PAGER.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Tokenomics](docs/TOKENOMICS.md)** · **[Go-to-Market](docs/GTM.md)**
 
 ## Features
 

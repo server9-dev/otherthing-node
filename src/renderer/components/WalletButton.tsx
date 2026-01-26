@@ -426,53 +426,65 @@ export function WalletButton() {
                       <p style={{ margin: '0 0 12px 0', color: 'var(--text-muted)' }}>
                         Your wallet needs ETH (gas) and OTT (staking) to register a node.
                       </p>
-                      <button
-                        onClick={handleFundWallet}
-                        disabled={funding}
-                        style={{
-                          width: '100%',
-                          padding: '12px',
-                          background: funding ? 'var(--bg-tertiary)' : 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-                          border: 'none',
-                          borderRadius: 'var(--radius-sm)',
-                          color: 'white',
-                          cursor: funding ? 'wait' : 'pointer',
-                          fontSize: '0.9rem',
-                          fontWeight: 500,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px',
-                        }}
-                      >
-                        {funding ? (
-                          <>
-                            <Loader size={16} className="spin" />
-                            Funding Wallet...
-                          </>
-                        ) : (
-                          <>
-                            <Wallet size={16} />
-                            Fund Wallet (0.01 ETH + 500 OTT)
-                          </>
-                        )}
-                      </button>
-                      {fundError && (
-                        <p style={{ margin: '8px 0 0 0', color: 'var(--error)', fontSize: '0.8rem' }}>
-                          {fundError}
-                        </p>
-                      )}
-                      <p style={{ margin: '12px 0 0 0', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                        Or get ETH manually from{' '}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <a
                           href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia"
                           target="_blank"
                           rel="noopener noreferrer"
-                          style={{ color: 'var(--primary)' }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            padding: '12px',
+                            background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)',
+                            border: 'none',
+                            borderRadius: 'var(--radius-sm)',
+                            color: 'white',
+                            textDecoration: 'none',
+                            fontSize: '0.9rem',
+                            fontWeight: 500,
+                          }}
                         >
-                          Sepolia Faucet
+                          <ExternalLink size={16} />
+                          Get Sepolia ETH (Google Faucet)
                         </a>
-                      </p>
+                        <button
+                          onClick={handleFundWallet}
+                          disabled={funding}
+                          style={{
+                            width: '100%',
+                            padding: '10px',
+                            background: funding ? 'var(--bg-tertiary)' : 'var(--bg-tertiary)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: 'var(--text-secondary)',
+                            cursor: funding ? 'wait' : 'pointer',
+                            fontSize: '0.85rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                          }}
+                        >
+                          {funding ? (
+                            <>
+                              <Loader size={14} className="spin" />
+                              Funding...
+                            </>
+                          ) : (
+                            <>
+                              <Wallet size={14} />
+                              Auto-Fund (Testnet Only)
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      {fundError && (
+                        <p style={{ margin: '8px 0 0 0', color: 'var(--warning)', fontSize: '0.8rem' }}>
+                          {fundError} - Use the faucet above instead
+                        </p>
+                      )}
                     </>
                   )}
                 </div>
