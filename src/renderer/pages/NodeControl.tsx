@@ -148,8 +148,9 @@ export function NodeControl() {
       const res = await fetch('http://localhost:8080/health');
       if (res.ok) {
         const data = await res.json();
+        // Health returns { status: 'healthy' } when running
         setNodeState({
-          running: data.status === 'ok',
+          running: data.status === 'healthy' || data.status === 'ok',
           nodeId: data.nodeId || 'local-node',
         });
       }
