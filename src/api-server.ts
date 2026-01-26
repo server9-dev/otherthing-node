@@ -35,6 +35,7 @@ import { SandboxManager } from './sandbox-manager';
 import { IPFSManager } from './ipfs-manager';
 import { web3Service, CONTRACT_ADDRESSES } from './services/web3-service';
 import { HardwareDetector } from './hardware';
+import { adapterManager } from './adapters/adapter-manager';
 
 const PORT = 8080;
 
@@ -1168,12 +1169,117 @@ export class ApiServer {
       }
     });
 
+    // ============ MCP Adapter Endpoints ============
+
+    // List all registered adapters
+    this.app.get('/api/v1/adapters', async (req, res) => {
+      try {
+        const adapters = adapterManager.listAdapters().map(reg => ({
+          name: reg.info.name,
+          version: reg.info.version,
+          description: reg.info.description,
+          capabilities: reg.info.capabilities,
+          methods: reg.methods,
+        }));
+        res.json({ adapters });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Get MCP-compatible tool definitions
+    this.app.get('/api/v1/adapters/tools', async (req, res) => {
+      try {
+        const tools = adapterManager.getMcpTools();
+        res.json({ tools });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Get specific adapter info
+    this.app.get('/api/v1/adapters/:name', async (req, res) => {
+      try {
+        const adapter = adapterManager.getAdapter(req.params.name);
+        if (!adapter) {
+          res.status(404).json({ error: `Adapter not found: ${req.params.name}` });
+          return;
+        }
+        res.json({
+          name: adapter.info.name,
+          version: adapter.info.version,
+          description: adapter.info.description,
+          capabilities: adapter.info.capabilities,
+          requirements: adapter.info.requirements,
+          methods: Array.from(adapter.methods.entries()).map(([name, method]) => ({
+            name,
+            description: method.description,
+          })),
+        });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Execute adapter method
+    this.app.post('/api/v1/adapters/:name/:method', localAuth, async (req, res) => {
+      const name = req.params.name as string;
+      const method = req.params.method as string;
+      const params = req.body;
+
+      try {
+        console.log(`[API] Executing adapter method: ${name}/${method}`);
+        const result = await adapterManager.execute(name, method, params, {
+          on_progress: (progress, message) => {
+            // Could broadcast via WebSocket if needed
+            console.log(`[API] ${name}/${method} progress: ${progress}% - ${message}`);
+          },
+        });
+        res.json({ success: true, result });
+      } catch (err: any) {
+        console.error(`[API] Adapter execution error:`, err);
+        res.status(400).json({
+          success: false,
+          error: err.message || String(err),
+        });
+      }
+    });
+
+    // Execute by MCP tool name (adapter/method format)
+    this.app.post('/api/v1/mcp/execute', localAuth, async (req, res) => {
+      const { tool, params } = req.body;
+
+      if (!tool) {
+        res.status(400).json({ error: 'Tool name required' });
+        return;
+      }
+
+      try {
+        console.log(`[API] Executing MCP tool: ${tool}`);
+        const result = await adapterManager.executeByToolName(tool, params || {});
+        res.json({ success: true, result });
+      } catch (err: any) {
+        console.error(`[API] MCP execution error:`, err);
+        res.status(400).json({
+          success: false,
+          error: err.message || String(err),
+        });
+      }
+    });
+
     // My Nodes Endpoint (for web UI node detection)
     this.app.get('/api/v1/my-nodes', localAuth, async (req, res) => {
       try {
         // Get hardware info from Ollama manager or use defaults
         const ollamaStatus = this.ollamaManager ? await this.ollamaManager.getStatus() : null;
         const os = require('os');
+
+        // Get registered MCP adapters
+        const adapters = adapterManager.listAdapters().map(reg => ({
+          name: reg.info.name,
+          version: reg.info.version,
+          capabilities: reg.info.capabilities,
+        }));
 
         res.json({
           nodes: [{
@@ -1204,6 +1310,7 @@ export class ApiServer {
                 models: ollamaStatus.models || [],
                 endpoint: ollamaStatus.endpoint || 'http://localhost:11434',
               } : undefined,
+              mcp_adapters: adapters,
             },
           }],
         });
@@ -1701,7 +1808,15 @@ export class ApiServer {
   }
 
   start(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
+      // Initialize MCP adapters
+      try {
+        await adapterManager.initialize();
+        console.log('[ApiServer] MCP adapters initialized');
+      } catch (err) {
+        console.error('[ApiServer] Failed to initialize adapters:', err);
+      }
+
       this.server = http.createServer(this.app);
 
       this.wss = new WebSocketServer({ server: this.server, path: '/ws/agents' });
