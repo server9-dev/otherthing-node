@@ -1,67 +1,32 @@
+mod api;
 mod commands;
 mod models;
 mod services;
 
+use api::ApiServer;
 use commands::AppState;
 use tauri::Manager;
-use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
 
-// Global sidecar process handle
-static SIDECAR_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
+// Global API server handle
+static API_SERVER_RUNNING: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
 
-fn start_sidecar(resource_dir: Option<std::path::PathBuf>) {
-    log::info!("Starting Node.js sidecar...");
-
-    // In dev mode, run from source; in production, run bundled sidecar
-    let result = if cfg!(debug_assertions) {
-        // Dev mode: run with node/npx from the project directory
-        #[cfg(target_os = "windows")]
-        let cmd = Command::new("cmd")
-            .args(["/c", "node", "dist/sidecar.js"])
-            .current_dir(std::env::current_dir().unwrap().parent().unwrap_or(&std::env::current_dir().unwrap()))
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn();
-
-        #[cfg(not(target_os = "windows"))]
-        let cmd = Command::new("node")
-            .arg("dist/sidecar.js")
-            .current_dir(std::env::current_dir().unwrap().parent().unwrap_or(&std::env::current_dir().unwrap()))
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn();
-
-        cmd
-    } else {
-        // Production: run bundled sidecar executable
-        let sidecar_path = resource_dir
-            .map(|p| p.join("sidecar"))
-            .unwrap_or_else(|| std::path::PathBuf::from("sidecar"));
-
-        Command::new(&sidecar_path)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()
-    };
-
-    match result {
-        Ok(child) => {
-            log::info!("Sidecar started with PID: {}", child.id());
-            *SIDECAR_PROCESS.lock().unwrap() = Some(child);
+async fn start_api_server() {
+    // Check if already running
+    {
+        let mut running = API_SERVER_RUNNING.lock().unwrap();
+        if *running {
+            log::info!("API server already running");
+            return;
         }
-        Err(e) => {
-            log::error!("Failed to start sidecar: {}", e);
-        }
+        *running = true;
     }
-}
 
-fn stop_sidecar() {
-    if let Ok(mut guard) = SIDECAR_PROCESS.lock() {
-        if let Some(mut child) = guard.take() {
-            log::info!("Stopping sidecar...");
-            let _ = child.kill();
-        }
+    log::info!("Starting Rust API server...");
+
+    let server = ApiServer::new();
+    if let Err(e) = server.start(8080).await {
+        log::error!("API server error: {}", e);
+        *API_SERVER_RUNNING.lock().unwrap() = false;
     }
 }
 
@@ -84,10 +49,9 @@ pub fn run() {
                 )?;
             }
 
-            // Start the Node.js sidecar for full backend functionality
-            let resource_dir = app.path().resource_dir().ok();
-            std::thread::spawn(move || {
-                start_sidecar(resource_dir);
+            // Start the Rust API server
+            tauri::async_runtime::spawn(async {
+                start_api_server().await;
             });
 
             // Auto-start node in local mode
@@ -103,12 +67,6 @@ pub fn run() {
             });
 
             Ok(())
-        })
-        .on_window_event(|_window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                // Stop sidecar when window closes
-                stop_sidecar();
-            }
         })
         .invoke_handler(tauri::generate_handler![
             // Hardware
