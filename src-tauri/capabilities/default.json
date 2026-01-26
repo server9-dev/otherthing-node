@@ -1,0 +1,29 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-close",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-is-maximized",
+    "shell:allow-open",
+    "shell:allow-execute",
+    "fs:allow-read",
+    "fs:allow-write",
+    "fs:allow-exists",
+    "http:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "process:default",
+    "notification:default",
+    "log:default"
+  ]
+}

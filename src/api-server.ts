@@ -34,6 +34,7 @@ import { OllamaManager } from './ollama-manager';
 import { SandboxManager } from './sandbox-manager';
 import { IPFSManager } from './ipfs-manager';
 import { web3Service, CONTRACT_ADDRESSES } from './services/web3-service';
+import { HardwareDetector } from './hardware';
 
 const PORT = 8080;
 
@@ -963,6 +964,208 @@ export class ApiServer {
           sandbox: this.sandboxManager ? 'available' : 'unavailable',
         }],
       });
+    });
+
+    // Hardware Detection Endpoint (for Tauri/sidecar)
+    this.app.get('/api/v1/hardware', async (req, res) => {
+      try {
+        const hardware = await HardwareDetector.detect();
+        res.json(hardware);
+      } catch (err) {
+        console.error('[API] Hardware detection error:', err);
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Drive List Endpoint (for storage selection)
+    this.app.get('/api/v1/drives', async (req, res) => {
+      try {
+        const drives = await HardwareDetector.getDrives();
+        res.json(drives);
+      } catch (err) {
+        console.error('[API] Drive detection error:', err);
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // ============ Ollama Endpoints ============
+
+    this.app.get('/api/v1/ollama/status', async (req, res) => {
+      try {
+        if (!this.ollamaManager) {
+          res.json({ installed: false, running: false, models: [] });
+          return;
+        }
+        const status = await this.ollamaManager.getStatus();
+        res.json(status);
+      } catch (err) {
+        console.error('[API] Ollama status error:', err);
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    this.app.post('/api/v1/ollama/start', async (req, res) => {
+      try {
+        if (!this.ollamaManager) {
+          res.status(400).json({ success: false, error: 'Ollama manager not initialized' });
+          return;
+        }
+        await this.ollamaManager.start();
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+      }
+    });
+
+    this.app.post('/api/v1/ollama/stop', async (req, res) => {
+      try {
+        if (!this.ollamaManager) {
+          res.status(400).json({ success: false, error: 'Ollama manager not initialized' });
+          return;
+        }
+        await this.ollamaManager.stop();
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+      }
+    });
+
+    this.app.get('/api/v1/ollama/models', async (req, res) => {
+      try {
+        if (!this.ollamaManager) {
+          res.json([]);
+          return;
+        }
+        const status = await this.ollamaManager.getStatus();
+        res.json(status.models || []);
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    this.app.post('/api/v1/ollama/pull', async (req, res) => {
+      try {
+        const { model } = req.body;
+        if (!model) {
+          res.status(400).json({ success: false, error: 'Model name required' });
+          return;
+        }
+        if (!this.ollamaManager) {
+          res.status(400).json({ success: false, error: 'Ollama manager not initialized' });
+          return;
+        }
+        await this.ollamaManager.pullModel(model);
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+      }
+    });
+
+    this.app.delete('/api/v1/ollama/models/:model', async (req, res) => {
+      try {
+        const { model } = req.params;
+        if (!this.ollamaManager) {
+          res.status(400).json({ success: false, error: 'Ollama manager not initialized' });
+          return;
+        }
+        await this.ollamaManager.deleteModel(model);
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+      }
+    });
+
+    // ============ IPFS Endpoints ============
+
+    this.app.get('/api/v1/ipfs/status', async (req, res) => {
+      try {
+        if (!this.ipfsManager) {
+          res.json({ running: false, has_binary: false, peer_id: null, stats: null });
+          return;
+        }
+        const stats = await this.ipfsManager.getStats();
+        res.json({
+          running: stats.isOnline,
+          has_binary: this.ipfsManager.hasBinary(),
+          peer_id: stats.peerId || null,
+          stats: stats,
+        });
+      } catch (err) {
+        console.error('[API] IPFS status error:', err);
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    this.app.post('/api/v1/ipfs/start', async (req, res) => {
+      try {
+        if (!this.ipfsManager) {
+          res.status(400).json({ success: false, error: 'IPFS manager not initialized' });
+          return;
+        }
+        await this.ipfsManager.start();
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+      }
+    });
+
+    this.app.post('/api/v1/ipfs/stop', async (req, res) => {
+      try {
+        if (!this.ipfsManager) {
+          res.status(400).json({ success: false, error: 'IPFS manager not initialized' });
+          return;
+        }
+        await this.ipfsManager.stop();
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+      }
+    });
+
+    this.app.post('/api/v1/ipfs/add', async (req, res) => {
+      try {
+        const { content } = req.body;
+        if (!content) {
+          res.status(400).json({ success: false, error: 'Content required' });
+          return;
+        }
+        if (!this.ipfsManager) {
+          res.status(400).json({ success: false, error: 'IPFS manager not initialized' });
+          return;
+        }
+        const cid = await this.ipfsManager.addContent(content);
+        res.json({ success: true, cid });
+      } catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+      }
+    });
+
+    this.app.post('/api/v1/ipfs/pin/:cid', async (req, res) => {
+      try {
+        const { cid } = req.params;
+        if (!this.ipfsManager) {
+          res.status(400).json({ success: false, error: 'IPFS manager not initialized' });
+          return;
+        }
+        await this.ipfsManager.pin(cid);
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+      }
+    });
+
+    this.app.delete('/api/v1/ipfs/pin/:cid', async (req, res) => {
+      try {
+        const { cid } = req.params;
+        if (!this.ipfsManager) {
+          res.status(400).json({ success: false, error: 'IPFS manager not initialized' });
+          return;
+        }
+        await this.ipfsManager.unpin(cid);
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+      }
     });
 
     // My Nodes Endpoint (for web UI node detection)

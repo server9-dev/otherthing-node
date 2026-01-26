@@ -1,0 +1,48 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "OtherThing Node",
+  "version": "1.0.0",
+  "identifier": "com.otherthing.node",
+  "build": {
+    "frontendDist": "../dist/renderer",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "npm run build:renderer"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "OtherThing Node",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "trayIcon": {
+      "iconPath": "../assets/tray-icon.png",
+      "iconAsTemplate": false
+    },
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": [
+      "../assets/icon.png",
+      "../assets/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "../assets/icon.ico",
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

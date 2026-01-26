@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Cpu, Play, Square, Download, Trash2, Plus, Check, AlertTriangle, RefreshCw, FolderOpen } from 'lucide-react';
 import { CyberButton } from './CyberButton';
+import { api } from '../lib/api-bridge';
 
 interface OllamaModel {
   name: string;
@@ -48,10 +49,8 @@ export function OllamaPanel({ sharedModels = [], onShareChange }: OllamaPanelPro
   const [localSharedModels, setLocalSharedModels] = useState<string[]>(sharedModels);
 
   const refreshStatus = useCallback(async () => {
-    if (!window.electronAPI) return;
-
     try {
-      const ollamaStatus = await window.electronAPI.getOllamaStatus();
+      const ollamaStatus = await api.getOllamaStatus();
       setStatus(ollamaStatus);
     } catch (err) {
       console.error('Failed to get Ollama status:', err);
@@ -62,8 +61,8 @@ export function OllamaPanel({ sharedModels = [], onShareChange }: OllamaPanelPro
     refreshStatus();
 
     // Listen for pull progress
-    if (window.electronAPI?.onOllamaPullProgress) {
-      window.electronAPI.onOllamaPullProgress((data: { model: string; status: string; percent?: number }) => {
+    if (true) { // Always run in Tauri mode
+      api.onOllamaPullProgress((data: { model: string; status: string; percent?: number }) => {
         if (data.percent !== undefined) {
           setPullProgress(data.percent);
         }
@@ -75,15 +74,15 @@ export function OllamaPanel({ sharedModels = [], onShareChange }: OllamaPanelPro
     }
 
     // Listen for status changes
-    if (window.electronAPI?.onOllamaStatusChange) {
-      window.electronAPI.onOllamaStatusChange((newStatus: any) => {
+    if (true) { // Always run in Tauri mode
+      api.onOllamaStatusChange((newStatus: any) => {
         setStatus(prev => ({ ...prev, ...newStatus }));
       });
     }
 
     // Listen for install progress
-    if (window.electronAPI?.onOllamaInstallProgress) {
-      window.electronAPI.onOllamaInstallProgress((percent: number) => {
+    if (true) { // Always run in Tauri mode
+      api.onOllamaInstallProgress((percent: number) => {
         setInstallProgress(percent);
         if (percent >= 100) {
           setInstalling(false);
@@ -97,11 +96,11 @@ export function OllamaPanel({ sharedModels = [], onShareChange }: OllamaPanelPro
   }, [refreshStatus]);
 
   const handleInstall = async () => {
-    if (!window.electronAPI) return;
+    
     setInstalling(true);
     setInstallProgress(0);
     try {
-      await window.electronAPI.installOllama();
+      await api.installOllama();
     } catch (err) {
       console.error('Failed to install Ollama:', err);
       setInstalling(false);
@@ -109,10 +108,10 @@ export function OllamaPanel({ sharedModels = [], onShareChange }: OllamaPanelPro
   };
 
   const handleStart = async () => {
-    if (!window.electronAPI) return;
+    
     setStarting(true);
     try {
-      await window.electronAPI.startOllama();
+      await api.startOllama();
       await refreshStatus();
     } catch (err) {
       console.error('Failed to start Ollama:', err);
@@ -122,10 +121,10 @@ export function OllamaPanel({ sharedModels = [], onShareChange }: OllamaPanelPro
   };
 
   const handleStop = async () => {
-    if (!window.electronAPI) return;
+    
     setStopping(true);
     try {
-      await window.electronAPI.stopOllama();
+      await api.stopOllama();
       await refreshStatus();
     } catch (err) {
       console.error('Failed to stop Ollama:', err);
@@ -135,11 +134,11 @@ export function OllamaPanel({ sharedModels = [], onShareChange }: OllamaPanelPro
   };
 
   const handlePullModel = async (modelName: string) => {
-    if (!window.electronAPI) return;
+    
     setPullingModel(modelName);
     setPullProgress(0);
     try {
-      await window.electronAPI.pullOllamaModel(modelName);
+      await api.pullOllamaModel(modelName);
     } catch (err) {
       console.error('Failed to pull model:', err);
       setPullingModel(null);
@@ -147,10 +146,10 @@ export function OllamaPanel({ sharedModels = [], onShareChange }: OllamaPanelPro
   };
 
   const handleDeleteModel = async (modelName: string) => {
-    if (!window.electronAPI) return;
+    
     if (!confirm(`Delete model ${modelName}?`)) return;
     try {
-      await window.electronAPI.deleteOllamaModel(modelName);
+      await api.deleteOllamaModel(modelName);
       await refreshStatus();
       // Remove from shared if it was shared
       const newShared = localSharedModels.filter(m => m !== modelName);
@@ -162,14 +161,14 @@ export function OllamaPanel({ sharedModels = [], onShareChange }: OllamaPanelPro
   };
 
   const handleBrowseOllama = async () => {
-    if (!window.electronAPI) return;
+    
     try {
-      const path = await window.electronAPI.browseForFile({
+      const path = await api.browseForFile({
         title: 'Select Ollama Executable',
         filters: [{ name: 'Executable', extensions: ['exe'] }],
       });
       if (path) {
-        await window.electronAPI.setOllamaPath(path);
+        await api.setOllamaPath(path);
         await refreshStatus();
       }
     } catch (err) {

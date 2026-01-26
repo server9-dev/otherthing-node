@@ -5,11 +5,11 @@ import { IPFSManager, IPFSStats } from './ipfs-manager';
 import { OllamaManager, OllamaStatus, OllamaModel } from './ollama-manager';
 import { SandboxManager, FileInfo, ExecutionResult } from './sandbox-manager';
 import { Web3Service } from './services/web3-service';
+import { getUserDataPath, getTempPath } from './electron-compat';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
 
 const execAsync = promisify(exec);
 
@@ -81,7 +81,7 @@ export class NodeService extends EventEmitter {
     super();
 
     // Load or create config with persistent share key
-    this.configPath = path.join(app.getPath('userData'), 'node-config.json');
+    this.configPath = path.join(getUserDataPath(), 'node-config.json');
     const config = this.loadOrCreateConfig();
     this.shareKey = config.shareKey;
     this.nodeId = config.nodeId;
@@ -529,7 +529,7 @@ export class NodeService extends EventEmitter {
                 break;
               }
               try {
-                const tempPath = path.join(app.getPath('temp'), `ipfs-get-${Date.now()}`);
+                const tempPath = path.join(getTempPath(), `ipfs-get-${Date.now()}`);
                 await this.ipfsManager.get(msg.cid, tempPath);
                 const content = fs.readFileSync(tempPath, 'utf-8');
                 fs.unlinkSync(tempPath); // Cleanup
@@ -1091,7 +1091,7 @@ export class NodeService extends EventEmitter {
     // Create a temporary IPFS manager if none exists (for binary check/download)
     if (!this.ipfsManager) {
       // Use a temp path for now - will be reinitialized when user selects storage
-      const tempPath = app.getPath('userData');
+      const tempPath = getUserDataPath();
       this.ipfsManager = new IPFSManager(tempPath);
       this.ipfsManager.on('log', (entry) => {
         this.log(`[IPFS] ${entry.message}`, entry.type);
@@ -1103,7 +1103,7 @@ export class NodeService extends EventEmitter {
   canCheckIPFSBinary(): boolean {
     // Can check binary status even without storage path
     if (!this.ipfsManager) {
-      const tempPath = app.getPath('userData');
+      const tempPath = getUserDataPath();
       const tempManager = new IPFSManager(tempPath);
       return tempManager.hasBinary();
     }

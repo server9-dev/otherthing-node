@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
+import { getTempPath } from './electron-compat';
 import { IPFSManager } from './ipfs-manager';
 
 export interface FileInfo {
@@ -619,7 +619,7 @@ export class SandboxManager extends EventEmitter {
 
     try {
       // Get manifest
-      const tempManifest = path.join(app.getPath('temp'), `manifest-${Date.now()}.json`);
+      const tempManifest = path.join(getTempPath(), `manifest-${Date.now()}.json`);
       await this.ipfsManager.get(manifestCid, tempManifest);
       const manifest = JSON.parse(fs.readFileSync(tempManifest, 'utf8'));
       fs.unlinkSync(tempManifest);

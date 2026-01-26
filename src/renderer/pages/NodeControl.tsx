@@ -75,15 +75,15 @@ export function NodeControl() {
     }
   }, [addLog]);
 
-  // Detect hardware via local HTTP API
+  // Detect hardware via sidecar API
   const detectHardware = useCallback(async () => {
     setDetectingHardware(true);
     setHealthStatus(prev => ({ ...prev, hardware: 'detecting' }));
     addLog('Detecting hardware...', 'info');
 
     try {
-      // Use local hardware API (running in Electron main process)
-      const res = await fetch('http://127.0.0.1:3847/hardware');
+      // Use sidecar API (works in both Electron and Tauri)
+      const res = await fetch('http://localhost:8080/api/v1/hardware');
       if (res.ok) {
         const data = await res.json();
 
@@ -142,15 +142,15 @@ export function NodeControl() {
     }
   }, [addLog]);
 
-  // Check node status
+  // Check node status via sidecar API
   const checkNodeStatus = useCallback(async () => {
     try {
-      const res = await fetch('http://127.0.0.1:3847/status');
+      const res = await fetch('http://localhost:8080/health');
       if (res.ok) {
         const data = await res.json();
         setNodeState({
-          running: data.running,
-          nodeId: data.nodeId,
+          running: data.status === 'ok',
+          nodeId: data.nodeId || 'local-node',
         });
       }
     } catch {

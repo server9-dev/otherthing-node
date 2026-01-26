@@ -37,7 +37,7 @@ The app features a cyberpunk-themed UI with glassmorphism effects:
 - **macOS**: [OtherThing-Node.dmg](https://github.com/server9-dev/otherthing-node/releases/latest)
 - **Linux**: [OtherThing-Node.AppImage](https://github.com/server9-dev/otherthing-node/releases/latest)
 
-### From Source
+### From Source (Tauri - Recommended)
 ```bash
 # Clone the repository
 git clone https://github.com/server9-dev/otherthing-node.git
@@ -46,6 +46,15 @@ cd otherthing-node
 # Install dependencies
 npm install
 
+# Run in development (requires Rust)
+npm run tauri:dev
+
+# Build for production
+npm run tauri:build
+```
+
+### From Source (Electron)
+```bash
 # Run in development
 npm run dev
 
@@ -58,6 +67,32 @@ npm run dist:linux # Linux
 
 ## Architecture
 
+### Tauri (Recommended - Lightweight ~15MB)
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Tauri Shell (Rust)                      │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                  Node.js Sidecar                     │   │
+│  │  ┌─────────────┐  ┌──────────────┐  ┌───────────┐  │   │
+│  │  │ NodeService │  │  ApiServer   │  │ Hardware  │  │   │
+│  │  │  - IPFS     │  │  :8080       │  │ Detector  │  │   │
+│  │  │  - Ollama   │  │  REST + WS   │  │           │  │   │
+│  │  │  - Sandbox  │  └──────────────┘  └───────────┘  │   │
+│  │  └─────────────┘                                    │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                              ↕ REST API
+┌─────────────────────────────────────────────────────────────┐
+│                   WebView (React + Vite)                     │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
+│  │Dashboard │  │NodeCtrl  │  │Workspace │  │Marketplace │  │
+│  │          │  │-IPFS     │  │-Agents   │  │-Blockchain │  │
+│  │          │  │-Ollama   │  │-Files    │  │            │  │
+│  └──────────┘  └──────────┘  └──────────┘  └────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Electron (Legacy - ~150MB)
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Electron Main Process                     │
@@ -71,17 +106,12 @@ npm run dist:linux # Linux
                               ↕ IPC
 ┌─────────────────────────────────────────────────────────────┐
 │                   Electron Renderer (React)                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │Dashboard │  │NodeCtrl  │  │Workspace │  │Marketplace │  │
-│  │          │  │-IPFS     │  │-Agents   │  │-Blockchain │  │
-│  │          │  │-Ollama   │  │-Files    │  │            │  │
-│  └──────────┘  └──────────┘  └──────────┘  └────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## Tech Stack
 
-- **Framework**: Electron 36.x
+- **Framework**: Tauri 2.x (Rust) or Electron 36.x
 - **Frontend**: React 18 + TypeScript + Vite
 - **Styling**: Custom CSS with cyberpunk theme
 - **State**: React Context (Web3, Modules, Credentials)
@@ -96,6 +126,10 @@ npm run dist:linux # Linux
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Health check |
+| `/api/v1/hardware` | GET | Detect CPU/GPU/RAM/Storage |
+| `/api/v1/drives` | GET | List available drives |
+| `/api/v1/ollama/status` | GET | Ollama status and models |
+| `/api/v1/ipfs/status` | GET | IPFS node status |
 | `/api/v1/workspaces` | GET/POST | Workspace CRUD |
 | `/api/v1/workspaces/:id/agents` | GET/POST | Agent management |
 | `/api/v1/workspaces/:id/sandbox/files` | GET/POST | File operations |
@@ -103,13 +137,6 @@ npm run dist:linux # Linux
 ### WebSocket (ws://localhost:8080/ws/agents)
 - Real-time agent communication
 - Streaming LLM responses
-
-### Hardware API (localhost:3847)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/hardware` | GET | Detect CPU/GPU/RAM/Storage |
-| `/status` | GET | Node running status |
 
 ## Smart Contracts (Sepolia Testnet)
 
@@ -149,6 +176,8 @@ npm run build:renderer
 ```
 src/
 ├── main.ts                 # Electron main process
+├── sidecar.ts              # Tauri sidecar entry point
+├── electron-compat.ts      # Electron API compatibility layer
 ├── preload.ts              # IPC bridge
 ├── node-service.ts         # Core node functionality
 ├── api-server.ts           # REST/WebSocket server
@@ -156,11 +185,19 @@ src/
 ├── adapters/               # LLM adapters
 ├── renderer/
 │   ├── App.tsx             # Main React app
+│   ├── lib/
+│   │   └── api-bridge.ts   # Unified Electron/Tauri API
 │   ├── pages/              # Page components
 │   ├── components/         # UI components
 │   ├── context/            # React contexts
 │   └── styles/             # CSS themes
 └── services/               # Backend services
+
+src-tauri/
+├── Cargo.toml              # Rust dependencies
+├── tauri.conf.json         # Tauri configuration
+└── src/
+    └── lib.rs              # Tauri app with sidecar spawning
 ```
 
 ## Contributing

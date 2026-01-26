@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { HardDrive, Play, Square, Download, Check, AlertTriangle, RefreshCw } from 'lucide-react';
 import { CyberButton } from './CyberButton';
+import { api } from '../lib/api-bridge';
 
 interface DriveInfo {
   mount: string;
@@ -38,20 +39,20 @@ export function IPFSPanel() {
   const [stopping, setStopping] = useState(false);
 
   const refreshStatus = useCallback(async () => {
-    if (!window.electronAPI) return;
+    
 
     try {
-      const ipfsStatus = await window.electronAPI.getIPFSStatus();
+      const ipfsStatus = await api.getIPFSStatus();
       setStatus(ipfsStatus);
 
-      const storagePath = await window.electronAPI.getStoragePath();
+      const storagePath = await api.getStoragePath();
       if (storagePath) {
         // Extract drive letter from path
         const drive = storagePath.match(/^([A-Z]:)/i)?.[1] || storagePath;
         setSelectedDrive(drive);
       }
 
-      const limit = await window.electronAPI.getIPFSStorageLimit();
+      const limit = await api.getIPFSStorageLimit();
       if (limit) setStorageLimit(limit);
     } catch (err) {
       console.error('Failed to get IPFS status:', err);
@@ -59,10 +60,10 @@ export function IPFSPanel() {
   }, []);
 
   const loadDrives = useCallback(async () => {
-    if (!window.electronAPI) return;
+    
 
     try {
-      const driveList = await window.electronAPI.getDrives();
+      const driveList = await api.getDrives();
       setDrives(driveList);
     } catch (err) {
       console.error('Failed to get drives:', err);
@@ -74,15 +75,15 @@ export function IPFSPanel() {
     loadDrives();
 
     // Listen for status changes
-    if (window.electronAPI?.onIPFSStatus) {
-      window.electronAPI.onIPFSStatus((newStatus: any) => {
+    if (true) {
+      api.onIPFSStatus((newStatus: any) => {
         setStatus(prev => ({ ...prev, ...newStatus }));
       });
     }
 
     // Listen for download progress
-    if (window.electronAPI?.onIPFSDownloadProgress) {
-      window.electronAPI.onIPFSDownloadProgress((percent: number) => {
+    if (true) {
+      api.onIPFSDownloadProgress((percent: number) => {
         setDownloadProgress(percent);
         if (percent >= 100) {
           setDownloading(false);
@@ -96,11 +97,11 @@ export function IPFSPanel() {
   }, [refreshStatus, loadDrives]);
 
   const handleDownloadBinary = async () => {
-    if (!window.electronAPI) return;
+    
     setDownloading(true);
     setDownloadProgress(0);
     try {
-      await window.electronAPI.downloadIPFSBinary();
+      await api.downloadIPFSBinary();
     } catch (err) {
       console.error('Failed to download IPFS:', err);
       setDownloading(false);
@@ -108,10 +109,10 @@ export function IPFSPanel() {
   };
 
   const handleStart = async () => {
-    if (!window.electronAPI) return;
+    
     setStarting(true);
     try {
-      await window.electronAPI.startIPFS();
+      await api.startIPFS();
       await refreshStatus();
     } catch (err) {
       console.error('Failed to start IPFS:', err);
@@ -121,10 +122,10 @@ export function IPFSPanel() {
   };
 
   const handleStop = async () => {
-    if (!window.electronAPI) return;
+    
     setStopping(true);
     try {
-      await window.electronAPI.stopIPFS();
+      await api.stopIPFS();
       await refreshStatus();
     } catch (err) {
       console.error('Failed to stop IPFS:', err);
@@ -134,22 +135,22 @@ export function IPFSPanel() {
   };
 
   const handleDriveChange = async (drive: string) => {
-    if (!window.electronAPI) return;
+    
     setSelectedDrive(drive);
     try {
       // Set storage path to the drive root + otherthing folder
       const path = `${drive}\\OtherThing\\ipfs`;
-      await window.electronAPI.setStoragePath(path);
+      await api.setStoragePath(path);
     } catch (err) {
       console.error('Failed to set storage path:', err);
     }
   };
 
   const handleStorageLimitChange = async (limit: number) => {
-    if (!window.electronAPI) return;
+    
     setStorageLimit(limit);
     try {
-      await window.electronAPI.setIPFSStorageLimit(limit);
+      await api.setIPFSStorageLimit(limit);
     } catch (err) {
       console.error('Failed to set storage limit:', err);
     }

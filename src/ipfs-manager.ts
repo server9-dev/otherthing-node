@@ -3,7 +3,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { app } from 'electron';
+import { getUserDataPath, getTempPath } from './electron-compat';
 import * as https from 'https';
 import * as zlib from 'zlib';
 import * as tar from 'tar';
@@ -38,7 +38,7 @@ export class IPFSManager extends EventEmitter {
     this.repoPath = path.join(storagePath, 'otherthing-storage', 'ipfs');
 
     // Binary is stored in userData (writable location that persists across updates)
-    const userDataPath = app.getPath('userData');
+    const userDataPath = getUserDataPath();
     const binaryName = process.platform === 'win32' ? 'ipfs.exe' : 'ipfs';
     this.ipfsBinaryPath = path.join(userDataPath, 'bin', binaryName);
   }
@@ -100,7 +100,7 @@ export class IPFSManager extends EventEmitter {
 
     const url = this.getDownloadUrl();
     const isZip = url.endsWith('.zip');
-    const tempDir = app.getPath('temp');
+    const tempDir = getTempPath();
     const downloadPath = path.join(tempDir, `ipfs-download-${Date.now()}${isZip ? '.zip' : '.tar.gz'}`);
 
     this.emit('log', { message: `Downloading IPFS from ${url}...`, type: 'info' });
@@ -466,7 +466,7 @@ export class IPFSManager extends EventEmitter {
     }
 
     // Write to temp file and add
-    const tempDir = app.getPath('temp');
+    const tempDir = getTempPath();
     const tempPath = path.join(tempDir, filename || `ipfs-add-${Date.now()}`);
     fs.writeFileSync(tempPath, content);
 

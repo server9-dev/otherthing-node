@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as https from 'https';
 import * as os from 'os';
 import { EventEmitter } from 'events';
-import { app } from 'electron';
+import { getTempPath } from './electron-compat';
 
 const execAsync = promisify(exec);
 
@@ -454,7 +454,7 @@ export class OllamaManager extends EventEmitter {
       return;
     }
 
-    const tempDir = app.getPath('temp');
+    const tempDir = getTempPath();
     const installerPath = path.join(tempDir, 'OllamaSetup.exe');
 
     this.emit('log', { message: 'Downloading Ollama installer...', type: 'info' });
