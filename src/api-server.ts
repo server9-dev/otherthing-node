@@ -36,6 +36,7 @@ import { IPFSManager } from './ipfs-manager';
 import { web3Service, CONTRACT_ADDRESSES } from './services/web3-service';
 import { HardwareDetector } from './hardware';
 import { adapterManager } from './adapters/adapter-manager';
+import { cloudGPUProvider } from './services/cloud-gpu-provider';
 
 const PORT = 8080;
 
@@ -1166,6 +1167,142 @@ export class ApiServer {
         res.json({ success: true });
       } catch (err) {
         res.status(500).json({ success: false, error: String(err) });
+      }
+    });
+
+    // ============ Cloud GPU Endpoints ============
+
+    // Configure cloud GPU provider
+    this.app.post('/api/v1/gpu/configure', localAuth, async (req, res) => {
+      try {
+        const { apiKey } = req.body;
+        if (!apiKey) {
+          res.status(400).json({ success: false, error: 'API key required' });
+          return;
+        }
+        cloudGPUProvider.initialize({ apiKey });
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+      }
+    });
+
+    // Search available GPU offers
+    this.app.get('/api/v1/gpu/offers', localAuth, async (req, res) => {
+      try {
+        if (!cloudGPUProvider.isConfigured()) {
+          res.status(400).json({ error: 'Cloud GPU not configured' });
+          return;
+        }
+        const maxPrice = parseFloat(req.query.maxPrice as string) || 2.0;
+        const minVram = parseInt(req.query.minVram as string) || 0;
+        const gpuType = req.query.gpuType as string;
+
+        const offers = await cloudGPUProvider.searchOffers({
+          maxPricePerHour: maxPrice,
+          minGpuMemoryGb: minVram,
+          gpuName: gpuType !== 'any' ? gpuType : undefined,
+          verifiedOnly: true,
+          sortBy: 'price',
+        });
+        res.json({ offers });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Get active instances
+    this.app.get('/api/v1/gpu/instances', localAuth, async (req, res) => {
+      try {
+        if (!cloudGPUProvider.isConfigured()) {
+          res.json({ instances: [], billing: null });
+          return;
+        }
+        const instances = await cloudGPUProvider.getInstances();
+        const billing = await cloudGPUProvider.getBilling();
+        res.json({ instances, billing });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Rent a GPU
+    this.app.post('/api/v1/gpu/rent', localAuth, async (req, res) => {
+      try {
+        const { offerId } = req.body;
+        if (!offerId) {
+          res.status(400).json({ error: 'Offer ID required' });
+          return;
+        }
+        if (!cloudGPUProvider.isConfigured()) {
+          res.status(400).json({ error: 'Cloud GPU not configured' });
+          return;
+        }
+        const instance = await cloudGPUProvider.rentInstance(offerId);
+        res.json({ success: true, instance });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Create tunnel to instance
+    this.app.post('/api/v1/gpu/instances/:id/tunnel', localAuth, async (req, res) => {
+      try {
+        const instanceId = parseInt(req.params.id as string);
+        const localPort = parseInt(req.query.port as string) || 11434;
+        const tunnel = await cloudGPUProvider.createTunnel(instanceId, localPort);
+        res.json({ success: true, tunnel });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Disconnect tunnel
+    this.app.delete('/api/v1/gpu/instances/:id/tunnel', localAuth, async (req, res) => {
+      try {
+        const instanceId = parseInt(req.params.id as string);
+        cloudGPUProvider.disconnectTunnel(instanceId);
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Terminate instance
+    this.app.delete('/api/v1/gpu/instances/:id', localAuth, async (req, res) => {
+      try {
+        const instanceId = parseInt(req.params.id as string);
+        await cloudGPUProvider.terminateInstance(instanceId);
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Pull model on remote instance
+    this.app.post('/api/v1/gpu/instances/:id/pull', localAuth, async (req, res) => {
+      try {
+        const instanceId = parseInt(req.params.id as string);
+        const { model } = req.body;
+        if (!model) {
+          res.status(400).json({ error: 'Model name required' });
+          return;
+        }
+        await cloudGPUProvider.pullModel(instanceId, model);
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // List models on remote instance
+    this.app.get('/api/v1/gpu/instances/:id/models', localAuth, async (req, res) => {
+      try {
+        const instanceId = parseInt(req.params.id as string);
+        const models = await cloudGPUProvider.listRemoteModels(instanceId);
+        res.json({ models });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
       }
     });
 

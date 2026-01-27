@@ -458,4 +458,54 @@ npx hardhat verify --network sepolia 0xe409937dcc6101225952F6723Ce46ba9fDe9f6cB
 
 ---
 
-*Last updated: January 25, 2026*
+## Cloud GPU Integration (January 27, 2026)
+
+### What Was Added
+
+**Cloud GPU rental directly from the Marketplace page** - Users can rent powerful cloud GPUs and tunnel them to their workspace for running larger models.
+
+### Files Created/Modified
+
+| File | Change |
+|------|--------|
+| `src/services/cloud-gpu-provider.ts` | **New** - Backend service for GPU rental |
+| `src/renderer/components/CloudGPUPanel.tsx` | **New** - UI component |
+| `src/renderer/components/index.ts` | Added CloudGPUPanel export |
+| `src/api-server.ts` | Added `/api/v1/gpu/*` routes |
+| `src/renderer/pages/Marketplace.tsx` | Added CloudGPUPanel to page |
+
+### API Endpoints Added
+
+```
+POST /api/v1/gpu/configure          - Set API key
+GET  /api/v1/gpu/offers             - Search GPUs (filters: maxPrice, gpuType)
+GET  /api/v1/gpu/instances          - List active rentals
+POST /api/v1/gpu/rent               - Rent a GPU
+POST /api/v1/gpu/instances/:id/tunnel    - Create SSH tunnel
+DELETE /api/v1/gpu/instances/:id/tunnel  - Disconnect
+DELETE /api/v1/gpu/instances/:id         - Terminate instance
+```
+
+### How It Works
+
+1. User enters API key (from cloud provider)
+2. Browse available GPUs filtered by price/type
+3. Click "Rent" to spin up instance with Ollama
+4. Click "Connect" to create SSH tunnel
+5. `localhost:11434` now routes to remote GPU
+6. Workspace agents use the powerful remote GPU seamlessly
+
+### Backend Provider
+
+Uses Vast.ai marketplace but UI is branded as generic "Cloud GPU" so it can support other providers later. The API key link points to `https://cloud.vast.ai/cli/`.
+
+### TODO
+
+- [ ] Auto-reconnect tunnels
+- [ ] Multiple provider support (RunPod, Lambda)
+- [ ] Budget alerts
+- [ ] Usage metrics display
+
+---
+
+*Last updated: January 27, 2026*

@@ -23,7 +23,7 @@ export function WorkspacePage() {
     deleteWorkspace,
     fetchPublicWorkspaces,
     setWorkspaceInviteCode,
-    connectWallet,
+    setShowQRModal,
     isConnecting,
   } = useWeb3();
 
@@ -41,6 +41,7 @@ export function WorkspacePage() {
   const [joinWorkspaceId, setJoinWorkspaceId] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
 
   // Invite codes stored locally (since they're hashed on-chain)
   const [inviteCodes, setInviteCodes] = useState<Record<string, string>>({});
@@ -88,7 +89,11 @@ export function WorkspacePage() {
       : '';
 
     setActionLoading(true);
+    setTransactionStatus('Sending transaction to blockchain...');
+    setError(null);
+
     try {
+      setTransactionStatus('Waiting for transaction confirmation...');
       const workspaceId = await createWorkspace(
         newWorkspaceName,
         newWorkspaceDesc,
@@ -96,18 +101,28 @@ export function WorkspacePage() {
         inviteCode
       );
 
+      setTransactionStatus('Workspace created! Refreshing...');
+
       // Store invite code locally
       if (inviteCode) {
         saveInviteCode(workspaceId, inviteCode);
       }
+
+      // Small delay to let the user see the success message
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       setNewWorkspaceName('');
       setNewWorkspaceDesc('');
       setNewWorkspacePublic(false);
       setNewInviteCode('');
       setShowCreateWorkspace(false);
+      setTransactionStatus(null);
+
+      // Navigate to the new workspace
+      navigate(`/workspace/${workspaceId}`);
     } catch (err: any) {
       setError(err.message || 'Failed to create workspace');
+      setTransactionStatus(null);
     } finally {
       setActionLoading(false);
     }
@@ -117,6 +132,9 @@ export function WorkspacePage() {
     if (!joinCode.trim()) return;
 
     setActionLoading(true);
+    setTransactionStatus('Sending join request to blockchain...');
+    setError(null);
+
     try {
       // Parse the join code format: workspaceId:inviteCode
       let workspaceId: string;
@@ -129,19 +147,29 @@ export function WorkspacePage() {
         if (!joinWorkspaceId) {
           setError('Please enter the full invite code (workspaceId:inviteCode)');
           setActionLoading(false);
+          setTransactionStatus(null);
           return;
         }
         workspaceId = joinWorkspaceId;
         inviteCode = joinCode;
       }
 
+      setTransactionStatus('Waiting for transaction confirmation...');
       await joinWorkspaceWithCode(workspaceId, inviteCode);
+
+      setTransactionStatus('Successfully joined! Refreshing...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       setJoinCode('');
       setJoinWorkspaceId('');
       setShowJoinWorkspace(false);
+      setTransactionStatus(null);
+
+      // Navigate to the workspace
+      navigate(`/workspace/${workspaceId}`);
     } catch (err: any) {
       setError(err.message || 'Failed to join workspace');
+      setTransactionStatus(null);
     } finally {
       setActionLoading(false);
     }
@@ -149,11 +177,24 @@ export function WorkspacePage() {
 
   const handleJoinPublicWorkspace = async (workspaceId: string) => {
     setActionLoading(true);
+    setTransactionStatus('Joining public workspace...');
+    setError(null);
+
     try {
+      setTransactionStatus('Waiting for transaction confirmation...');
       await joinPublicWorkspace(workspaceId);
+
+      setTransactionStatus('Successfully joined! Refreshing...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       setShowBrowsePublic(false);
+      setTransactionStatus(null);
+
+      // Navigate to the workspace
+      navigate(`/workspace/${workspaceId}`);
     } catch (err: any) {
       setError(err.message || 'Failed to join workspace');
+      setTransactionStatus(null);
     } finally {
       setActionLoading(false);
     }
@@ -235,7 +276,7 @@ export function WorkspacePage() {
             <CyberButton
               variant="primary"
               icon={Wallet}
-              onClick={connectWallet}
+              onClick={() => setShowQRModal(true)}
               disabled={isConnecting}
             >
               {isConnecting ? 'CONNECTING...' : 'CONNECT WALLET'}
@@ -561,17 +602,51 @@ export function WorkspacePage() {
               <span style={{ fontSize: '0.7rem', color: 'var(--primary)' }}>ON-CHAIN</span>
             </div>
             <div className="cyber-card-body">
-              <div style={{
-                padding: 'var(--gap-sm)',
-                background: 'rgba(0, 255, 136, 0.1)',
-                border: '1px solid rgba(0, 255, 136, 0.3)',
-                borderRadius: 'var(--radius-sm)',
-                marginBottom: 'var(--gap-md)',
-                fontSize: '0.8rem',
-                color: 'var(--primary)',
-              }}>
-                This will create a workspace on the Sepolia blockchain. Gas fees apply.
-              </div>
+              {transactionStatus ? (
+                <div style={{
+                  padding: 'var(--gap-md)',
+                  background: 'rgba(0, 255, 136, 0.15)',
+                  border: '1px solid rgba(0, 255, 136, 0.4)',
+                  borderRadius: 'var(--radius-sm)',
+                  marginBottom: 'var(--gap-md)',
+                  textAlign: 'center',
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 'var(--gap-sm)',
+                    marginBottom: 'var(--gap-sm)',
+                  }}>
+                    <div className="spinner" style={{
+                      width: 16,
+                      height: 16,
+                      border: '2px solid var(--primary)',
+                      borderTopColor: 'transparent',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite',
+                    }} />
+                    <span style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--primary)' }}>
+                      {transactionStatus}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+                    Please wait while the transaction is being processed...
+                  </p>
+                </div>
+              ) : (
+                <div style={{
+                  padding: 'var(--gap-sm)',
+                  background: 'rgba(0, 255, 136, 0.1)',
+                  border: '1px solid rgba(0, 255, 136, 0.3)',
+                  borderRadius: 'var(--radius-sm)',
+                  marginBottom: 'var(--gap-md)',
+                  fontSize: '0.8rem',
+                  color: 'var(--primary)',
+                }}>
+                  This will create a workspace on the Sepolia blockchain. Gas fees apply.
+                </div>
+              )}
 
               <div style={{ marginBottom: 'var(--gap-md)' }}>
                 <label style={{
@@ -694,9 +769,43 @@ export function WorkspacePage() {
               <span className="cyber-card-title">JOIN WORKSPACE</span>
             </div>
             <div className="cyber-card-body">
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 'var(--gap-md)' }}>
-                Enter the full invite code shared with you (format: workspaceId:inviteCode)
-              </p>
+              {transactionStatus ? (
+                <div style={{
+                  padding: 'var(--gap-md)',
+                  background: 'rgba(0, 255, 136, 0.15)',
+                  border: '1px solid rgba(0, 255, 136, 0.4)',
+                  borderRadius: 'var(--radius-sm)',
+                  marginBottom: 'var(--gap-md)',
+                  textAlign: 'center',
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 'var(--gap-sm)',
+                    marginBottom: 'var(--gap-sm)',
+                  }}>
+                    <div style={{
+                      width: 16,
+                      height: 16,
+                      border: '2px solid var(--primary)',
+                      borderTopColor: 'transparent',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite',
+                    }} />
+                    <span style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--primary)' }}>
+                      {transactionStatus}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+                    Please wait while the transaction is being processed...
+                  </p>
+                </div>
+              ) : (
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 'var(--gap-md)' }}>
+                  Enter the full invite code shared with you (format: workspaceId:inviteCode)
+                </p>
+              )}
               <div style={{ marginBottom: 'var(--gap-lg)' }}>
                 <label style={{
                   display: 'block',

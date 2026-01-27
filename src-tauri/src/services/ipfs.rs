@@ -23,16 +23,52 @@ impl IpfsManager {
             return path.clone();
         }
 
+        // Check multiple locations
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("otherthing-node")
+            .join("ipfs")
+            .join("kubo");
+
+        #[cfg(target_os = "windows")]
+        let binary_name = "ipfs.exe";
+        #[cfg(not(target_os = "windows"))]
+        let binary_name = "ipfs";
+
+        // First check our download location
+        let downloaded_path = config_dir.join(binary_name);
+        if downloaded_path.exists() {
+            return downloaded_path;
+        }
+
+        // Check system paths
         #[cfg(target_os = "windows")]
         {
-            let app_data = std::env::var("APPDATA").unwrap_or_default();
-            PathBuf::from(&app_data).join("otherthing-node/ipfs/kubo/ipfs.exe")
+            let app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+            let system_path = PathBuf::from(&app_data).join("Programs/IPFS/ipfs.exe");
+            if system_path.exists() {
+                return system_path;
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let homebrew_path = PathBuf::from("/opt/homebrew/bin/ipfs");
+            if homebrew_path.exists() {
+                return homebrew_path;
+            }
         }
 
         #[cfg(not(target_os = "windows"))]
         {
-            PathBuf::from("/usr/local/bin/ipfs")
+            let usr_local = PathBuf::from("/usr/local/bin/ipfs");
+            if usr_local.exists() {
+                return usr_local;
+            }
         }
+
+        // Return expected path even if doesn't exist yet
+        downloaded_path
     }
 
     pub fn has_binary(&self) -> bool {
@@ -71,21 +107,44 @@ impl IpfsManager {
 
         let path = self.get_ipfs_path();
         if !path.exists() {
-            return Err("IPFS binary not found".to_string());
+            return Err("IPFS binary not found. Please download it first.".to_string());
         }
 
         // Initialize IPFS repo if needed
         let repo_path = self.get_repo_path();
         if !repo_path.join("config").exists() {
-            Command::new(&path)
+            log::info!("Initializing IPFS repo at {:?}", repo_path);
+            let status = Command::new(&path)
                 .arg("init")
                 .env("IPFS_PATH", &repo_path)
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
                 .map_err(|e| format!("Failed to init IPFS: {}", e))?;
+
+            if !status.success() {
+                return Err("IPFS init failed".to_string());
+            }
+
+            // Configure gateway to use port 8088 instead of 8080 to avoid conflict
+            log::info!("Configuring IPFS gateway port to 8088");
+            let _ = Command::new(&path)
+                .args(["config", "Addresses.Gateway", "/ip4/127.0.0.1/tcp/8088"])
+                .env("IPFS_PATH", &repo_path)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+
+            // Disable gateway redirect (optional, for security)
+            let _ = Command::new(&path)
+                .args(["config", "--json", "Gateway.NoFetch", "true"])
+                .env("IPFS_PATH", &repo_path)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
         }
 
+        log::info!("Starting IPFS daemon");
         let child = Command::new(&path)
             .arg("daemon")
             .arg("--enable-gc")
@@ -98,14 +157,18 @@ impl IpfsManager {
         *self.process.lock().unwrap() = Some(child);
 
         // Wait for API
-        for _ in 0..30 {
+        for i in 0..30 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if Self::check_api_running() {
+                log::info!("IPFS daemon started successfully");
                 return Ok(());
+            }
+            if i % 10 == 0 {
+                log::info!("Waiting for IPFS API... ({}/30)", i);
             }
         }
 
-        Err("IPFS started but API not responding".to_string())
+        Err("IPFS started but API not responding after 15 seconds".to_string())
     }
 
     pub async fn stop(&self) -> Result<(), String> {

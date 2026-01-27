@@ -229,6 +229,11 @@ impl OllamaManager {
 
         Ok(())
     }
+
+    /// Get the Ollama API host URL
+    pub fn get_host(&self) -> String {
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string())
+    }
 }
 
 impl Default for OllamaManager {

@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Server, Users, Bot, FolderOpen, Plus, Copy, Check,
-  RefreshCw, Trash2, Settings, Zap
+  RefreshCw, Trash2, Settings, Zap, Globe, Lock, Wallet
 } from 'lucide-react';
 import { CyberButton } from '../components';
+import { useWeb3, OnChainWorkspace } from '../context/Web3Context';
 
 const API_BASE = 'http://localhost:8080';
 
@@ -21,18 +22,22 @@ interface WorkspaceNode {
   addedAt: string;
 }
 
-interface Workspace {
-  id: string;
-  name: string;
-  description: string;
-  inviteCode?: string;
-  nodeCount: number;
-}
-
 export function WorkspaceDetailPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const navigate = useNavigate();
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const {
+    connected,
+    address,
+    myWorkspaces,
+    loadingWorkspaces,
+    refreshWorkspaces,
+    getWorkspaceMembers,
+    setShowQRModal,
+    isConnecting,
+  } = useWeb3();
+
+  const [workspace, setWorkspace] = useState<OnChainWorkspace | null>(null);
+  const [members, setMembers] = useState<string[]>([]);
   const [nodes, setNodes] = useState<WorkspaceNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,23 +47,52 @@ export function WorkspaceDetailPage() {
   const [copied, setCopied] = useState(false);
   const [localNodeKey, setLocalNodeKey] = useState<string | null>(null);
 
-  // Load workspace details
-  const loadWorkspace = useCallback(async () => {
-    if (!workspaceId) return;
+  // Get invite code from localStorage (since it's hashed on-chain)
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
 
+  useEffect(() => {
+    const stored = localStorage.getItem('workspace-invite-codes');
+    if (stored && workspaceId) {
+      try {
+        const codes = JSON.parse(stored);
+        setInviteCode(codes[workspaceId] || null);
+      } catch {
+        // ignore
+      }
+    }
+  }, [workspaceId]);
+
+  // Load workspace from Web3 context (on-chain data)
+  const loadWorkspace = useCallback(async () => {
+    if (!workspaceId || !connected) return;
+
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await fetch(`${API_BASE}/api/v1/workspaces/${workspaceId}`);
-      if (!res.ok) throw new Error('Failed to load workspace');
-      const data = await res.json();
-      // API returns { workspace: {...} }
-      setWorkspace(data.workspace || data);
+      // Find workspace in myWorkspaces (already fetched from chain)
+      const found = myWorkspaces.find(ws => ws.id === workspaceId);
+      if (found) {
+        setWorkspace(found);
+        // Also fetch members
+        try {
+          const memberList = await getWorkspaceMembers(workspaceId);
+          setMembers(memberList);
+        } catch (err) {
+          console.error('Failed to load members:', err);
+        }
+      } else {
+        // Workspace not in user's list - refresh and try again
+        await refreshWorkspaces();
+        const retryFound = myWorkspaces.find(ws => ws.id === workspaceId);
+        if (retryFound) {
+          setWorkspace(retryFound);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load workspace');
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, connected, myWorkspaces, refreshWorkspaces, getWorkspaceMembers]);
 
   // Load workspace nodes
   const loadNodes = useCallback(async () => {
@@ -91,10 +125,23 @@ export function WorkspaceDetailPage() {
   }, []);
 
   useEffect(() => {
-    loadWorkspace();
-    loadNodes();
-    loadLocalNodeKey();
-  }, [loadWorkspace, loadNodes, loadLocalNodeKey]);
+    if (connected && workspaceId) {
+      loadWorkspace();
+      loadNodes();
+      loadLocalNodeKey();
+    }
+  }, [connected, workspaceId, loadWorkspace, loadNodes, loadLocalNodeKey]);
+
+  // Also refresh when myWorkspaces changes
+  useEffect(() => {
+    if (workspaceId && myWorkspaces.length > 0) {
+      const found = myWorkspaces.find(ws => ws.id === workspaceId);
+      if (found) {
+        setWorkspace(found);
+        setLoading(false);
+      }
+    }
+  }, [workspaceId, myWorkspaces]);
 
   const addNodeByKey = async () => {
     if (!shareKey.trim() || !workspaceId) return;
@@ -168,17 +215,55 @@ export function WorkspaceDetailPage() {
   };
 
   const copyInviteCode = () => {
-    if (workspace?.inviteCode) {
-      navigator.clipboard.writeText(workspace.inviteCode);
+    if (inviteCode && workspaceId) {
+      // Copy full format: workspaceId:inviteCode
+      const fullCode = `${workspaceId}:${inviteCode}`;
+      navigator.clipboard.writeText(fullCode);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
-  if (loading) {
+  const formatAddress = (addr: string) => {
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  };
+
+  const formatDate = (timestamp: bigint) => {
+    return new Date(Number(timestamp) * 1000).toLocaleDateString();
+  };
+
+  // Not connected state
+  if (!connected) {
     return (
       <div className="fade-in" style={{ textAlign: 'center', padding: '4rem' }}>
-        <p style={{ color: 'var(--text-muted)' }}>Loading workspace...</p>
+        <Wallet size={48} style={{ color: 'var(--primary)', opacity: 0.5, marginBottom: 'var(--gap-md)' }} />
+        <h3 style={{ marginBottom: 'var(--gap-md)', color: 'var(--text-primary)' }}>
+          Connect Wallet to View Workspace
+        </h3>
+        <p style={{ color: 'var(--text-muted)', marginBottom: 'var(--gap-lg)' }}>
+          Workspaces are managed on-chain. Connect your wallet to view this workspace.
+        </p>
+        <div style={{ display: 'flex', gap: 'var(--gap-sm)', justifyContent: 'center' }}>
+          <CyberButton icon={ArrowLeft} onClick={() => navigate('/workspace')}>
+            Back
+          </CyberButton>
+          <CyberButton
+            variant="primary"
+            icon={Wallet}
+            onClick={() => setShowQRModal(true)}
+            disabled={isConnecting}
+          >
+            {isConnecting ? 'CONNECTING...' : 'CONNECT WALLET'}
+          </CyberButton>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || loadingWorkspaces) {
+    return (
+      <div className="fade-in" style={{ textAlign: 'center', padding: '4rem' }}>
+        <p style={{ color: 'var(--text-muted)' }}>Loading workspace from blockchain...</p>
       </div>
     );
   }
@@ -186,13 +271,18 @@ export function WorkspaceDetailPage() {
   if (!workspace) {
     return (
       <div className="fade-in" style={{ textAlign: 'center', padding: '4rem' }}>
-        <p style={{ color: 'var(--error)' }}>Workspace not found</p>
+        <p style={{ color: 'var(--error)', marginBottom: 'var(--gap-md)' }}>Workspace not found</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: 'var(--gap-lg)' }}>
+          This workspace may not exist on-chain or you may not be a member.
+        </p>
         <CyberButton icon={ArrowLeft} onClick={() => navigate('/workspace')}>
           Back to Workspaces
         </CyberButton>
       </div>
     );
   }
+
+  const isOwner = workspace.owner.toLowerCase() === address?.toLowerCase();
 
   return (
     <div className="fade-in">
@@ -221,13 +311,23 @@ export function WorkspaceDetailPage() {
             <ArrowLeft size={16} />
             Back to Workspaces
           </button>
-          <h2 className="page-title">{workspace.name}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--gap-sm)' }}>
+            {workspace.isPublic ? (
+              <Globe size={20} style={{ color: 'var(--primary)' }} />
+            ) : (
+              <Lock size={20} style={{ color: 'var(--text-muted)' }} />
+            )}
+            <h2 className="page-title">{workspace.name}</h2>
+          </div>
           <p style={{ color: 'var(--text-muted)', marginTop: 'var(--gap-sm)', fontSize: '0.85rem' }}>
             {workspace.description || 'No description'}
           </p>
+          <p style={{ color: 'var(--text-muted)', marginTop: '4px', fontSize: '0.75rem' }}>
+            Owner: {formatAddress(workspace.owner)} • {Number(workspace.memberCount)} member{Number(workspace.memberCount) !== 1 ? 's' : ''} • Created {formatDate(workspace.createdAt)}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 'var(--gap-sm)' }}>
-          <CyberButton icon={RefreshCw} onClick={() => { loadWorkspace(); loadNodes(); }}>
+          <CyberButton icon={RefreshCw} onClick={() => { refreshWorkspaces(); loadNodes(); }}>
             REFRESH
           </CyberButton>
         </div>
@@ -294,11 +394,12 @@ export function WorkspaceDetailPage() {
         </div>
       </div>
 
-      {/* Invite Code */}
-      {workspace.inviteCode && (
+      {/* Invite Code (only show for owners of private workspaces who have the code stored) */}
+      {isOwner && inviteCode && !workspace.isPublic && (
         <div className="cyber-card" style={{ marginBottom: 'var(--gap-xl)' }}>
           <div className="cyber-card-header">
             <span className="cyber-card-title">INVITE CODE</span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--primary)' }}>PRIVATE WORKSPACE</span>
           </div>
           <div className="cyber-card-body">
             <div style={{
@@ -308,23 +409,57 @@ export function WorkspaceDetailPage() {
             }}>
               <code style={{
                 flex: 1,
-                fontSize: '1.2rem',
+                fontSize: '0.9rem',
                 fontFamily: 'var(--font-mono)',
                 color: 'var(--primary)',
-                letterSpacing: '0.15em',
+                letterSpacing: '0.1em',
                 background: 'var(--bg-void)',
                 padding: 'var(--gap-md)',
                 borderRadius: 'var(--radius-sm)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
               }}>
-                {workspace.inviteCode}
+                {workspaceId?.slice(0, 10)}...:{inviteCode}
               </code>
               <CyberButton icon={copied ? Check : Copy} onClick={copyInviteCode}>
                 {copied ? 'COPIED' : 'COPY'}
               </CyberButton>
             </div>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 'var(--gap-sm)' }}>
-              Share this code with friends to let them join your workspace
+              Share the full invite code with others to let them join your workspace
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Members Card */}
+      {members.length > 0 && (
+        <div className="cyber-card" style={{ marginBottom: 'var(--gap-xl)' }}>
+          <div className="cyber-card-header">
+            <span className="cyber-card-title">MEMBERS</span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{members.length} total</span>
+          </div>
+          <div className="cyber-card-body">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--gap-sm)' }}>
+              {members.map((member, idx) => (
+                <div
+                  key={member}
+                  style={{
+                    padding: '6px 12px',
+                    background: member.toLowerCase() === workspace.owner.toLowerCase() ? 'rgba(0, 255, 136, 0.15)' : 'var(--bg-void)',
+                    borderRadius: 'var(--radius-sm)',
+                    border: member.toLowerCase() === workspace.owner.toLowerCase() ? '1px solid rgba(0, 255, 136, 0.3)' : '1px solid var(--border-subtle)',
+                    fontSize: '0.8rem',
+                    fontFamily: 'var(--font-mono)',
+                    color: member.toLowerCase() === workspace.owner.toLowerCase() ? 'var(--primary)' : 'var(--text-secondary)',
+                  }}
+                >
+                  {formatAddress(member)}
+                  {member.toLowerCase() === workspace.owner.toLowerCase() && ' (owner)'}
+                  {member.toLowerCase() === address?.toLowerCase() && member.toLowerCase() !== workspace.owner.toLowerCase() && ' (you)'}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

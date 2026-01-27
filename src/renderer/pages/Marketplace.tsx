@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Store, Server, Cpu, HardDrive, Zap, Clock, DollarSign,
-  RefreshCw, Search, Filter, ChevronDown, ExternalLink
+  RefreshCw, Search, Filter, ChevronDown, ExternalLink, Cloud
 } from 'lucide-react';
-import { CyberButton } from '../components';
+import { CyberButton, CloudGPUPanel } from '../components';
 import { useWeb3 } from '../context/Web3Context';
 
 interface RegisteredNode {
@@ -157,6 +157,11 @@ export function Marketplace() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Cloud GPU Rental */}
+      <div style={{ marginBottom: 'var(--gap-xl)' }}>
+        <CloudGPUPanel />
       </div>
 
       {/* Search and Filter */}
