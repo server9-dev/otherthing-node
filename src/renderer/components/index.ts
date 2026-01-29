@@ -5,3 +5,6 @@ export { ActivityLog } from './ActivityLog';
 export { IPFSPanel } from './IPFSPanel';
 export { OllamaPanel } from './OllamaPanel';
 export { CloudGPUPanel } from './CloudGPUPanel';
+export { MermaidDiagram } from './MermaidDiagram';
+export { CodebaseHealth } from './CodebaseHealth';
+export { RepoConnectionPanel } from './RepoConnectionPanel';

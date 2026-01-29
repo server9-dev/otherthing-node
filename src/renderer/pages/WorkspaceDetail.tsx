@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Server, Users, Bot, FolderOpen, Plus, Copy, Check,
-  RefreshCw, Trash2, Settings, Zap, Globe, Lock, Wallet
+  RefreshCw, Trash2, Settings, Zap, Globe, Lock, Wallet, Code
 } from 'lucide-react';
 import { CyberButton } from '../components';
 import { useWeb3, OnChainWorkspace } from '../context/Web3Context';
@@ -380,6 +380,20 @@ export function WorkspaceDetailPage() {
             </div>
           </div>
         </div>
+
+        <Link to={`/workspace/${workspaceId}/codebase`} style={{ textDecoration: 'none' }}>
+          <div className="cyber-card hover-lift" style={{ cursor: 'pointer' }}>
+            <div className="cyber-card-body" style={{ padding: 'var(--gap-lg)', textAlign: 'center' }}>
+              <Code size={32} style={{ color: '#8b5cf6', marginBottom: 'var(--gap-sm)' }} />
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', color: 'var(--text-primary)' }}>
+                Codebase
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Analyze & health
+              </div>
+            </div>
+          </div>
+        </Link>
 
         <div className="cyber-card hover-lift" style={{ cursor: 'pointer' }} onClick={() => setShowAddNode(true)}>
           <div className="cyber-card-body" style={{ padding: 'var(--gap-lg)', textAlign: 'center' }}>

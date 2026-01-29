@@ -37,6 +37,8 @@ import { web3Service, CONTRACT_ADDRESSES } from './services/web3-service';
 import { HardwareDetector } from './hardware';
 import { adapterManager } from './adapters/adapter-manager';
 import { cloudGPUProvider } from './services/cloud-gpu-provider';
+import { GitService } from './services/git-service';
+import { analyzeRepository, RepoAnalysis } from './services/repo-analyzer';
 
 const PORT = 8080;
 
@@ -1302,6 +1304,245 @@ export class ApiServer {
         const models = await cloudGPUProvider.listRemoteModels(instanceId);
         res.json({ models });
       } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // ============ Git Service Endpoints ============
+
+    // Get GitHub OAuth URL
+    this.app.get('/api/v1/git/github/auth-url', localAuth, (req, res) => {
+      const session = (req as any).session;
+      const { url, state } = GitService.getGitHubOAuthUrl(session.userId);
+      res.json({ url, state });
+    });
+
+    // GitHub OAuth callback
+    this.app.get('/auth/github/callback', async (req, res) => {
+      const { code, state } = req.query;
+      if (!code || !state) {
+        res.status(400).send('Missing code or state');
+        return;
+      }
+      const result = await GitService.handleGitHubCallback(code as string, state as string);
+      if (result.success) {
+        res.send(`
+          <html>
+            <body style="background: #18181b; color: #fafafa; font-family: system-ui; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
+              <div style="text-align: center;">
+                <h2 style="color: #00ff88;">GitHub Connected!</h2>
+                <p>You can close this window.</p>
+              </div>
+            </body>
+          </html>
+        `);
+      } else {
+        res.status(400).send(`
+          <html>
+            <body style="background: #18181b; color: #fafafa; font-family: system-ui; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
+              <div style="text-align: center;">
+                <h2 style="color: #ef4444;">Connection Failed</h2>
+                <p>${result.error}</p>
+              </div>
+            </body>
+          </html>
+        `);
+      }
+    });
+
+    // Get GitHub connection status
+    this.app.get('/api/v1/git/github/status', localAuth, (req, res) => {
+      const session = (req as any).session;
+      const github = GitService.getGitHubUser(session.userId);
+      if (github) {
+        res.json({ connected: true, user: github.user });
+      } else {
+        res.json({ connected: false });
+      }
+    });
+
+    // Disconnect GitHub
+    this.app.post('/api/v1/git/github/disconnect', localAuth, (req, res) => {
+      const session = (req as any).session;
+      GitService.disconnectGitHub(session.userId);
+      res.json({ success: true });
+    });
+
+    // List GitHub repositories
+    this.app.get('/api/v1/git/github/repos', localAuth, async (req, res) => {
+      const session = (req as any).session;
+      const result = await GitService.listGitHubRepos(session.userId);
+      if (result.success) {
+        res.json({ repos: result.repos });
+      } else {
+        res.status(400).json({ error: result.error });
+      }
+    });
+
+    // Get SSH keys
+    this.app.get('/api/v1/git/ssh-keys', localAuth, (req, res) => {
+      const keys = GitService.getSSHKeys();
+      res.json({ keys });
+    });
+
+    // Generate SSH key
+    this.app.post('/api/v1/git/ssh-keys/generate', localAuth, (req, res) => {
+      const { name } = req.body;
+      if (!name) {
+        res.status(400).json({ error: 'Name is required' });
+        return;
+      }
+      const result = GitService.generateSSHKey(name);
+      if (result.success) {
+        res.json({ success: true, key: result.key });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    });
+
+    // Import SSH key
+    this.app.post('/api/v1/git/ssh-keys/import', localAuth, (req, res) => {
+      const { name, privateKey } = req.body;
+      if (!name || !privateKey) {
+        res.status(400).json({ error: 'Name and privateKey are required' });
+        return;
+      }
+      const result = GitService.importSSHKey(name, privateKey);
+      if (result.success) {
+        res.json({ success: true, key: result.key });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    });
+
+    // Delete SSH key
+    this.app.delete('/api/v1/git/ssh-keys/:keyId', localAuth, (req, res) => {
+      const keyId = req.params.keyId as string;
+      const result = GitService.deleteSSHKey(keyId);
+      if (result.success) {
+        res.json({ success: true });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    });
+
+    // Clone repository
+    this.app.post('/api/v1/git/clone', localAuth, async (req, res) => {
+      const session = (req as any).session;
+      const { url, targetDir, branch, depth } = req.body;
+      if (!url || !targetDir) {
+        res.status(400).json({ error: 'url and targetDir are required' });
+        return;
+      }
+      const credentials = GitService.getCredentials(session.userId);
+      const result = await GitService.cloneRepo({
+        url,
+        targetDir,
+        credentials: credentials || undefined,
+        branch,
+        depth,
+      });
+      if (result.success) {
+        res.json({ success: true });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    });
+
+    // ============ Repository Analysis Endpoints ============
+
+    // Analysis cache (keyed by repo path)
+    const analysisCache: Map<string, { analysis: RepoAnalysis; timestamp: number }> = new Map();
+    const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+    // Analyze a local repository
+    this.app.post('/api/v1/repos/analyze', localAuth, async (req, res) => {
+      const { path: repoPath } = req.body;
+      if (!repoPath) {
+        res.status(400).json({ error: 'path is required' });
+        return;
+      }
+
+      try {
+        // Check cache
+        const cached = analysisCache.get(repoPath);
+        if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+          res.json({ analysis: cached.analysis, cached: true });
+          return;
+        }
+
+        console.log(`[API] Analyzing repository: ${repoPath}`);
+        const analysis = await analyzeRepository(repoPath);
+
+        // Cache result
+        analysisCache.set(repoPath, { analysis, timestamp: Date.now() });
+
+        res.json({ analysis, cached: false });
+      } catch (err) {
+        console.error('[API] Repository analysis failed:', err);
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Get cached analysis
+    this.app.get('/api/v1/repos/analysis', localAuth, (req, res) => {
+      const repoPath = req.query.path as string;
+      if (!repoPath) {
+        res.status(400).json({ error: 'path query parameter is required' });
+        return;
+      }
+
+      const cached = analysisCache.get(repoPath);
+      if (cached) {
+        const stale = Date.now() - cached.timestamp > CACHE_TTL;
+        res.json({ analysis: cached.analysis, cached: true, stale });
+      } else {
+        res.status(404).json({ error: 'No cached analysis found' });
+      }
+    });
+
+    // Clear analysis cache
+    this.app.delete('/api/v1/repos/analysis', localAuth, (req, res) => {
+      const repoPath = req.query.path as string;
+      if (repoPath) {
+        analysisCache.delete(repoPath);
+      } else {
+        analysisCache.clear();
+      }
+      res.json({ success: true });
+    });
+
+    // Workspace repo analysis (analyze a workspace's connected repo)
+    this.app.post('/api/v1/workspaces/:id/repos/:repoId/analyze', localAuth, async (req, res) => {
+      const workspaceId = req.params.id as string;
+      const repoId = req.params.repoId as string;
+
+      // Get repo from workspace
+      const repos = reposStore.get(workspaceId) || [];
+      const repo = repos.find(r => r.id === repoId);
+      if (!repo) {
+        res.status(404).json({ error: 'Repository not found' });
+        return;
+      }
+
+      // Check if we have a local clone path
+      if (!repo.localPath) {
+        // Need to clone first
+        res.status(400).json({ error: 'Repository not cloned yet. Clone it first.' });
+        return;
+      }
+
+      try {
+        repo.status = 'analyzing';
+        const analysis = await analyzeRepository(repo.localPath);
+        repo.status = 'ready';
+        repo.analysis = analysis;
+        repo.analyzedAt = new Date().toISOString();
+
+        res.json({ analysis });
+      } catch (err) {
+        repo.status = 'error';
+        repo.error = String(err);
         res.status(500).json({ error: String(err) });
       }
     });
