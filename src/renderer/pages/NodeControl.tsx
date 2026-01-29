@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Power, Cpu, HardDrive, Zap, RefreshCw, Terminal, Activity, CheckCircle, XCircle, AlertTriangle, Key, Copy, Users } from 'lucide-react';
-import { CyberButton, ActivityLog, NodeBlockchain, IPFSPanel, OllamaPanel } from '../components';
+import { CyberButton, ActivityLog, NodeBlockchain, IPFSPanel, OllamaPanel, ContainersPanel } from '../components';
 
 const API_BASE = 'http://localhost:8080';
 
@@ -458,6 +458,9 @@ export function NodeControl() {
         <IPFSPanel />
         <OllamaPanel />
       </div>
+
+      {/* Container Runtime Panel */}
+      <ContainersPanel />
 
       {/* Hardware Info */}
       <div className="cyber-grid-layout">

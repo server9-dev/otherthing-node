@@ -93,7 +93,7 @@ export class ContainerService {
     try {
       const response = await fetch(`${API_BASE}/containers/runtime`);
       if (!response.ok) return null;
-      return response.json();
+      return response.json() as Promise<RuntimeInfo>;
     } catch (err) {
       console.error('[ContainerService] Failed to get runtime info:', err);
       return null;
@@ -107,7 +107,7 @@ export class ContainerService {
     try {
       const response = await fetch(`${API_BASE}/containers/runtime/detect`, { method: 'POST' });
       if (!response.ok) return null;
-      return response.json();
+      return response.json() as Promise<RuntimeInfo>;
     } catch (err) {
       console.error('[ContainerService] Failed to detect runtime:', err);
       return null;
@@ -129,7 +129,7 @@ export class ContainerService {
     try {
       const response = await fetch(`${API_BASE}/containers?all=${all}`);
       if (!response.ok) throw new Error(await response.text());
-      const data = await response.json();
+      const data = await response.json() as { containers?: ContainerInfo[] };
       return data.containers || [];
     } catch (err) {
       console.error('[ContainerService] Failed to list containers:', err);
@@ -144,7 +144,7 @@ export class ContainerService {
     try {
       const response = await fetch(`${API_BASE}/containers/images`);
       if (!response.ok) throw new Error(await response.text());
-      const data = await response.json();
+      const data = await response.json() as { images?: ImageInfo[] };
       return data.images || [];
     } catch (err) {
       console.error('[ContainerService] Failed to list images:', err);
@@ -181,7 +181,7 @@ export class ContainerService {
         body: JSON.stringify(request),
       });
       if (!response.ok) throw new Error(await response.text());
-      const data = await response.json();
+      const data = await response.json() as { id: string };
       this.emitEvent({ type: 'created', containerId: data.id, containerName: request.name });
       return data.id;
     } catch (err) {
@@ -254,7 +254,7 @@ export class ContainerService {
     try {
       const response = await fetch(`${API_BASE}/containers/${containerId}/logs?tail=${tail || 100}`);
       if (!response.ok) throw new Error(await response.text());
-      const data = await response.json();
+      const data = await response.json() as { logs?: string };
       return data.logs || '';
     } catch (err) {
       console.error('[ContainerService] Failed to get logs:', err);
@@ -273,7 +273,7 @@ export class ContainerService {
         body: JSON.stringify({ cmd }),
       });
       if (!response.ok) throw new Error(await response.text());
-      return response.json();
+      return response.json() as Promise<ExecResult>;
     } catch (err) {
       console.error('[ContainerService] Failed to exec:', err);
       return null;
@@ -287,7 +287,7 @@ export class ContainerService {
     try {
       const response = await fetch(`${API_BASE}/containers/${containerId}`);
       if (!response.ok) throw new Error(await response.text());
-      return response.json();
+      return response.json() as Promise<ContainerInfo>;
     } catch (err) {
       console.error('[ContainerService] Failed to inspect container:', err);
       return null;

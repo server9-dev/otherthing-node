@@ -4,6 +4,7 @@ export { NodeBlockchain } from './NodeBlockchain';
 export { ActivityLog } from './ActivityLog';
 export { IPFSPanel } from './IPFSPanel';
 export { OllamaPanel } from './OllamaPanel';
+export { ContainersPanel } from './ContainersPanel';
 export { CloudGPUPanel } from './CloudGPUPanel';
 export { MermaidDiagram } from './MermaidDiagram';
 export { CodebaseHealth } from './CodebaseHealth';
