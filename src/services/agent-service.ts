@@ -49,6 +49,10 @@ export class LocalAgentService {
 
   constructor() {
     this.agentAdapter = new AgentAdapter();
+    // Initialize the adapter to register tools
+    this.agentAdapter.initialize().catch(err => {
+      console.error('[AgentService] Failed to initialize agent adapter:', err);
+    });
   }
 
   /**
