@@ -172,6 +172,8 @@ export class AgentAdapter extends BaseAdapter {
   async initialize(): Promise<void> {
     await super.initialize();
     await this.llmAdapter.initialize();
+    // Always register local filesystem tools for direct access
+    this.registerLocalTools();
   }
 
   /**
@@ -654,15 +656,31 @@ Begin!`;
   }
 
   private async executeTool(toolName: string, input: string): Promise<string> {
-    const tool = this.tools.get(toolName.toLowerCase());
+    const normalizedName = toolName.toLowerCase().trim();
+    const tool = this.tools.get(normalizedName);
+
+    console.log(`[agent] Executing tool: ${normalizedName}, input: ${input.slice(0, 100)}...`);
+    console.log(`[agent] Available tools: ${Array.from(this.tools.keys()).join(', ')}`);
 
     if (!tool) {
+      console.log(`[agent] Tool not found: ${normalizedName}`);
       return `Tool '${toolName}' not found. Available tools: ${Array.from(this.tools.keys()).join(', ')}`;
     }
 
     try {
-      return await tool.execute({ input }, this.currentToolContext || undefined);
+      // Clean up input - remove surrounding quotes if present
+      let cleanInput = input.trim();
+      if ((cleanInput.startsWith('"') && cleanInput.endsWith('"')) ||
+          (cleanInput.startsWith("'") && cleanInput.endsWith("'"))) {
+        cleanInput = cleanInput.slice(1, -1);
+      }
+
+      console.log(`[agent] Cleaned input: ${cleanInput}`);
+      const result = await tool.execute({ input: cleanInput }, this.currentToolContext || undefined);
+      console.log(`[agent] Tool result: ${result.slice(0, 200)}...`);
+      return result;
     } catch (error) {
+      console.error(`[agent] Tool execution error:`, error);
       return `Error executing ${toolName}: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   }
@@ -940,6 +958,131 @@ Begin!`;
     });
 
     console.log('[agent] Registered sandbox tools: write_file, read_file, list_files, delete_file, shell, run_python');
+  }
+
+  /**
+   * Register local filesystem tools for direct access (no sandbox)
+   * These allow agents to read/explore the actual local filesystem
+   */
+  private registerLocalTools(): void {
+    const fs = require('fs');
+    const path = require('path');
+    const { execSync } = require('child_process');
+
+    // Local read file - read any file on the system
+    this.tools.set('local_read_file', {
+      name: 'local_read_file',
+      description: 'Read content from any file on the local filesystem. Use absolute paths like /home/user/project/file.txt',
+      parameters: { input: 'string (absolute file path)' },
+      execute: async (params) => {
+        const filePath = String(params.input).trim();
+        try {
+          if (!fs.existsSync(filePath)) {
+            return `Error: File not found: ${filePath}`;
+          }
+          const stats = fs.statSync(filePath);
+          if (stats.isDirectory()) {
+            return `Error: Path is a directory, use local_list_dir instead: ${filePath}`;
+          }
+          if (stats.size > 100000) {
+            // Read first 100KB for large files
+            const content = fs.readFileSync(filePath, 'utf-8').slice(0, 100000);
+            return `File content (truncated to 100KB):\n${content}\n...[truncated]`;
+          }
+          const content = fs.readFileSync(filePath, 'utf-8');
+          return `File content:\n${content}`;
+        } catch (err: any) {
+          return `Error reading file: ${err.message}`;
+        }
+      },
+    });
+
+    // Local list directory
+    this.tools.set('local_list_dir', {
+      name: 'local_list_dir',
+      description: 'List files and directories at an absolute path. Example: /home/user/project',
+      parameters: { input: 'string (absolute directory path)' },
+      execute: async (params) => {
+        const dirPath = String(params.input).trim();
+        try {
+          if (!fs.existsSync(dirPath)) {
+            return `Error: Directory not found: ${dirPath}`;
+          }
+          const stats = fs.statSync(dirPath);
+          if (!stats.isDirectory()) {
+            return `Error: Path is a file, not a directory: ${dirPath}`;
+          }
+          const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+          if (entries.length === 0) {
+            return 'Directory is empty';
+          }
+          const result = entries.map((entry: any) => {
+            const fullPath = path.join(dirPath, entry.name);
+            try {
+              const entryStats = fs.statSync(fullPath);
+              const size = entryStats.isDirectory() ? '' : ` (${entryStats.size} bytes)`;
+              return `${entry.isDirectory() ? '[DIR] ' : '[FILE]'} ${entry.name}${size}`;
+            } catch {
+              return `${entry.isDirectory() ? '[DIR] ' : '[FILE]'} ${entry.name}`;
+            }
+          });
+          return result.join('\n');
+        } catch (err: any) {
+          return `Error listing directory: ${err.message}`;
+        }
+      },
+    });
+
+    // Local shell command
+    this.tools.set('local_shell', {
+      name: 'local_shell',
+      description: 'Execute a shell command on the local system. Use for running commands like ls, cat, grep, find, etc.',
+      parameters: { input: 'string (shell command)' },
+      execute: async (params) => {
+        const command = String(params.input).trim();
+        try {
+          const output = execSync(command, {
+            encoding: 'utf-8',
+            timeout: 30000,
+            maxBuffer: 1024 * 1024,
+          });
+          return output || 'Command completed with no output';
+        } catch (err: any) {
+          if (err.stdout || err.stderr) {
+            return `${err.stdout || ''}${err.stderr ? '\nstderr: ' + err.stderr : ''}\nExit code: ${err.status || 1}`;
+          }
+          return `Error executing command: ${err.message}`;
+        }
+      },
+    });
+
+    // Local find files (grep/find helper)
+    this.tools.set('local_find', {
+      name: 'local_find',
+      description: 'Find files matching a pattern in a directory. Input format: directory|pattern (e.g., "/home/user/project|*.ts")',
+      parameters: { input: 'string (directory|pattern)' },
+      execute: async (params) => {
+        const input = String(params.input).trim();
+        const pipeIndex = input.indexOf('|');
+        if (pipeIndex === -1) {
+          return 'Error: Invalid format. Use: directory|pattern (e.g., "/home/user/project|*.ts")';
+        }
+        const dirPath = input.slice(0, pipeIndex).trim();
+        const pattern = input.slice(pipeIndex + 1).trim();
+
+        try {
+          const output = execSync(`find "${dirPath}" -name "${pattern}" -type f 2>/dev/null | head -50`, {
+            encoding: 'utf-8',
+            timeout: 30000,
+          });
+          return output || 'No files found matching pattern';
+        } catch (err: any) {
+          return `Error: ${err.message}`;
+        }
+      },
+    });
+
+    console.log('[agent] Registered local filesystem tools: local_read_file, local_list_dir, local_shell, local_find');
   }
 
   // ============ Info Methods ============

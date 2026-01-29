@@ -258,6 +258,7 @@ export class LocalAgentService {
     // Create sandbox tool context
     const toolContext: any = {
       workspaceId: execution.workspaceId,
+      nodeId: null,  // Local execution doesn't use remote nodes
       sandboxManager: this.sandboxManager,
       llmFunction,
     };

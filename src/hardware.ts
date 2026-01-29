@@ -40,16 +40,17 @@ export interface HardwareInfo {
 
 export class HardwareDetector {
   static async detect(): Promise<HardwareInfo> {
-    const [cpu, mem, graphics, disk, dockerVersion] = await Promise.all([
+    const [cpu, mem, graphics, disk, dockerVersion, nvidiaSmiGpus] = await Promise.all([
       si.cpu(),
       si.mem(),
       si.graphics(),
       si.fsSize(),
       this.getDockerVersion(),
+      this.getNvidiaGpus(),
     ]);
 
-    // Parse GPUs
-    const gpus = graphics.controllers
+    // Parse GPUs from systeminformation
+    let gpus = graphics.controllers
       .filter((g) => g.vram && g.vram > 0)
       .map((g) => ({
         vendor: this.normalizeVendor(g.vendor),
@@ -57,6 +58,11 @@ export class HardwareDetector {
         vram_mb: g.vram || 0,
         driver_version: g.driverVersion || 'unknown',
       }));
+
+    // If no GPUs found via systeminformation (common in WSL2), use nvidia-smi
+    if (gpus.length === 0 && nvidiaSmiGpus.length > 0) {
+      gpus = nvidiaSmiGpus;
+    }
 
     // Calculate total storage
     const totalStorage = disk.reduce((acc, d) => acc + d.size, 0);
@@ -99,6 +105,48 @@ export class HardwareDetector {
       return match ? match[1] : null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Get NVIDIA GPUs via nvidia-smi (fallback for WSL2 where systeminformation doesn't work)
+   */
+  private static async getNvidiaGpus(): Promise<Array<{
+    vendor: string;
+    model: string;
+    vram_mb: number;
+    driver_version: string;
+  }>> {
+    try {
+      // Use nvidia-smi with CSV format for easy parsing
+      const { stdout } = await execAsync(
+        'nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits'
+      );
+
+      const gpus: Array<{
+        vendor: string;
+        model: string;
+        vram_mb: number;
+        driver_version: string;
+      }> = [];
+
+      const lines = stdout.trim().split('\n');
+      for (const line of lines) {
+        const parts = line.split(',').map(p => p.trim());
+        if (parts.length >= 3) {
+          gpus.push({
+            vendor: 'nvidia',
+            model: parts[0],
+            vram_mb: parseInt(parts[1], 10) || 0,
+            driver_version: parts[2],
+          });
+        }
+      }
+
+      return gpus;
+    } catch {
+      // nvidia-smi not available
+      return [];
     }
   }
 
