@@ -1,17 +1,14 @@
-name: Release
+name: Build and Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [created]
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to release (e.g., 1.0.0)'
-        required: true
-
-permissions:
-  contents: write
+      tag:
+        description: 'Release tag to upload assets to'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -19,14 +16,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            platform: win
-          - os: ubuntu-latest
-            platform: linux
-          - os: macos-latest
-            platform: mac
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: linux-x64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows-x64
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            name: macos-arm64
+          - platform: macos-13
+            target: x86_64-apple-darwin
+            name: macos-x64
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.platform }}
 
     steps:
       - name: Checkout
@@ -35,111 +38,50 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
           cache: 'npm'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
-
-      - name: Build Windows installer
-        if: matrix.platform == 'win'
-        run: npm run dist:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build macOS installer
-        if: matrix.platform == 'mac'
-        run: npm run dist:mac
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Linux installer
-        if: matrix.platform == 'linux'
-        run: npm run dist:linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Windows artifacts
-        if: matrix.platform == 'win'
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-installer
-          path: |
-            release/*.exe
-          if-no-files-found: error
-
-      - name: Upload macOS artifacts
-        if: matrix.platform == 'mac'
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-installer
-          path: |
-            release/*.dmg
-          if-no-files-found: error
-
-      - name: Upload Linux artifacts
-        if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-installer
-          path: |
-            release/*.AppImage
-            release/*.deb
-          if-no-files-found: error
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Display structure of downloaded files
-        run: ls -R artifacts
-
-      - name: Get version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-            echo "tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: OtherThing Node ${{ steps.version.outputs.tag }}
-          draft: false
-          prerelease: false
-          files: |
-            artifacts/windows-installer/*
-            artifacts/macos-installer/*
-            artifacts/linux-installer/*
-          body: |
-            ## OtherThing Node ${{ steps.version.outputs.tag }}
-
-            Desktop application to share your compute with OtherThing workspaces.
-
-            ### Downloads
-
-            | Platform | Download |
-            |----------|----------|
-            | Windows | `OtherThing-Node-Setup.exe` |
-            | macOS | `OtherThing-Node.dmg` |
-            | Linux | `OtherThing-Node.AppImage` or `.deb` |
-
-            ### What's New
-
-            See [CHANGELOG.md](https://github.com/server9-dev/otherthing-node/blob/main/CHANGELOG.md) for details.
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.event.release.tag_name || github.event.inputs.tag || 'v0.0.0' }}
+          releaseName: ${{ github.event.release.tag_name || github.event.inputs.tag || 'v0.0.0' }}
+          releaseBody: 'See release notes for details.'
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.target }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.name }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app
+          if-no-files-found: ignore
