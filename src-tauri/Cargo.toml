@@ -34,6 +34,7 @@ uuid = { version = "1.0", features = ["v4"] }
 directories = "5"
 async-trait = "0.1"
 thiserror = "1.0"
+futures = "0.3"
 futures-util = "0.3"
 dirs = "5"
 urlencoding = "2"
@@ -51,3 +52,10 @@ chrono = { version = "0.4", features = ["serde"] }
 flate2 = "1.0"
 tar = "0.4"
 zip = "2.2"
+
+# Container runtime support
+bollard = { version = "0.17", optional = true }
+
+[features]
+default = ["container-runtime"]
+container-runtime = ["bollard"]

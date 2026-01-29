@@ -39,7 +39,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
-        .manage(AppState::new())
+        .manage(AppState::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -64,6 +64,13 @@ pub fn run() {
                 let mut node_id = state_clone.node_id.write().await;
                 *node_id = Some(uuid::Uuid::new_v4().to_string());
                 log::info!("Node started in local mode");
+
+                // Detect container runtime
+                if let Ok(runtime) = state_clone.containers.detect_runtime().await {
+                    log::info!("Container runtime detected: {} v{}", runtime.runtime_type, runtime.version);
+                } else {
+                    log::info!("No container runtime detected - container features disabled");
+                }
             });
 
             Ok(())
@@ -98,6 +105,19 @@ pub fn run() {
             commands::window_close,
             commands::window_fullscreen,
             commands::window_is_fullscreen,
+            // Containers
+            commands::container_runtime_info,
+            commands::container_detect_runtime,
+            commands::container_list,
+            commands::container_list_images,
+            commands::container_pull_image,
+            commands::container_create,
+            commands::container_start,
+            commands::container_stop,
+            commands::container_remove,
+            commands::container_logs,
+            commands::container_exec,
+            commands::container_inspect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -11,6 +11,7 @@ use tokio::sync::RwLock;
 
 use crate::services::{
     AgentManager, CreateAgentRequest,
+    ContainerManager, CreateContainerRequest,
     HardwareDetector, IpfsManager, OllamaManager,
 };
 
@@ -18,6 +19,7 @@ use crate::services::{
 pub struct AppState {
     pub ollama: Arc<OllamaManager>,
     pub ipfs: Arc<IpfsManager>,
+    pub containers: Arc<ContainerManager>,
     pub agents: AgentManager,
     pub node_id: Arc<RwLock<String>>,
     pub share_key: Arc<RwLock<String>>,
@@ -25,9 +27,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         let ollama = Arc::new(OllamaManager::new());
         let ipfs = Arc::new(IpfsManager::new());
+        let containers = Arc::new(ContainerManager::new().await);
 
         // Generate persistent node ID and share key
         let node_id = generate_or_load_node_id();
@@ -37,6 +40,7 @@ impl AppState {
             agents: AgentManager::new(Arc::clone(&ollama)),
             ollama,
             ipfs,
+            containers,
             node_id: Arc::new(RwLock::new(node_id)),
             share_key: Arc::new(RwLock::new(share_key)),
             node_running: Arc::new(RwLock::new(true)), // Running by default
@@ -184,6 +188,19 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/gpu/user", get(gpu_user))
         .route("/api/v1/gpu/rent/:offer_id", post(gpu_rent))
         .route("/api/v1/gpu/destroy/:instance_id", delete(gpu_destroy))
+        // Containers
+        .route("/api/v1/containers/runtime", get(container_runtime_info))
+        .route("/api/v1/containers/runtime/detect", post(container_detect_runtime))
+        .route("/api/v1/containers", get(container_list))
+        .route("/api/v1/containers", post(container_create))
+        .route("/api/v1/containers/images", get(container_list_images))
+        .route("/api/v1/containers/images/pull", post(container_pull_image))
+        .route("/api/v1/containers/:id", get(container_inspect))
+        .route("/api/v1/containers/:id", delete(container_remove))
+        .route("/api/v1/containers/:id/start", post(container_start))
+        .route("/api/v1/containers/:id/stop", post(container_stop))
+        .route("/api/v1/containers/:id/logs", get(container_logs))
+        .route("/api/v1/containers/:id/exec", post(container_exec))
         .with_state(state)
 }
 
@@ -841,6 +858,194 @@ async fn gpu_destroy(
             StatusCode::INTERNAL_SERVER_ERROR,
             [(header::CONTENT_TYPE, "application/json")],
             format!("{{\"error\":\"{}\"}}", e)
+        ),
+    }
+}
+
+// ============ Container Handlers ============
+
+async fn container_runtime_info(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    match state.containers.get_runtime_info().await {
+        Some(info) => Json(serde_json::json!(info)),
+        None => Json(serde_json::json!({ "available": false })),
+    }
+}
+
+async fn container_detect_runtime(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    match state.containers.detect_runtime().await {
+        Ok(info) => (StatusCode::OK, Json(serde_json::json!(info))),
+        Err(e) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "available": false, "error": e.to_string() })),
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ContainerListQuery {
+    #[serde(default)]
+    all: bool,
+}
+
+async fn container_list(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<ContainerListQuery>,
+) -> impl IntoResponse {
+    match state.containers.list_containers(params.all).await {
+        Ok(containers) => (StatusCode::OK, Json(serde_json::json!({ "containers": containers }))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn container_list_images(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    match state.containers.list_images().await {
+        Ok(images) => (StatusCode::OK, Json(serde_json::json!({ "images": images }))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ContainerPullImageRequest {
+    image: String,
+}
+
+async fn container_pull_image(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ContainerPullImageRequest>,
+) -> impl IntoResponse {
+    match state.containers.pull_image(&req.image).await {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn container_create(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CreateContainerRequest>,
+) -> impl IntoResponse {
+    match state.containers.create_container(req).await {
+        Ok(id) => (StatusCode::OK, Json(serde_json::json!({ "id": id }))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn container_inspect(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.containers.inspect_container(&id).await {
+        Ok(info) => (StatusCode::OK, Json(serde_json::json!(info))),
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn container_start(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.containers.start_container(&id).await {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct StopContainerPayload {
+    #[serde(default)]
+    timeout: Option<i64>,
+}
+
+async fn container_stop(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<StopContainerPayload>,
+) -> impl IntoResponse {
+    match state.containers.stop_container(&id, req.timeout).await {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct RemoveContainerQuery {
+    #[serde(default)]
+    force: bool,
+}
+
+async fn container_remove(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<RemoveContainerQuery>,
+) -> impl IntoResponse {
+    match state.containers.remove_container(&id, params.force).await {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ContainerLogsQuery {
+    #[serde(default = "default_tail")]
+    tail: usize,
+}
+
+fn default_tail() -> usize {
+    100
+}
+
+async fn container_logs(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<ContainerLogsQuery>,
+) -> impl IntoResponse {
+    match state.containers.get_logs(&id, Some(params.tail)).await {
+        Ok(logs) => (StatusCode::OK, Json(serde_json::json!({ "logs": logs }))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ExecRequest {
+    cmd: Vec<String>,
+}
+
+async fn container_exec(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<ExecRequest>,
+) -> impl IntoResponse {
+    match state.containers.exec_in_container(&id, req.cmd).await {
+        Ok(result) => (StatusCode::OK, Json(serde_json::json!(result))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
         ),
     }
 }

@@ -7,17 +7,19 @@ use tower_http::cors::{Any, CorsLayer};
 use super::routes::{create_router, AppState};
 
 pub struct ApiServer {
-    state: Arc<AppState>,
+    state: Option<Arc<AppState>>,
 }
 
 impl ApiServer {
     pub fn new() -> Self {
         Self {
-            state: Arc::new(AppState::new()),
+            state: None,
         }
     }
 
     pub async fn start(&self, port: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Initialize state asynchronously
+        let state = Arc::new(AppState::new().await);
         // Create CORS layer
         let cors = CorsLayer::new()
             .allow_origin(Any)
@@ -25,7 +27,7 @@ impl ApiServer {
             .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
         // Build the router
-        let app = create_router(Arc::clone(&self.state))
+        let app = create_router(state)
             .layer(cors);
 
         let addr = SocketAddr::from(([0, 0, 0, 0], port));
