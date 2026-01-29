@@ -1,5 +1,75 @@
 # OtherThing Node - Comprehensive Handoff Document
 
+---
+
+## ⚠️ CRITICAL: Current State (January 28, 2026)
+
+### Status: BROKEN - Tauri Migration Incomplete
+
+The app was partially migrated from Electron to Tauri but the migration is incomplete. Many features that were working are now broken.
+
+### What's Working ✅
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Sidecar startup | ✅ | `node dist/sidecar.js` works |
+| Ollama detection | ✅ | Finds local Ollama, lists 7 models |
+| GPU detection | ✅ | RTX 3070 + RTX 2060 via nvidia-smi fallback |
+| Hardware detection | ✅ | Threadripper 64-core, 201GB RAM |
+| Workspace creation | ✅ | API creates workspaces |
+| Agent creation | ✅ | Agents start, call LLM |
+| Vite dev server | ✅ | Frontend runs on :1420 |
+
+### What's Broken ❌
+| Feature | Problem | File Location |
+|---------|---------|---------------|
+| **Agent tools** | Tools registered but agent says "not available" | `src/adapters/agent.ts:658` |
+| **Node → Workspace** | Can't add nodes to workspaces, no compute | `src/api-server.ts` node endpoints |
+| **On-Bored analysis** | Only outputs README, no full analysis | `src/services/repo-analyzer.ts` |
+| **IPFS download** | Stuck at 0% progress forever | `src/ipfs-manager.ts` |
+| **GitHub OAuth** | Empty client_id in OAuth URL | `src/services/git-service.ts` |
+
+### Recent Fixes Applied (Still Not Working)
+
+1. **GPU Detection** (`src/hardware.ts`)
+   - Added `getNvidiaGpus()` fallback for WSL2 where systeminformation fails
+
+2. **Agent nodeId Error** (`src/services/agent-service.ts:259`)
+   - Added `nodeId: null` to toolContext to fix Zod validation error
+
+3. **Local Filesystem Tools** (`src/adapters/agent.ts`)
+   - Added `local_read_file`, `local_list_dir`, `local_shell`, `local_find`
+   - Tools register but agent doesn't use them
+
+### Root Cause Analysis
+
+The Tauri migration broke the integration points:
+- Electron's IPC was replaced with HTTP API calls
+- Sidecar pattern adds complexity (Rust → Node.js)
+- NodeService initialization flow different from Electron's main.ts
+- Tool context not properly passed through call chain
+
+### Recommended Action
+
+**Option A: Fix Tauri** - Debug tool execution, trace why registered tools aren't found
+**Option B: Revert to Electron** - The codebase was designed for Electron, everything worked
+
+### Quick Test Commands
+```bash
+# Start backend
+cd /mnt/d/github/node && node dist/sidecar.js
+
+# Check services
+curl http://localhost:8080/api/v1/hardware | jq .
+curl http://localhost:8080/api/v1/ollama/status | jq .
+
+# Create test agent (will fail on tools)
+curl -X POST http://localhost:8080/api/v1/workspaces \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Test"}' | jq -r '.id'
+```
+
+---
+
 ## Project Overview
 
 **OtherThing Node** is a decentralized compute network where users can:
@@ -508,4 +578,83 @@ Uses Vast.ai marketplace but UI is branded as generic "Cloud GPU" so it can supp
 
 ---
 
-*Last updated: January 27, 2026*
+---
+
+## Debugging the Broken Agent Tools (January 28, 2026)
+
+### The Problem
+Agent says "tool not available" even though tools are registered. Logs show:
+```
+[agent] Registered local filesystem tools: local_read_file, local_list_dir, local_shell, local_find
+[agent] Starting react agent for goal: ...
+[agent] Iteration 1: { tool: 'local_list_dir', input: '"/home/huck/rhiz-master"' }
+[agent] Iteration 2: { thought: "tool 'local_list_dir' is not available" }
+```
+
+### Debug Logging Added
+File: `src/adapters/agent.ts:658-680`
+```typescript
+private async executeTool(toolName: string, input: string): Promise<string> {
+  console.log(`[agent] Executing tool: ${toolName}, input: ${input}`);
+  console.log(`[agent] Available tools: ${Array.from(this.tools.keys()).join(', ')}`);
+  // ... tool execution with cleaned input
+}
+```
+
+### Possible Causes
+1. **Tool map not populated** - `registerLocalTools()` called but tools not in map when agent runs
+2. **Async timing** - Tools registered after agent starts
+3. **Tool name mismatch** - Case sensitivity or whitespace
+4. **Input parsing** - Extra quotes around input not stripped
+
+### Files to Check
+- `src/adapters/agent.ts` - Tool registration and execution
+- `src/services/agent-service.ts` - Agent orchestration
+- `src/adapters/adapter-manager.ts` - Adapter initialization
+
+### The Tool Flow
+```
+1. sidecar.ts starts
+2. AdapterManager.initialize()
+3. AgentAdapter.initialize() → registerLocalTools()
+4. API request creates agent
+5. agentService.executeAgent()
+6. agentAdapter.execute('run', request)
+7. Agent calls tool → executeTool() → ???
+```
+
+### What To Check Next
+1. Add `console.log(this.tools.size)` after `registerLocalTools()`
+2. Add `console.log(this.tools.keys())` in `executeTool()`
+3. Check if tools map is being recreated/cleared somewhere
+4. Verify `this` context is correct when tools are called
+
+---
+
+## On-Bored Integration (January 28, 2026)
+
+### What Was Ported
+- `src/services/repo-analyzer.ts` - Core analysis logic from on-bored CLI
+- `src/services/git-service.ts` - GitHub OAuth, SSH key management
+- `src/renderer/components/MermaidDiagram.tsx` - Diagram rendering
+- `src/renderer/components/CodebaseHealth.tsx` - Health report display
+- `src/renderer/components/RepoConnectionPanel.tsx` - Repo connection UI
+- `src/renderer/pages/WorkspaceCodebase.tsx` - Codebase analysis page
+
+### What's Broken
+The repo analyzer runs but only outputs basic info (README content) instead of:
+- Full tech stack detection
+- Dependency analysis
+- Code health metrics
+- Architecture diagrams (Mermaid)
+- Contributor statistics
+
+### Compare With Working Version
+Original on-bored CLI: `/home/huck/on-bored`
+```bash
+cd /home/huck/on-bored && node bin/cli.js /path/to/repo
+```
+
+---
+
+*Last updated: January 28, 2026*
