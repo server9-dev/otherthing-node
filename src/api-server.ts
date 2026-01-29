@@ -1172,6 +1172,66 @@ export class ApiServer {
       }
     });
 
+    // Download IPFS binary with SSE progress
+    this.app.get('/api/v1/ipfs/download', (req, res) => {
+      // Server-Sent Events for progress
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      // Create temporary IPFS manager if needed
+      const manager = this.ipfsManager || new (require('./ipfs-manager').IPFSManager)(
+        require('./electron-compat').getUserDataPath()
+      );
+
+      // Check if already downloaded
+      if (manager.hasBinary()) {
+        res.write(`data: ${JSON.stringify({ progress: 100, status: 'complete' })}\n\n`);
+        res.end();
+        return;
+      }
+
+      // Send progress events
+      const sendProgress = (percent: number) => {
+        res.write(`data: ${JSON.stringify({ progress: percent, status: 'downloading' })}\n\n`);
+      };
+
+      // Start download
+      manager.downloadBinary(sendProgress)
+        .then(() => {
+          res.write(`data: ${JSON.stringify({ progress: 100, status: 'complete' })}\n\n`);
+          res.end();
+        })
+        .catch((err: Error) => {
+          res.write(`data: ${JSON.stringify({ progress: -1, status: 'error', error: String(err) })}\n\n`);
+          res.end();
+        });
+
+      // Handle client disconnect
+      req.on('close', () => {
+        // Client disconnected - cleanup if needed
+      });
+    });
+
+    // Non-SSE download endpoint (for simple clients)
+    this.app.post('/api/v1/ipfs/download', async (req, res) => {
+      try {
+        const manager = this.ipfsManager || new (require('./ipfs-manager').IPFSManager)(
+          require('./electron-compat').getUserDataPath()
+        );
+
+        if (manager.hasBinary()) {
+          res.json({ success: true, message: 'IPFS binary already installed' });
+          return;
+        }
+
+        await manager.downloadBinary();
+        res.json({ success: true, message: 'IPFS binary downloaded successfully' });
+      } catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+      }
+    });
+
     // ============ Cloud GPU Endpoints ============
 
     // Configure cloud GPU provider

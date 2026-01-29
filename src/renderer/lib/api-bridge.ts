@@ -399,10 +399,38 @@ export const api = {
     return (window as any).electronAPI.ipfsUnpin(cid);
   },
 
+  // Store progress callback for SSE updates
+  _ipfsProgressCallback: null as ((percent: number) => void) | null,
+
   async downloadIPFSBinary(): Promise<CommandResult> {
     if (useRestApi) {
-      // IPFS binary should be bundled or downloaded separately in Tauri
-      return { success: false, error: 'Please install IPFS manually' };
+      // Use SSE endpoint for progress updates
+      return new Promise((resolve) => {
+        const eventSource = new EventSource(`${API_BASE}/api/v1/ipfs/download`);
+
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.status === 'downloading' && api._ipfsProgressCallback) {
+              api._ipfsProgressCallback(data.progress);
+            } else if (data.status === 'complete') {
+              if (api._ipfsProgressCallback) api._ipfsProgressCallback(100);
+              eventSource.close();
+              resolve({ success: true });
+            } else if (data.status === 'error') {
+              eventSource.close();
+              resolve({ success: false, error: data.error });
+            }
+          } catch (err) {
+            console.error('[API] SSE parse error:', err);
+          }
+        };
+
+        eventSource.onerror = () => {
+          eventSource.close();
+          resolve({ success: false, error: 'Download connection failed' });
+        };
+      });
     }
     return (window as any).electronAPI.downloadIPFSBinary();
   },
@@ -424,7 +452,8 @@ export const api = {
 
   onIPFSDownloadProgress(callback: (percent: number) => void) {
     if (useRestApi) {
-      // No-op in Tauri mode
+      // Store callback for SSE updates
+      api._ipfsProgressCallback = callback;
     } else if ((window as any).electronAPI?.onIPFSDownloadProgress) {
       (window as any).electronAPI.onIPFSDownloadProgress(callback);
     }

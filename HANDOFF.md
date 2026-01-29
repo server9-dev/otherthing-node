@@ -2,11 +2,11 @@
 
 ---
 
-## ⚠️ CRITICAL: Current State (January 28, 2026)
+## ⚠️ CRITICAL: Current State (January 29, 2026)
 
-### Status: BROKEN - Tauri Migration Incomplete
+### Status: MOSTLY WORKING - Major Issues Fixed
 
-The app was partially migrated from Electron to Tauri but the migration is incomplete. Many features that were working are now broken.
+The app was migrated from Electron to Tauri. Most core features are now working after bug fixes. GitHub OAuth requires manual setup.
 
 ### What's Working ✅
 | Feature | Status | Notes |
@@ -18,15 +18,31 @@ The app was partially migrated from Electron to Tauri but the migration is incom
 | Workspace creation | ✅ | API creates workspaces |
 | Agent creation | ✅ | Agents start, call LLM |
 | Vite dev server | ✅ | Frontend runs on :1420 |
+| **Agent tools** | ✅ | Fixed - `local_read_file`, `local_list_dir`, `local_shell`, `local_find` working |
 
 ### What's Broken ❌
-| Feature | Problem | File Location |
-|---------|---------|---------------|
-| **Agent tools** | Tools registered but agent says "not available" | `src/adapters/agent.ts:658` |
-| **Node → Workspace** | Can't add nodes to workspaces, no compute | `src/api-server.ts` node endpoints |
-| **On-Bored analysis** | Only outputs README, no full analysis | `src/services/repo-analyzer.ts` |
-| **IPFS download** | Stuck at 0% progress forever | `src/ipfs-manager.ts` |
-| **GitHub OAuth** | Empty client_id in OAuth URL | `src/services/git-service.ts` |
+| Feature | Problem | Fix |
+|---------|---------|-----|
+| **GitHub OAuth** | Empty client_id in OAuth URL | Configuration required - see below |
+
+### GitHub OAuth Setup (Required for repo connection)
+1. Create a GitHub OAuth App at https://github.com/settings/developers
+2. Set Homepage URL to `http://localhost:8080`
+3. Set Callback URL to `http://localhost:8080/auth/github/callback`
+4. Set environment variables before starting the app:
+   ```bash
+   export GITHUB_CLIENT_ID="your_client_id"
+   export GITHUB_CLIENT_SECRET="your_client_secret"
+   ```
+
+### Fixed ✅ (This Session)
+| Feature | Fix Applied |
+|---------|-------------|
+| **Agent tools** | Added `initialize()` call in AgentService constructor |
+| **Agent ID sync** | Fixed ID mismatch between api-server and agent-service - agent status now updates properly |
+| **On-Bored analysis** | Was working - updated component/API detection paths |
+| **IPFS download** | Added SSE endpoint `/api/v1/ipfs/download` with progress updates, updated api-bridge.ts |
+| **Node → Workspace** | Added Share Key and Workspaces cards to NodeControl.tsx, API endpoints were working |
 
 ### Recent Fixes Applied (Still Not Working)
 

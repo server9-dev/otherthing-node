@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Power, Cpu, HardDrive, Zap, RefreshCw, Terminal, Activity, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+import { Power, Cpu, HardDrive, Zap, RefreshCw, Terminal, Activity, CheckCircle, XCircle, AlertTriangle, Key, Copy, Users } from 'lucide-react';
 import { CyberButton, ActivityLog, NodeBlockchain, IPFSPanel, OllamaPanel } from '../components';
+
+const API_BASE = 'http://localhost:8080';
 
 interface HardwareInfo {
   cpu: {
@@ -34,6 +36,11 @@ interface NodeState {
   nodeId: string | null;
 }
 
+interface WorkspaceInfo {
+  id: string;
+  name: string;
+}
+
 export function NodeControl() {
   const [nodeState, setNodeState] = useState<NodeState>({
     running: false,
@@ -47,6 +54,9 @@ export function NodeControl() {
   });
   const [detectingHardware, setDetectingHardware] = useState(false);
   const [logs, setLogs] = useState<Array<{ time: string; message: string; type: 'info' | 'success' | 'error' }>>([]);
+  const [shareKey, setShareKey] = useState<string | null>(null);
+  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
+  const [keyCopied, setKeyCopied] = useState(false);
 
   const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' = 'info') => {
     const time = new Date().toLocaleTimeString('en-US', { hour12: false });
@@ -60,7 +70,7 @@ export function NodeControl() {
     // Check API server
     setHealthStatus(prev => ({ ...prev, api: 'checking' }));
     try {
-      const res = await fetch('http://localhost:8080/health');
+      const res = await fetch(`${API_BASE}/health`);
       if (res.ok) {
         setHealthStatus(prev => ({ ...prev, api: 'online', node: 'running' }));
         setNodeState(prev => ({ ...prev, running: true }));
@@ -83,7 +93,7 @@ export function NodeControl() {
 
     try {
       // Use sidecar API (works in both Electron and Tauri)
-      const res = await fetch('http://localhost:8080/api/v1/hardware');
+      const res = await fetch(`${API_BASE}/api/v1/hardware`);
       if (res.ok) {
         const data = await res.json();
 
@@ -145,7 +155,7 @@ export function NodeControl() {
   // Check node status via sidecar API
   const checkNodeStatus = useCallback(async () => {
     try {
-      const res = await fetch('http://localhost:8080/health');
+      const res = await fetch(`${API_BASE}/health`);
       if (res.ok) {
         const data = await res.json();
         // Health returns { status: 'healthy' } when running
@@ -159,17 +169,61 @@ export function NodeControl() {
     }
   }, []);
 
+  // Load share key from API
+  const loadShareKey = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/my-nodes`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.nodes && data.nodes.length > 0) {
+          setShareKey(data.nodes[0].shareKey);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load share key:', err);
+    }
+  }, []);
+
+  // Load workspaces from API
+  const loadWorkspaces = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/workspaces`);
+      if (res.ok) {
+        const data = await res.json();
+        setWorkspaces((data.workspaces || []).map((ws: any) => ({
+          id: ws.id,
+          name: ws.name,
+        })));
+      }
+    } catch (err) {
+      console.error('Failed to load workspaces:', err);
+    }
+  }, []);
+
+  // Copy share key to clipboard
+  const copyShareKey = useCallback(() => {
+    if (shareKey) {
+      navigator.clipboard.writeText(shareKey);
+      setKeyCopied(true);
+      addLog('Share key copied to clipboard', 'success');
+      setTimeout(() => setKeyCopied(false), 2000);
+    }
+  }, [shareKey, addLog]);
+
   useEffect(() => {
     runHealthCheck();
     detectHardware();
     checkNodeStatus();
+    loadShareKey();
+    loadWorkspaces();
 
     const interval = setInterval(() => {
       runHealthCheck();
+      loadWorkspaces();
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [runHealthCheck, detectHardware, checkNodeStatus]);
+  }, [runHealthCheck, detectHardware, checkNodeStatus, loadShareKey, loadWorkspaces]);
 
   const formatMemory = (mb: number) => mb > 0 ? `${(mb / 1024).toFixed(1)} GB` : '--';
 
@@ -304,6 +358,98 @@ export function NodeControl() {
           <CyberButton icon={Activity} onClick={detectHardware} loading={detectingHardware}>
             DETECT HARDWARE
           </CyberButton>
+        </div>
+      </div>
+
+      {/* Share Key and Workspaces */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 'var(--gap-lg)', marginBottom: 'var(--gap-lg)' }}>
+        {/* Share Key Card */}
+        <div className="cyber-card">
+          <div className="cyber-card-header">
+            <span className="cyber-card-title">
+              <Key size={14} style={{ marginRight: '0.5rem' }} />
+              SHARE KEY
+            </span>
+          </div>
+          <div className="cyber-card-body">
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 'var(--gap-md)' }}>
+              Give this key to workspace admins to add your node as a compute provider
+            </p>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--gap-sm)',
+              padding: 'var(--gap-md)',
+              background: 'var(--bg-void)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-sm)',
+            }}>
+              <code style={{
+                flex: 1,
+                fontSize: '1.5rem',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--primary)',
+                letterSpacing: '0.1em',
+                textAlign: 'center',
+              }}>
+                {shareKey || '--------'}
+              </code>
+              <CyberButton
+                icon={Copy}
+                onClick={copyShareKey}
+                disabled={!shareKey}
+                style={{ flexShrink: 0 }}
+              >
+                {keyCopied ? 'COPIED!' : 'COPY'}
+              </CyberButton>
+            </div>
+          </div>
+        </div>
+
+        {/* Workspaces Card */}
+        <div className="cyber-card">
+          <div className="cyber-card-header">
+            <span className="cyber-card-title">
+              <Users size={14} style={{ marginRight: '0.5rem' }} />
+              WORKSPACES
+            </span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+              {workspaces.length} AVAILABLE
+            </span>
+          </div>
+          <div className="cyber-card-body">
+            {workspaces.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--gap-sm)' }}>
+                {workspaces.map(ws => (
+                  <div
+                    key={ws.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--gap-sm)',
+                      padding: 'var(--gap-sm) var(--gap-md)',
+                      background: 'var(--bg-void)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-sm)',
+                    }}
+                  >
+                    <Users size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
+                      {ws.name}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: 'var(--gap-lg)', color: 'var(--text-muted)' }}>
+                <Users size={32} style={{ opacity: 0.3, marginBottom: 'var(--gap-sm)' }} />
+                <p style={{ fontSize: '0.85rem' }}>No workspaces yet</p>
+                <p style={{ fontSize: '0.75rem', marginTop: 'var(--gap-sm)' }}>
+                  Create a workspace in the Workspaces tab
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

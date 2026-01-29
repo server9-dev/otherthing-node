@@ -107,7 +107,8 @@ export class LocalAgentService {
       systemPrompt?: string;
     } = {}
   ): Promise<AgentExecution> {
-    const executionId = uuidv4();
+    // Use the provided agentId as the execution ID so the API server can track updates
+    const executionId = agentId;
     const maxIterations = options.maxIterations || 10;
 
     // Check if Ollama is available

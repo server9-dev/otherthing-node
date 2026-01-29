@@ -213,7 +213,7 @@ function detectTechStack(repoPath: string): TechStackItem[] {
 
 function findApiEndpoints(repoPath: string): ApiEndpoint[] {
   const endpoints: ApiEndpoint[] = [];
-  const apiDirs = ['src/pages/api', 'pages/api', 'api', 'src/api', 'src/routes'];
+  const apiDirs = ['src/pages/api', 'pages/api', 'api', 'src/api', 'src/routes', 'src/server/api', 'server/api', 'routes'];
 
   for (const dir of apiDirs) {
     const apiPath = path.join(repoPath, dir);
@@ -253,7 +253,13 @@ function scanApiDir(dirPath: string, basePath: string, endpoints: ApiEndpoint[])
 
 function findComponents(repoPath: string): Component[] {
   const components: Component[] = [];
-  const componentDirs = ['src/components', 'components', 'src/app', 'app'];
+  const componentDirs = [
+    'src/components', 'components', 'src/app', 'app',
+    'src/renderer/components', 'src/renderer/pages',  // Electron/Tauri apps
+    'src/views', 'views',  // Vue convention
+    'src/pages', 'pages',  // Next.js/Nuxt/Astro convention
+    'src/lib/components',  // SvelteKit convention
+  ];
 
   for (const dir of componentDirs) {
     const compPath = path.join(repoPath, dir);
