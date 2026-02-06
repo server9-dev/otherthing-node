@@ -21,7 +21,9 @@
     "tauri": "tauri",
     "tauri:dev": "npx tauri dev",
     "tauri:build": "npx tauri build",
-    "tauri:build:win": "npx tauri build --target x86_64-pc-windows-msvc"
+    "tauri:build:win": "npx tauri build --target x86_64-pc-windows-msvc",
+    "server": "npm run build:main && node dist/server.js",
+    "server:dev": "tsc -p tsconfig.main.json && node dist/server.js"
   },
   "build": {
     "appId": "com.otherthing.node",
@@ -113,11 +115,13 @@
     "adm-zip": "^0.5.10",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
+    "dotenv": "^17.2.4",
     "elid-wasm": "github:zachhandley/ELID",
     "ethers": "^6.16.0",
     "express": "^5.2.1",
     "lucide-react": "^0.294.0",
     "mermaid": "^11.12.2",
+    "node-appwrite": "^22.0.0",
     "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

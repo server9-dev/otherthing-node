@@ -1228,6 +1228,211 @@ Newest: ${stats.newestTimestamp ? new Date(stats.newestTimestamp).toLocaleString
     console.log('[agent] Registered semantic memory tools: memory_store, memory_search, memory_recent, memory_stats');
   }
 
+  /**
+   * Register UAF (Unified Architecture Framework) tools for architecture modeling
+   * These enable agents to create and manage enterprise architecture elements
+   */
+  registerUAFTools(): void {
+    // Lazy import to avoid circular dependencies
+    const { uafService } = require('../services/uaf-service');
+    const { uafViewGenerator } = require('../services/uaf-views');
+    const { UAF_VIEWPOINTS, UAF_MODEL_KINDS } = require('../services/uaf-types');
+
+    // UAF create element tool
+    this.tools.set('uaf_create_element', {
+      name: 'uaf_create_element',
+      description: 'Create a UAF architecture element. Input format: viewpoint|modelKind|elementType|name|description. Viewpoints: strategic,operational,resources,services,personnel,security,projects,standards. ModelKinds: taxonomy,structure,connectivity,processes,states,scenarios,information. ElementTypes: capability,operational_activity,system,software,service,etc.',
+      parameters: { input: 'string (viewpoint|modelKind|elementType|name|description)' },
+      execute: async (params, ctx) => {
+        const input = String(params.input).trim();
+        const parts = input.split('|').map(p => p.trim());
+
+        if (parts.length < 4) {
+          return 'Error: Invalid format. Use: viewpoint|modelKind|elementType|name|description';
+        }
+
+        const [viewpoint, modelKind, elementType, name, description = ''] = parts;
+        const workspaceId = ctx?.workspaceId || 'default';
+
+        try {
+          const element = await uafService.createElement(
+            workspaceId,
+            { name, description, viewpoint, modelKind, elementType, properties: {} },
+            'agent'
+          );
+          return `Created UAF element: ${element.name} (id: ${element.id}, viewpoint: ${viewpoint}, type: ${elementType})`;
+        } catch (err: any) {
+          return `Error creating element: ${err.message}`;
+        }
+      },
+    });
+
+    // UAF query elements tool
+    this.tools.set('uaf_query_elements', {
+      name: 'uaf_query_elements',
+      description: 'Query UAF elements in the architecture. Input format: optional filters as viewpoint|modelKind|search. Leave empty to get all elements.',
+      parameters: { input: 'string (optional: viewpoint|modelKind|search)' },
+      execute: async (params, ctx) => {
+        const input = String(params.input).trim();
+        const workspaceId = ctx?.workspaceId || 'default';
+
+        const filter: any = { workspaceId, limit: 20 };
+
+        if (input) {
+          const parts = input.split('|').map(p => p.trim());
+          if (parts[0] && parts[0] !== '*') filter.viewpoint = parts[0];
+          if (parts[1] && parts[1] !== '*') filter.modelKind = parts[1];
+          if (parts[2]) filter.search = parts[2];
+        }
+
+        try {
+          const elements = await uafService.queryElements(filter);
+
+          if (elements.length === 0) {
+            return 'No UAF elements found matching the criteria';
+          }
+
+          const formatted = elements.slice(0, 10).map((e: any, i: number) =>
+            `${i + 1}. [${e.viewpoint}/${e.modelKind}] ${e.name} (${e.elementType})\n   ${e.description?.slice(0, 100) || 'No description'}`
+          );
+
+          return `Found ${elements.length} UAF elements:\n\n${formatted.join('\n\n')}${elements.length > 10 ? `\n\n... and ${elements.length - 10} more` : ''}`;
+        } catch (err: any) {
+          return `Error querying elements: ${err.message}`;
+        }
+      },
+    });
+
+    // UAF link elements tool
+    this.tools.set('uaf_link_elements', {
+      name: 'uaf_link_elements',
+      description: 'Create a relationship between UAF elements. Input format: sourceId|targetId|relationshipType. RelationshipTypes: composes,specializes,realizes,performs,enables,requires,traces_to,etc.',
+      parameters: { input: 'string (sourceId|targetId|relationshipType)' },
+      execute: async (params, ctx) => {
+        const input = String(params.input).trim();
+        const parts = input.split('|').map(p => p.trim());
+
+        if (parts.length < 3) {
+          return 'Error: Invalid format. Use: sourceId|targetId|relationshipType';
+        }
+
+        const [sourceId, targetId, relationshipType] = parts;
+        const workspaceId = ctx?.workspaceId || 'default';
+
+        try {
+          const rel = await uafService.createRelationship(
+            workspaceId,
+            { sourceId, targetId, relationshipType },
+            'agent'
+          );
+          return `Created relationship: ${relationshipType} from ${sourceId.slice(0, 8)} to ${targetId.slice(0, 8)} (id: ${rel.id})`;
+        } catch (err: any) {
+          return `Error creating relationship: ${err.message}`;
+        }
+      },
+    });
+
+    // UAF generate view tool
+    this.tools.set('uaf_generate_view', {
+      name: 'uaf_generate_view',
+      description: 'Generate a Mermaid diagram for UAF elements. Input format: viewType|viewpoint (optional). ViewTypes: capability_taxonomy,operational_flow,resource_structure,grid_overview,etc.',
+      parameters: { input: 'string (viewType|viewpoint)' },
+      execute: async (params, ctx) => {
+        const input = String(params.input).trim();
+        const parts = input.split('|').map(p => p.trim());
+        const viewType = parts[0] || 'grid_overview';
+        const viewpoint = parts[1];
+        const workspaceId = ctx?.workspaceId || 'default';
+
+        try {
+          let diagram: string;
+
+          switch (viewType) {
+            case 'capability_taxonomy':
+              diagram = await uafViewGenerator.generateCapabilityTaxonomy(workspaceId);
+              break;
+            case 'operational_flow':
+              diagram = await uafViewGenerator.generateOperationalFlow(workspaceId);
+              break;
+            case 'resource_structure':
+              diagram = await uafViewGenerator.generateResourceStructure(workspaceId);
+              break;
+            case 'grid_overview':
+              diagram = await uafViewGenerator.generateGridOverview(workspaceId);
+              break;
+            default:
+              diagram = await uafViewGenerator.generateView({
+                workspaceId,
+                viewpoint: viewpoint as any,
+                includeRelationships: true,
+              });
+          }
+
+          return `Generated ${viewType} diagram:\n\n\`\`\`mermaid\n${diagram}\n\`\`\``;
+        } catch (err: any) {
+          return `Error generating view: ${err.message}`;
+        }
+      },
+    });
+
+    // UAF stats tool
+    this.tools.set('uaf_stats', {
+      name: 'uaf_stats',
+      description: 'Get statistics about the UAF architecture in the workspace',
+      parameters: { input: 'string (ignored)' },
+      execute: async (params, ctx) => {
+        const workspaceId = ctx?.workspaceId || 'default';
+
+        try {
+          const stats = await uafService.getStats(workspaceId);
+
+          const vpBreakdown = Object.entries(stats.byViewpoint)
+            .filter(([_, count]) => (count as number) > 0)
+            .map(([vp, count]) => `  - ${vp}: ${count}`)
+            .join('\n');
+
+          const typeBreakdown = Object.entries(stats.byElementType)
+            .filter(([_, count]) => (count as number) > 0)
+            .map(([type, count]) => `  - ${type}: ${count}`)
+            .join('\n');
+
+          return `UAF Architecture Statistics:
+Total elements: ${stats.totalElements}
+Total relationships: ${stats.totalRelationships}
+
+By viewpoint:
+${vpBreakdown || '  (none)'}
+
+By element type:
+${typeBreakdown || '  (none)'}`;
+        } catch (err: any) {
+          return `Error getting stats: ${err.message}`;
+        }
+      },
+    });
+
+    // UAF export tool
+    this.tools.set('uaf_export', {
+      name: 'uaf_export',
+      description: 'Export the UAF architecture to JSON format',
+      parameters: { input: 'string (ignored)' },
+      execute: async (params, ctx) => {
+        const workspaceId = ctx?.workspaceId || 'default';
+
+        try {
+          const json = await uafService.exportArchitecture(workspaceId);
+          const architecture = JSON.parse(json);
+
+          return `Exported UAF architecture (${architecture.elements.length} elements, ${architecture.relationships.length} relationships):\n\n${json.slice(0, 2000)}${json.length > 2000 ? '\n\n... (truncated)' : ''}`;
+        } catch (err: any) {
+          return `Error exporting architecture: ${err.message}`;
+        }
+      },
+    });
+
+    console.log('[agent] Registered UAF tools: uaf_create_element, uaf_query_elements, uaf_link_elements, uaf_generate_view, uaf_stats, uaf_export');
+  }
+
   // ============ Info Methods ============
 
   private listArchitectures(): Array<{ name: string; description: string }> {
