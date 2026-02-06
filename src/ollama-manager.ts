@@ -401,6 +401,55 @@ export class OllamaManager extends EventEmitter {
   }
 
   /**
+   * Generate embeddings for text using Ollama
+   * Requires an embedding model like nomic-embed-text, mxbai-embed-large, or all-minilm
+   */
+  async embeddings(request: {
+    model: string;
+    prompt: string | string[];
+  }): Promise<{
+    embeddings: number[][];
+    model: string;
+  }> {
+    if (!await this.checkRunning()) {
+      throw new Error('Ollama server not running');
+    }
+
+    const endpoint = this.ollamaEndpoint || 'http://127.0.0.1:11434';
+    const prompts = Array.isArray(request.prompt) ? request.prompt : [request.prompt];
+    const allEmbeddings: number[][] = [];
+
+    for (const prompt of prompts) {
+      const response = await fetch(`${endpoint}/api/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: request.model,
+          prompt,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Ollama embeddings failed: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json() as { embedding?: number[] };
+
+      if (!data.embedding) {
+        throw new Error('No embedding returned from Ollama');
+      }
+
+      allEmbeddings.push(data.embedding);
+    }
+
+    return {
+      embeddings: allEmbeddings,
+      model: request.model,
+    };
+  }
+
+  /**
    * Delete a model
    */
   async deleteModel(modelName: string): Promise<void> {

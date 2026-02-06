@@ -61,6 +61,11 @@ export class LocalAgentService {
   setManagers(ollama: OllamaManager | null, sandbox: SandboxManager | null): void {
     this.ollamaManager = ollama;
     this.sandboxManager = sandbox;
+
+    // Register memory tools if Ollama is available
+    if (ollama) {
+      this.agentAdapter.registerMemoryTools(ollama);
+    }
   }
 
   /**

@@ -39,6 +39,8 @@ import { adapterManager } from './adapters/adapter-manager';
 import { cloudGPUProvider } from './services/cloud-gpu-provider';
 import { GitService } from './services/git-service';
 import { analyzeRepository, RepoAnalysis } from './services/repo-analyzer';
+import { semanticMemory } from './services/semantic-memory';
+import { zlayerService } from './services/zlayer-service';
 
 const PORT = 8080;
 
@@ -2148,6 +2150,359 @@ export class ApiServer {
         });
       } catch (err) {
         res.status(500).json({ error: 'Failed to get stats', details: String(err) });
+      }
+    });
+
+    // ============ Semantic Memory API (ELID Integration) ============
+
+    // Initialize semantic memory with Ollama when available
+    if (this.ollamaManager) {
+      semanticMemory.setOllamaManager(this.ollamaManager);
+    }
+
+    // Store a memory
+    this.app.post('/api/v1/memory/:workspaceId', localAuth, async (req, res) => {
+      try {
+        const workspaceId = req.params.workspaceId as string;
+        const { content, type, metadata } = req.body;
+
+        if (!content) {
+          return res.status(400).json({ error: 'Content is required' });
+        }
+
+        const memory = await semanticMemory.store(
+          workspaceId,
+          content,
+          type || 'conversation',
+          metadata || {}
+        );
+
+        res.json({ success: true, memory });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to store memory', details: String(err) });
+      }
+    });
+
+    // Search memories
+    this.app.post('/api/v1/memory/:workspaceId/search', localAuth, async (req, res) => {
+      try {
+        const workspaceId = req.params.workspaceId as string;
+        const { query, limit, maxDistance, type, tags } = req.body;
+
+        if (!query) {
+          return res.status(400).json({ error: 'Query is required' });
+        }
+
+        const results = await semanticMemory.search(workspaceId, query, {
+          limit: limit || 10,
+          maxDistance: maxDistance || 64,
+          type,
+          tags,
+        });
+
+        res.json({
+          success: true,
+          count: results.length,
+          results: results.map(r => ({
+            ...r.entry,
+            distance: r.distance,
+            similarity: r.similarity,
+          })),
+        });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to search memories', details: String(err) });
+      }
+    });
+
+    // Get recent memories
+    this.app.get('/api/v1/memory/:workspaceId/recent', localAuth, (req, res) => {
+      try {
+        const workspaceId = req.params.workspaceId as string;
+        const limit = parseInt(req.query.limit as string) || 10;
+
+        const memories = semanticMemory.getRecent(workspaceId, limit);
+
+        res.json({ success: true, count: memories.length, memories });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to get recent memories', details: String(err) });
+      }
+    });
+
+    // Get memory stats
+    this.app.get('/api/v1/memory/:workspaceId/stats', localAuth, (req, res) => {
+      try {
+        const workspaceId = req.params.workspaceId as string;
+        const stats = semanticMemory.getStats(workspaceId);
+
+        res.json({ success: true, ...stats });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to get memory stats', details: String(err) });
+      }
+    });
+
+    // Delete a specific memory
+    this.app.delete('/api/v1/memory/:workspaceId/:memoryId', localAuth, async (req, res) => {
+      try {
+        const workspaceId = req.params.workspaceId as string;
+        const memoryId = req.params.memoryId as string;
+        const deleted = await semanticMemory.delete(workspaceId, memoryId);
+
+        if (deleted) {
+          res.json({ success: true });
+        } else {
+          res.status(404).json({ error: 'Memory not found' });
+        }
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to delete memory', details: String(err) });
+      }
+    });
+
+    // Clear all memories for a workspace
+    this.app.delete('/api/v1/memory/:workspaceId', localAuth, async (req, res) => {
+      try {
+        const workspaceId = req.params.workspaceId as string;
+        await semanticMemory.clear(workspaceId);
+
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to clear memories', details: String(err) });
+      }
+    });
+
+    // Export memories
+    this.app.get('/api/v1/memory/:workspaceId/export', localAuth, (req, res) => {
+      try {
+        const workspaceId = req.params.workspaceId as string;
+        const memories = semanticMemory.exportMemories(workspaceId);
+
+        res.json({ success: true, workspaceId, count: memories.length, memories });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to export memories', details: String(err) });
+      }
+    });
+
+    // Import memories
+    this.app.post('/api/v1/memory/:workspaceId/import', localAuth, async (req, res) => {
+      try {
+        const workspaceId = req.params.workspaceId as string;
+        const { memories } = req.body;
+
+        if (!Array.isArray(memories)) {
+          return res.status(400).json({ error: 'Memories array is required' });
+        }
+
+        await semanticMemory.importMemories(workspaceId, memories);
+
+        res.json({ success: true, imported: memories.length });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to import memories', details: String(err) });
+      }
+    });
+
+    // ============ ZLayer Container Orchestration API ============
+
+    // Get ZLayer status
+    this.app.get('/api/v1/zlayer/status', localAuth, async (req, res) => {
+      try {
+        const info = await zlayerService.initialize();
+        const version = info.installed ? await zlayerService.getVersion() : null;
+
+        res.json({
+          success: true,
+          installed: info.installed,
+          version,
+          wasmSupported: info.wasmSupported,
+          platform: info.platform,
+          arch: info.arch,
+          cliPath: info.cliPath,
+        });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to get ZLayer status', details: String(err) });
+      }
+    });
+
+    // Install ZLayer
+    this.app.post('/api/v1/zlayer/install', localAuth, async (req, res) => {
+      try {
+        const success = await zlayerService.install((percent, message) => {
+          // Could broadcast progress via WebSocket here
+          console.log(`[ZLayer Install] ${percent}%: ${message}`);
+        });
+
+        if (success) {
+          const version = await zlayerService.getVersion();
+          res.json({ success: true, version });
+        } else {
+          res.status(500).json({ error: 'ZLayer installation failed' });
+        }
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to install ZLayer', details: String(err) });
+      }
+    });
+
+    // List ZLayer services
+    this.app.get('/api/v1/zlayer/services', localAuth, async (req, res) => {
+      try {
+        const services = await zlayerService.listServices();
+        res.json({ success: true, services });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to list services', details: String(err) });
+      }
+    });
+
+    // Get service status
+    this.app.get('/api/v1/zlayer/services/:name', localAuth, async (req, res) => {
+      try {
+        const name = req.params.name as string;
+        const status = await zlayerService.getStatus(name);
+
+        if (status) {
+          res.json({ success: true, ...status });
+        } else {
+          res.status(404).json({ error: 'Service not found' });
+        }
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to get service status', details: String(err) });
+      }
+    });
+
+    // Deploy a service
+    this.app.post('/api/v1/zlayer/deploy', localAuth, async (req, res) => {
+      try {
+        const spec = req.body;
+
+        if (!spec.name) {
+          return res.status(400).json({ error: 'Service name is required' });
+        }
+
+        const serviceId = await zlayerService.deploy(spec);
+
+        if (serviceId) {
+          res.json({ success: true, serviceId });
+        } else {
+          res.status(500).json({ error: 'Deployment failed' });
+        }
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to deploy service', details: String(err) });
+      }
+    });
+
+    // Stop a service
+    this.app.post('/api/v1/zlayer/services/:name/stop', localAuth, async (req, res) => {
+      try {
+        const name = req.params.name as string;
+        const success = await zlayerService.stop(name);
+
+        res.json({ success });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to stop service', details: String(err) });
+      }
+    });
+
+    // Remove a service
+    this.app.delete('/api/v1/zlayer/services/:name', localAuth, async (req, res) => {
+      try {
+        const name = req.params.name as string;
+        const success = await zlayerService.remove(name);
+
+        res.json({ success });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to remove service', details: String(err) });
+      }
+    });
+
+    // Scale a service
+    this.app.post('/api/v1/zlayer/services/:name/scale', localAuth, async (req, res) => {
+      try {
+        const name = req.params.name as string;
+        const { replicas } = req.body;
+
+        if (typeof replicas !== 'number' || replicas < 0) {
+          return res.status(400).json({ error: 'Valid replicas count is required' });
+        }
+
+        const success = await zlayerService.scale(name, replicas);
+        res.json({ success });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to scale service', details: String(err) });
+      }
+    });
+
+    // Get service logs
+    this.app.get('/api/v1/zlayer/services/:name/logs', localAuth, async (req, res) => {
+      try {
+        const name = req.params.name as string;
+        const tail = parseInt(req.query.tail as string) || 100;
+        const logs = await zlayerService.getLogs(name, tail);
+
+        res.json({ success: true, logs });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to get logs', details: String(err) });
+      }
+    });
+
+    // Run WASM module
+    this.app.post('/api/v1/zlayer/wasm/run', localAuth, async (req, res) => {
+      try {
+        const { wasmPath, args, env, timeout } = req.body;
+
+        if (!wasmPath) {
+          return res.status(400).json({ error: 'WASM path is required' });
+        }
+
+        const result = await zlayerService.runWasm(wasmPath, { args, env, timeout });
+        res.json({ success: result.exitCode === 0, ...result });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to run WASM', details: String(err) });
+      }
+    });
+
+    // Build an image
+    this.app.post('/api/v1/zlayer/build', localAuth, async (req, res) => {
+      try {
+        const { contextPath, tag, dockerfile, buildArgs } = req.body;
+
+        if (!contextPath) {
+          return res.status(400).json({ error: 'Context path is required' });
+        }
+
+        const imageTag = await zlayerService.build(contextPath, { tag, dockerfile, buildArgs });
+
+        if (imageTag) {
+          res.json({ success: true, tag: imageTag });
+        } else {
+          res.status(500).json({ error: 'Build failed' });
+        }
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to build image', details: String(err) });
+      }
+    });
+
+    // Deploy workspace as ZLayer service
+    this.app.post('/api/v1/zlayer/workspaces/:workspaceId/deploy', localAuth, async (req, res) => {
+      try {
+        const workspaceId = req.params.workspaceId as string;
+        const options = req.body;
+
+        // Get workspace sandbox path
+        if (!this.sandboxManager) {
+          return res.status(500).json({ error: 'Sandbox manager not available' });
+        }
+
+        const workspacePath = this.sandboxManager.getSandboxPath(workspaceId);
+        if (!workspacePath) {
+          return res.status(400).json({ error: 'Workspace path not available' });
+        }
+
+        const serviceId = await zlayerService.deployWorkspace(workspaceId, workspacePath, options);
+
+        if (serviceId) {
+          res.json({ success: true, serviceId });
+        } else {
+          res.status(500).json({ error: 'Workspace deployment failed' });
+        }
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to deploy workspace', details: String(err) });
       }
     });
   }

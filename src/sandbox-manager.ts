@@ -3,6 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getTempPath } from './electron-compat';
 import { IPFSManager } from './ipfs-manager';
+import { zlayerService, ZLayerSpec } from './services/zlayer-service';
+
+// Execution backend type
+export type ExecutionBackend = 'native' | 'zlayer' | 'wasm';
 
 export interface FileInfo {
   name: string;
@@ -74,10 +78,56 @@ export class SandboxManager extends EventEmitter {
   private basePath: string;
   private ipfsManager: IPFSManager | null = null;
   private maxSandboxSizeBytes: number = 500 * 1024 * 1024; // 500MB default
+  private executionBackend: ExecutionBackend = 'native';
+  private zlayerInitialized: boolean = false;
 
   constructor(storagePath: string) {
     super();
     this.basePath = path.join(storagePath, 'otherthing-storage', 'workspaces');
+  }
+
+  /**
+   * Set the execution backend (native, zlayer, or wasm)
+   */
+  setExecutionBackend(backend: ExecutionBackend): void {
+    this.executionBackend = backend;
+    this.log(`Execution backend set to: ${backend}`, 'info');
+  }
+
+  /**
+   * Get current execution backend
+   */
+  getExecutionBackend(): ExecutionBackend {
+    return this.executionBackend;
+  }
+
+  /**
+   * Initialize ZLayer for isolated execution
+   */
+  async initializeZLayer(): Promise<boolean> {
+    if (this.zlayerInitialized) return true;
+
+    try {
+      const info = await zlayerService.initialize();
+      if (info.installed) {
+        this.zlayerInitialized = true;
+        this.log(`ZLayer initialized (version: ${await zlayerService.getVersion()})`, 'success');
+        return true;
+      } else {
+        this.log('ZLayer not installed', 'info');
+        return false;
+      }
+    } catch (err) {
+      this.log(`Failed to initialize ZLayer: ${err}`, 'error');
+      return false;
+    }
+  }
+
+  /**
+   * Check if ZLayer is available
+   */
+  isZLayerAvailable(): boolean {
+    return this.zlayerInitialized && zlayerService.isInstalled();
   }
 
   /**
@@ -508,6 +558,334 @@ export class SandboxManager extends EventEmitter {
         error: error.killed ? 'Command timed out' : undefined,
       };
     }
+  }
+
+  /**
+   * Execute a command using ZLayer container isolation
+   */
+  async executeWithZLayer(
+    workspaceId: string,
+    command: string,
+    options?: {
+      image?: string;
+      timeout?: number;
+      env?: Record<string, string>;
+      gpu?: boolean;
+    }
+  ): Promise<ExecutionResult> {
+    if (!this.zlayerInitialized) {
+      const initialized = await this.initializeZLayer();
+      if (!initialized) {
+        return {
+          success: false,
+          stdout: '',
+          stderr: 'ZLayer not available',
+          exitCode: -1,
+          error: 'ZLayer not installed or failed to initialize',
+        };
+      }
+    }
+
+    // Validate inputs
+    if (!this.validateWorkspaceId(workspaceId)) {
+      return { success: false, stdout: '', stderr: '', exitCode: -1, error: 'Invalid workspace ID' };
+    }
+
+    const sandboxResult = await this.ensureSandbox(workspaceId);
+    if (!sandboxResult.success) {
+      return { success: false, stdout: '', stderr: '', exitCode: -1, error: sandboxResult.error };
+    }
+
+    const sandboxPath = sandboxResult.path!;
+    const image = options?.image || 'python:3.11-slim';
+
+    this.log(`Executing with ZLayer (${image}): ${command.slice(0, 100)}...`, 'info');
+
+    try {
+      // Create a temporary deployment spec for execution
+      const spec: ZLayerSpec = {
+        name: `exec-${workspaceId}-${Date.now()}`,
+        type: 'job',
+        image,
+        env: {
+          WORKSPACE_PATH: '/workspace',
+          ...options?.env,
+        },
+        volumes: [
+          {
+            type: 'bind',
+            source: sandboxPath,
+            target: '/workspace',
+          },
+        ],
+        resources: {
+          memory: '512Mi',
+          cpu: 1,
+          gpu: options?.gpu,
+        },
+        labels: {
+          'workspace_id': workspaceId,
+          'execution_type': 'command',
+          'managed_by': 'otherthing-node',
+        },
+      };
+
+      // Deploy and run
+      const deployId = await zlayerService.deploy(spec);
+      if (!deployId) {
+        return {
+          success: false,
+          stdout: '',
+          stderr: 'Failed to deploy ZLayer job',
+          exitCode: -1,
+          error: 'ZLayer deployment failed',
+        };
+      }
+
+      // Execute the command in the container
+      const result = await zlayerService.execInWorkspace(workspaceId, ['sh', '-c', command]);
+
+      // Cleanup the job
+      await zlayerService.remove(spec.name);
+
+      return {
+        success: result.exitCode === 0,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+      };
+    } catch (error: any) {
+      this.log(`ZLayer execution failed: ${error}`, 'error');
+      return {
+        success: false,
+        stdout: '',
+        stderr: error.message || String(error),
+        exitCode: -1,
+        error: 'ZLayer execution failed',
+      };
+    }
+  }
+
+  /**
+   * Execute a WASM module in ZLayer's sandboxed runtime
+   */
+  async executeWasm(
+    workspaceId: string,
+    wasmPath: string,
+    options?: {
+      args?: string[];
+      env?: Record<string, string>;
+      timeout?: number;
+    }
+  ): Promise<ExecutionResult> {
+    if (!this.zlayerInitialized) {
+      const initialized = await this.initializeZLayer();
+      if (!initialized) {
+        return {
+          success: false,
+          stdout: '',
+          stderr: 'ZLayer not available for WASM execution',
+          exitCode: -1,
+          error: 'ZLayer not installed',
+        };
+      }
+    }
+
+    // Validate inputs
+    if (!this.validateWorkspaceId(workspaceId)) {
+      return { success: false, stdout: '', stderr: '', exitCode: -1, error: 'Invalid workspace ID' };
+    }
+
+    const sandboxResult = await this.ensureSandbox(workspaceId);
+    if (!sandboxResult.success) {
+      return { success: false, stdout: '', stderr: '', exitCode: -1, error: sandboxResult.error };
+    }
+
+    // Resolve WASM path relative to sandbox
+    const fullWasmPath = path.isAbsolute(wasmPath)
+      ? wasmPath
+      : path.join(sandboxResult.path!, wasmPath);
+
+    if (!fs.existsSync(fullWasmPath)) {
+      return {
+        success: false,
+        stdout: '',
+        stderr: `WASM module not found: ${wasmPath}`,
+        exitCode: -1,
+        error: 'WASM module not found',
+      };
+    }
+
+    this.log(`Executing WASM module: ${wasmPath}`, 'info');
+
+    try {
+      const result = await zlayerService.runWasm(fullWasmPath, {
+        args: options?.args,
+        env: {
+          WORKSPACE_ID: workspaceId,
+          ...options?.env,
+        },
+        timeout: options?.timeout || 60000,
+      });
+
+      return {
+        success: result.exitCode === 0,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+      };
+    } catch (error: any) {
+      this.log(`WASM execution failed: ${error}`, 'error');
+      return {
+        success: false,
+        stdout: '',
+        stderr: error.message || String(error),
+        exitCode: -1,
+        error: 'WASM execution failed',
+      };
+    }
+  }
+
+  /**
+   * Execute with automatic backend selection
+   * Uses the configured execution backend (native, zlayer, or wasm)
+   */
+  async executeAuto(
+    workspaceId: string,
+    command: string,
+    options?: {
+      preferBackend?: ExecutionBackend;
+      image?: string;
+      wasmModule?: string;
+      timeout?: number;
+      env?: Record<string, string>;
+      gpu?: boolean;
+    }
+  ): Promise<ExecutionResult> {
+    const backend = options?.preferBackend || this.executionBackend;
+
+    // If WASM module specified, use WASM execution
+    if (options?.wasmModule) {
+      return this.executeWasm(workspaceId, options.wasmModule, {
+        args: [command],
+        env: options.env,
+        timeout: options.timeout,
+      });
+    }
+
+    // Use the specified backend
+    switch (backend) {
+      case 'zlayer':
+        if (this.isZLayerAvailable() || await this.initializeZLayer()) {
+          return this.executeWithZLayer(workspaceId, command, {
+            image: options?.image,
+            timeout: options?.timeout,
+            env: options?.env,
+            gpu: options?.gpu,
+          });
+        }
+        // Fall through to native if ZLayer unavailable
+        this.log('ZLayer unavailable, falling back to native execution', 'info');
+
+      case 'native':
+      default:
+        return this.execute(workspaceId, command, options?.timeout);
+    }
+  }
+
+  /**
+   * Deploy a persistent workspace container with ZLayer
+   */
+  async deployWorkspaceContainer(
+    workspaceId: string,
+    options?: {
+      image?: string;
+      wasmModule?: string;
+      ports?: number[];
+      env?: Record<string, string>;
+      memory?: string;
+      cpu?: number;
+      gpu?: boolean;
+    }
+  ): Promise<{ success: boolean; serviceId?: string; error?: string }> {
+    if (!this.zlayerInitialized) {
+      const initialized = await this.initializeZLayer();
+      if (!initialized) {
+        return { success: false, error: 'ZLayer not available' };
+      }
+    }
+
+    const sandboxResult = await this.ensureSandbox(workspaceId);
+    if (!sandboxResult.success) {
+      return { success: false, error: sandboxResult.error };
+    }
+
+    try {
+      const serviceId = await zlayerService.deployWorkspace(
+        workspaceId,
+        sandboxResult.path!,
+        {
+          image: options?.image,
+          wasmModule: options?.wasmModule,
+          ports: options?.ports,
+          env: options?.env,
+          memory: options?.memory,
+          cpu: options?.cpu,
+          gpu: options?.gpu,
+        }
+      );
+
+      if (serviceId) {
+        this.log(`Deployed workspace container: ${serviceId}`, 'success');
+        return { success: true, serviceId };
+      } else {
+        return { success: false, error: 'Deployment returned no service ID' };
+      }
+    } catch (error: any) {
+      this.log(`Failed to deploy workspace container: ${error}`, 'error');
+      return { success: false, error: error.message || String(error) };
+    }
+  }
+
+  /**
+   * Stop and remove a workspace container
+   */
+  async stopWorkspaceContainer(workspaceId: string): Promise<boolean> {
+    const serviceName = `workspace-${workspaceId}`;
+    try {
+      await zlayerService.stop(serviceName);
+      await zlayerService.remove(serviceName);
+      this.log(`Stopped workspace container: ${serviceName}`, 'success');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get workspace container status
+   */
+  async getWorkspaceContainerStatus(workspaceId: string): Promise<{
+    running: boolean;
+    status?: string;
+    replicas?: { ready: number; desired: number };
+  }> {
+    const serviceName = `workspace-${workspaceId}`;
+    try {
+      const status = await zlayerService.getStatus(serviceName);
+      if (status) {
+        return {
+          running: status.status === 'running',
+          status: status.status,
+          replicas: {
+            ready: status.replicas.ready,
+            desired: status.replicas.desired,
+          },
+        };
+      }
+    } catch {}
+
+    return { running: false };
   }
 
   /**

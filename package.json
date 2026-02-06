@@ -113,6 +113,7 @@
     "adm-zip": "^0.5.10",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
+    "elid-wasm": "github:zachhandley/ELID",
     "ethers": "^6.16.0",
     "express": "^5.2.1",
     "lucide-react": "^0.294.0",

@@ -14,6 +14,8 @@ import {
 import { BaseAdapter } from './base';
 import { LlmInferenceAdapter } from './llm-inference';
 import { SecurityScanner, RiskLevel, scanForThreats } from '../security/index';
+import { semanticMemory, MemoryType } from '../services/semantic-memory';
+import { OllamaManager } from '../ollama-manager';
 
 // Agent architectures
 type AgentArchitecture = 'react' | 'plan-execute' | 'simple';
@@ -1083,6 +1085,147 @@ Begin!`;
     });
 
     console.log('[agent] Registered local filesystem tools: local_read_file, local_list_dir, local_shell, local_find');
+  }
+
+  /**
+   * Register semantic memory tools for storing and retrieving context
+   * These enable agents to remember information across conversations
+   */
+  registerMemoryTools(ollamaManager: OllamaManager): void {
+    // Initialize semantic memory with Ollama
+    semanticMemory.setOllamaManager(ollamaManager);
+
+    // Memory store tool
+    this.tools.set('memory_store', {
+      name: 'memory_store',
+      description: 'Store information in semantic memory for later retrieval. Input format: type|content (types: conversation, fact, task, code, file). Example: "fact|The user prefers TypeScript over JavaScript"',
+      parameters: { input: 'string (type|content)' },
+      execute: async (params, ctx) => {
+        const input = String(params.input).trim();
+        const pipeIndex = input.indexOf('|');
+
+        let type: MemoryType = 'conversation';
+        let content = input;
+
+        if (pipeIndex !== -1) {
+          const typeStr = input.slice(0, pipeIndex).trim().toLowerCase();
+          content = input.slice(pipeIndex + 1).trim();
+
+          if (['conversation', 'fact', 'task', 'code', 'file', 'custom'].includes(typeStr)) {
+            type = typeStr as MemoryType;
+          }
+        }
+
+        if (!content) {
+          return 'Error: No content provided to store';
+        }
+
+        const workspaceId = ctx?.workspaceId || 'default';
+
+        try {
+          const memory = await semanticMemory.store(workspaceId, content, type, {
+            source: 'agent',
+          });
+          return `Stored memory (id: ${memory.id}, type: ${type}): "${content.slice(0, 100)}${content.length > 100 ? '...' : ''}"`;
+        } catch (err: any) {
+          return `Error storing memory: ${err.message}`;
+        }
+      },
+    });
+
+    // Memory search tool
+    this.tools.set('memory_search', {
+      name: 'memory_search',
+      description: 'Search semantic memory for relevant information. Returns memories similar to your query. Input: search query text',
+      parameters: { input: 'string (search query)' },
+      execute: async (params, ctx) => {
+        const query = String(params.input).trim();
+
+        if (!query) {
+          return 'Error: No search query provided';
+        }
+
+        const workspaceId = ctx?.workspaceId || 'default';
+
+        try {
+          const results = await semanticMemory.search(workspaceId, query, {
+            limit: 5,
+            maxDistance: 64, // 50% similarity threshold
+          });
+
+          if (results.length === 0) {
+            return 'No relevant memories found';
+          }
+
+          const formatted = results.map((r, i) =>
+            `${i + 1}. [${(r.similarity * 100).toFixed(0)}% similar, type: ${(r.entry as any).type}]\n   ${r.entry.content.slice(0, 200)}${r.entry.content.length > 200 ? '...' : ''}`
+          );
+
+          return `Found ${results.length} relevant memories:\n\n${formatted.join('\n\n')}`;
+        } catch (err: any) {
+          return `Error searching memory: ${err.message}`;
+        }
+      },
+    });
+
+    // Memory recent tool
+    this.tools.set('memory_recent', {
+      name: 'memory_recent',
+      description: 'Get the most recent memories. Input: optional number of memories to retrieve (default: 5)',
+      parameters: { input: 'string (optional count)' },
+      execute: async (params, ctx) => {
+        const input = String(params.input).trim();
+        const limit = parseInt(input) || 5;
+        const workspaceId = ctx?.workspaceId || 'default';
+
+        try {
+          const memories = semanticMemory.getRecent(workspaceId, limit);
+
+          if (memories.length === 0) {
+            return 'No memories stored yet';
+          }
+
+          const formatted = memories.map((m, i) => {
+            const date = new Date(m.timestamp).toLocaleString();
+            return `${i + 1}. [${m.type}] ${date}\n   ${m.content.slice(0, 200)}${m.content.length > 200 ? '...' : ''}`;
+          });
+
+          return `Recent ${memories.length} memories:\n\n${formatted.join('\n\n')}`;
+        } catch (err: any) {
+          return `Error getting recent memories: ${err.message}`;
+        }
+      },
+    });
+
+    // Memory stats tool
+    this.tools.set('memory_stats', {
+      name: 'memory_stats',
+      description: 'Get statistics about stored memories',
+      parameters: { input: 'string (ignored)' },
+      execute: async (params, ctx) => {
+        const workspaceId = ctx?.workspaceId || 'default';
+
+        try {
+          const stats = semanticMemory.getStats(workspaceId);
+
+          const typeBreakdown = Object.entries(stats.byType)
+            .filter(([_, count]) => count > 0)
+            .map(([type, count]) => `  - ${type}: ${count}`)
+            .join('\n');
+
+          return `Memory Statistics:
+Total memories: ${stats.totalMemories}
+By type:
+${typeBreakdown || '  (none)'}
+Oldest: ${stats.oldestTimestamp ? new Date(stats.oldestTimestamp).toLocaleString() : 'N/A'}
+Newest: ${stats.newestTimestamp ? new Date(stats.newestTimestamp).toLocaleString() : 'N/A'}`;
+        } catch (err: any) {
+          return `Error getting memory stats: ${err.message}`;
+        }
+      },
+    });
+
+    console.log('[agent] Registered semantic memory tools: memory_store, memory_search, memory_recent, memory_stats');
   }
 
   // ============ Info Methods ============
