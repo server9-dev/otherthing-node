@@ -1,148 +1,150 @@
 # OtherThing Node
 
-> **Every developer has a graveyard of unfinished projects.** Not because they lack skill, but because compute is expensive, cloud providers see your code, and there's no safe way to outsource work without losing control. OtherThing is a peer-to-peer compute marketplace where developers finally ship their "other things" using trusted, distributed resources — while keeping their IP locked down.
+> **A decentralized workspace platform for P2P compute, AI agents, and collaborative development with blockchain-backed payments and IP protection.**
 
-Desktop application for the OtherThing distributed compute network. Run local AI models, share IPFS storage, and earn OTT tokens for your contributions.
+Desktop + headless application for the OtherThing network. Run local AI models, share compute resources, collaborate in workspaces, and get paid via smart contracts.
 
-**[Pitch Deck](docs/PITCH-DECK.md)** · **[One-Pager](docs/ONE-PAGER.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Tokenomics](docs/TOKENOMICS.md)** · **[Go-to-Market](docs/GTM.md)**
+**Live API: https://api.otherthing.ai**
 
-## Features
+## What It Does
 
-### Compute & Storage
-- **IPFS Storage Node** - Share disk space on the distributed network with configurable limits (10-500 GB)
-- **Ollama LLM Engine** - Run local AI models (Llama, Mistral, CodeLlama, etc.) and share inference capacity
-- **Hardware Detection** - Automatically detects CPU, RAM, Storage, and GPUs
-- **Resource Limits** - Fine-grained control over shared resources
+OtherThing lets teams collaborate on projects with:
+- **Shared AI Agents** - Run tasks using local or distributed LLMs
+- **P2P Compute** - Share CPU/GPU resources across the network
+- **Smart Contracts** - Escrow payments, milestone releases, IP licensing
+- **Enterprise Architecture** - UAF framework for systems modeling
+- **Sandboxed Execution** - Isolated code execution with container/WASM support
 
-### Workspaces & Agents
-- **Workspace Management** - Create and join collaborative workspaces
-- **AI Agent Chat** - Interactive agent interface with streaming responses
-- **Sandboxed Execution** - Isolated code execution environment
-- **File Browser** - Browse and manage workspace files with IPFS sync
+## Current Stack
 
-### Blockchain Integration
-- **Wallet Connect** - Connect via WalletConnect QR or private key
-- **Node Registration** - Register your node on-chain with OTT stake
-- **Token Rewards** - Earn OTT tokens for compute contributions
-- **Network Selection** - Sepolia testnet (mainnet coming soon)
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| **Backend** | Appwrite Cloud | Users, workspaces, UAF elements, contracts |
+| **API** | Express + WebSocket | REST API + real-time agent streaming |
+| **AI** | Ollama | Local LLM inference (Llama, Mistral, etc.) |
+| **Memory** | ELID | Semantic search without vector DB |
+| **Containers** | ZLayer | Daemonless orchestration + WASM |
+| **Storage** | IPFS | Distributed file storage |
+| **Blockchain** | Ethereum (Sepolia) | OTT token, escrow, node registry |
+| **CDN/Tunnel** | Cloudflare | Public API at api.otherthing.ai |
 
-## Screenshots
+## Quick Start
 
-The app features a cyberpunk-themed UI with glassmorphism effects:
-- Dashboard with real-time stats
-- Node Control panel for IPFS/Ollama management
-- Workspace file browser and agent chat
-- Marketplace for network nodes
-
-## Installation
-
-### Download
-- **Windows**: [OtherThing-Node-Setup.exe](https://github.com/server9-dev/otherthing-node/releases/latest)
-- **macOS**: [OtherThing-Node.dmg](https://github.com/server9-dev/otherthing-node/releases/latest)
-- **Linux**: [OtherThing-Node.AppImage](https://github.com/server9-dev/otherthing-node/releases/latest)
-
-### From Source (Tauri - Recommended)
+### Desktop App (Electron)
 ```bash
-# Clone the repository
 git clone https://github.com/server9-dev/otherthing-node.git
 cd otherthing-node
-
-# Install dependencies
 npm install
-
-# Run in development (requires Rust)
-npm run tauri:dev
-
-# Build for production
-npm run tauri:build
+npm start
 ```
 
-### From Source (Electron)
+### Headless Server (WSL/Docker/CLI)
 ```bash
-# Run in development
-npm run dev
-
-# Build for production
-npm run build
-npm run dist:win   # Windows
-npm run dist:mac   # macOS
-npm run dist:linux # Linux
+npm install
+cp .env.example .env  # Configure Appwrite credentials
+npm run server
 ```
 
-## Architecture
+The API will be available at `http://localhost:8080`.
 
-### Tauri (Recommended - Lightweight ~15MB)
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Tauri Shell (Rust)                      │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │                  Node.js Sidecar                     │   │
-│  │  ┌─────────────┐  ┌──────────────┐  ┌───────────┐  │   │
-│  │  │ NodeService │  │  ApiServer   │  │ Hardware  │  │   │
-│  │  │  - IPFS     │  │  :8080       │  │ Detector  │  │   │
-│  │  │  - Ollama   │  │  REST + WS   │  │           │  │   │
-│  │  │  - Sandbox  │  └──────────────┘  └───────────┘  │   │
-│  │  └─────────────┘                                    │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                              ↕ REST API
-┌─────────────────────────────────────────────────────────────┐
-│                   WebView (React + Vite)                     │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │Dashboard │  │NodeCtrl  │  │Workspace │  │Marketplace │  │
-│  │          │  │-IPFS     │  │-Agents   │  │-Blockchain │  │
-│  │          │  │-Ollama   │  │-Files    │  │            │  │
-│  └──────────┘  └──────────┘  └──────────┘  └────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+## Configuration
+
+Create a `.env` file (see `.env.example`):
+
+```env
+APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
+APPWRITE_PROJECT_ID=your-project-id
+APPWRITE_API_KEY=your-api-key
+OLLAMA_HOST=http://localhost:11434
 ```
 
-### Electron (Legacy - ~150MB)
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Electron Main Process                     │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐  │
-│  │ NodeService │  │  ApiServer   │  │  HardwareDetector │  │
-│  │  - IPFS     │  │  :8080       │  │                   │  │
-│  │  - Ollama   │  │  REST + WS   │  │                   │  │
-│  │  - Sandbox  │  └──────────────┘  └───────────────────┘  │
-│  └─────────────┘                                            │
-└─────────────────────────────────────────────────────────────┘
-                              ↕ IPC
-┌─────────────────────────────────────────────────────────────┐
-│                   Electron Renderer (React)                  │
-└─────────────────────────────────────────────────────────────┘
+### Appwrite Setup
+
+Run the setup script to create database collections:
+```bash
+APPWRITE_PROJECT_ID=xxx APPWRITE_API_KEY=xxx npx ts-node src/services/appwrite-setup.ts
 ```
 
-## Tech Stack
-
-- **Framework**: Tauri 2.x (Rust) or Electron 36.x
-- **Frontend**: React 18 + TypeScript + Vite
-- **Styling**: Custom CSS with cyberpunk theme
-- **State**: React Context (Web3, Modules, Credentials)
-- **Blockchain**: ethers.js v6 + WalletConnect
-- **Storage**: IPFS (Kubo)
-- **AI**: Ollama for local LLM inference
+This creates collections for: workspaces, flows, UAF elements, relationships, smart contracts, and compute jobs.
 
 ## API Endpoints
 
-### REST API (localhost:8080)
-
+### Core
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Health check |
-| `/api/v1/hardware` | GET | Detect CPU/GPU/RAM/Storage |
-| `/api/v1/drives` | GET | List available drives |
+| `/api/v1/workspaces` | GET/POST | List/create workspaces |
+| `/api/v1/workspaces/:id` | GET/PUT/DELETE | Workspace CRUD |
+
+### AI Agents
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/agents/run` | POST | Execute an AI agent |
 | `/api/v1/ollama/status` | GET | Ollama status and models |
-| `/api/v1/ipfs/status` | GET | IPFS node status |
-| `/api/v1/workspaces` | GET/POST | Workspace CRUD |
-| `/api/v1/workspaces/:id/agents` | GET/POST | Agent management |
+| `/api/v1/ollama/pull` | POST | Pull a model |
+| `ws://localhost:8080/ws/agents` | WS | Real-time agent streaming |
+
+### UAF (Architecture Framework)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/workspaces/:id/uaf/elements` | GET/POST | UAF elements CRUD |
+| `/api/v1/workspaces/:id/uaf/relationships` | GET/POST | Element relationships |
+| `/api/v1/workspaces/:id/uaf/grid` | GET | 11x14 UAF grid view |
+| `/api/v1/workspaces/:id/uaf/views` | POST | Generate Mermaid diagrams |
+| `/api/v1/workspaces/:id/uaf/stats` | GET | Architecture statistics |
+| `/api/v1/workspaces/:id/uaf/export` | GET | Export to JSON |
+
+### Semantic Memory
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/memory/:workspaceId/store` | POST | Store a memory |
+| `/api/v1/memory/:workspaceId/search` | POST | Semantic search |
+| `/api/v1/memory/:workspaceId/recent` | GET | Recent memories |
+
+### ZLayer (Containers)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/zlayer/status` | GET | ZLayer status |
+| `/api/v1/zlayer/services` | GET | List services |
+| `/api/v1/zlayer/deploy` | POST | Deploy a service |
+| `/api/v1/zlayer/wasm/run` | POST | Execute WASM module |
+
+### Sandbox (Code Execution)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
 | `/api/v1/workspaces/:id/sandbox/files` | GET/POST | File operations |
+| `/api/v1/workspaces/:id/sandbox/execute` | POST | Run shell command |
 
-### WebSocket (ws://localhost:8080/ws/agents)
-- Real-time agent communication
-- Streaming LLM responses
+## Agent Tools
 
-## Smart Contracts (Sepolia Testnet)
+Agents have access to these tools:
+
+**Filesystem**: `read_file`, `write_file`, `list_dir`, `search_files`, `shell`
+
+**Memory**: `memory_store`, `memory_search`, `memory_recent`, `memory_stats`
+
+**UAF**: `uaf_create_element`, `uaf_query_elements`, `uaf_link_elements`, `uaf_generate_view`, `uaf_stats`, `uaf_export`
+
+## UAF Framework
+
+Implements the OMG Unified Architecture Framework (ISO/IEC 19540) for enterprise/systems architecture:
+
+**11 Viewpoints:**
+- Strategic (WHY) - Capabilities, goals, vision
+- Operational (WHAT) - Activities, performers, exchanges
+- Services - Service definitions and interfaces
+- Personnel (WHO) - Roles, organizations, skills
+- Resources (HOW) - Systems, software, hardware
+- Security - Controls, threats, risks
+- Projects (WHEN) - Timelines, milestones
+- Standards - Protocols, guidance
+- And more...
+
+**14 Model Kinds:** Taxonomy, Structure, Connectivity, Processes, States, Scenarios, Information, Parameters, Constraints, Traceability, Roadmap, Dictionary, Requirements
+
+This creates a 71-cell grid for comprehensive architecture modeling.
+
+## Smart Contracts (Sepolia)
 
 | Contract | Address |
 |----------|---------|
@@ -150,66 +152,80 @@ npm run dist:linux # Linux
 | NodeRegistry | `0xFaCB01A565ea526FC8CAC87D5D4622983735e8F3` |
 | TaskEscrow | `0x246127F9743AC938baB7fc221546a785C880ad86` |
 
-## Configuration
-
-API keys for external LLM providers can be configured in Settings:
-- OpenAI
-- Anthropic (Claude)
-- Google (Gemini)
-
-Keys are stored securely in electron-store and never transmitted.
-
-## Development
-
-```bash
-# Start dev server with hot reload
-npm run dev
-
-# TypeScript check
-npx tsc --noEmit
-
-# Build main process
-npm run build:main
-
-# Build renderer
-npm run build:renderer
-```
-
 ## Project Structure
 
 ```
 src/
-├── main.ts                 # Electron main process
-├── sidecar.ts              # Tauri sidecar entry point
-├── electron-compat.ts      # Electron API compatibility layer
-├── preload.ts              # IPC bridge
-├── node-service.ts         # Core node functionality
-├── api-server.ts           # REST/WebSocket server
-├── hardware.ts             # Hardware detection
-├── adapters/               # LLM adapters
-├── renderer/
-│   ├── App.tsx             # Main React app
-│   ├── lib/
-│   │   └── api-bridge.ts   # Unified Electron/Tauri API
-│   ├── pages/              # Page components
-│   ├── components/         # UI components
-│   ├── context/            # React contexts
-│   └── styles/             # CSS themes
-└── services/               # Backend services
-
-src-tauri/
-├── Cargo.toml              # Rust dependencies
-├── tauri.conf.json         # Tauri configuration
-└── src/
-    └── lib.rs              # Tauri app with sidecar spawning
+├── main.ts              # Electron main process
+├── server.ts            # Headless server entry
+├── api-server.ts        # REST/WebSocket API
+├── node-service.ts      # Core node functionality
+├── ollama-manager.ts    # Ollama LLM integration
+├── sandbox-manager.ts   # Code execution sandbox
+├── ipfs-manager.ts      # IPFS storage
+├── adapters/
+│   ├── agent.ts         # AI agent with tools
+│   └── llm-inference.ts # LLM adapter
+├── services/
+│   ├── appwrite-service.ts   # Appwrite backend
+│   ├── uaf-service.ts        # UAF CRUD operations
+│   ├── uaf-types.ts          # UAF TypeScript types
+│   ├── uaf-views.ts          # Mermaid diagram generation
+│   ├── semantic-memory.ts    # ELID-based memory
+│   ├── elid-service.ts       # Embedding locality IDs
+│   ├── zlayer-service.ts     # Container orchestration
+│   ├── web3-service.ts       # Blockchain integration
+│   └── workspace-manager.ts  # Workspace management
+└── renderer/            # React frontend
 ```
 
-## Contributing
+## Development
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+```bash
+# Development with hot reload
+npm run dev
+
+# Build main process only
+npm run build:main
+
+# Run headless server
+npm run server
+
+# TypeScript check
+npx tsc --noEmit
+```
+
+## Deployment
+
+### With Cloudflare Tunnel (recommended for self-hosting)
+
+1. Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/
+2. Create tunnel: `cloudflared tunnel create otherthing`
+3. Route DNS: `cloudflared tunnel route dns otherthing api.yourdomain.com`
+4. Create config.yml pointing to localhost:8080
+5. Run: `cloudflared tunnel run otherthing`
+
+### Docker (coming soon)
+
+```bash
+docker run -p 8080:8080 -e APPWRITE_PROJECT_ID=xxx otherthing/node
+```
+
+## Roadmap
+
+- [x] Local AI agents with Ollama
+- [x] Workspace management
+- [x] Sandboxed code execution
+- [x] IPFS storage
+- [x] Semantic memory (ELID)
+- [x] Container orchestration (ZLayer)
+- [x] UAF architecture framework
+- [x] Appwrite cloud backend
+- [x] Headless server mode
+- [ ] P2P compute marketplace
+- [ ] Multi-node task distribution
+- [ ] Production smart contracts
+- [ ] Mobile app
 
 ## License
 
@@ -217,6 +233,5 @@ MIT
 
 ## Links
 
-- [OtherThing Cloud](https://otherthing.io)
-- [Documentation](https://docs.otherthing.io)
-- [Discord](https://discord.gg/otherthing)
+- **API**: https://api.otherthing.ai
+- **GitHub**: https://github.com/server9-dev/otherthing-node
