@@ -94,11 +94,17 @@ export class NodeService extends EventEmitter {
     // Initialize Web3 service
     this.web3Service = new Web3Service();
 
-    // Initialize IPFS manager and Sandbox manager if storage path is set
-    if (this.storagePath) {
-      this.initIPFS(this.storagePath);
-      this.initSandbox(this.storagePath);
+    // Default storage path if not configured
+    if (!this.storagePath) {
+      this.storagePath = path.join(require('os').homedir(), '.otherthing');
+      if (!require('fs').existsSync(this.storagePath)) {
+        require('fs').mkdirSync(this.storagePath, { recursive: true });
+      }
     }
+
+    // Initialize IPFS manager and Sandbox manager
+    this.initIPFS(this.storagePath);
+    this.initSandbox(this.storagePath);
 
     // Initialize Ollama manager
     this.ollamaManager = new OllamaManager();
@@ -241,12 +247,13 @@ export class NodeService extends EventEmitter {
           if (percent % 25 === 0) this.log(`IPFS download: ${percent}%`, 'info');
         });
         this.log('IPFS binary installed', 'success');
-        // Auto-start IPFS after download
+        // Auto-start IPFS after download (small delay for binary to settle)
+        await new Promise(r => setTimeout(r, 2000));
         try {
           await this.ipfsManager.start();
           this.log('IPFS started automatically', 'success');
         } catch (err) {
-          this.log(`IPFS auto-start failed: ${err}`, 'info');
+          this.log(`IPFS auto-start deferred — start manually from Node page`, 'info');
         }
       } catch (err) {
         this.log(`IPFS auto-download failed: ${err}`, 'info');
