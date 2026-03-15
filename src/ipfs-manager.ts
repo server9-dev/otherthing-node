@@ -261,6 +261,9 @@ export class IPFSManager extends EventEmitter {
     // Enable relay for NAT traversal
     await this.runCommand(['config', 'Swarm.RelayClient.Enabled', 'true', '--json']);
 
+    // Move gateway off port 8080 to avoid conflict with API server
+    await this.runCommand(['config', 'Addresses.Gateway', '/ip4/127.0.0.1/tcp/8180']);
+
     this.emit('log', { message: 'Configured for private network', type: 'info' });
   }
 

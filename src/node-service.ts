@@ -94,8 +94,8 @@ export class NodeService extends EventEmitter {
     // Initialize Web3 service
     this.web3Service = new Web3Service();
 
-    // Default storage path if not configured
-    if (!this.storagePath) {
+    // Default storage path if not configured or invalid
+    if (!this.storagePath || !path.isAbsolute(this.storagePath) || this.storagePath.includes('\\')) {
       this.storagePath = path.join(require('os').homedir(), '.otherthing');
       if (!require('fs').existsSync(this.storagePath)) {
         require('fs').mkdirSync(this.storagePath, { recursive: true });
