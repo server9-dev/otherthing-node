@@ -1,6 +1,6 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, Server, Settings as SettingsIcon, Wifi, WifiOff, HardDrive, Users, Bot, Store, Maximize2, Minimize2 } from 'lucide-react';
+import { LayoutDashboard, Server, Settings as SettingsIcon, Wifi, WifiOff, HardDrive, Users, Bot, Store, Maximize2, Minimize2, Briefcase } from 'lucide-react';
 import { Dashboard } from './pages/Dashboard';
 import { NodeControl } from './pages/NodeControl';
 import { Settings } from './pages/Settings';
@@ -9,6 +9,8 @@ import { WorkspaceDetailPage } from './pages/WorkspaceDetail';
 import { WorkspaceCodebasePage } from './pages/WorkspaceCodebase';
 import { AgentsPage } from './pages/Agents';
 import { Marketplace } from './pages/Marketplace';
+import { TasksPage } from './pages/Tasks';
+import { TaskDetailPage } from './pages/TaskDetail';
 import { ModuleProvider } from './context/ModuleContext';
 import { CredentialProvider } from './context/CredentialContext';
 import { Web3Provider } from './context/Web3Context';
@@ -95,6 +97,10 @@ function App() {
                   <Server size={16} />
                   <span>Node</span>
                 </NavLink>
+                <NavLink to="/tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <Briefcase size={16} />
+                  <span>Tasks</span>
+                </NavLink>
                 <NavLink to="/marketplace" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                   <Store size={16} />
                   <span>Marketplace</span>
@@ -146,6 +152,8 @@ function App() {
                 <Route path="/agents" element={<AgentsPage />} />
                 <Route path="/workspace/:workspaceId/agents" element={<AgentsPage />} />
                 <Route path="/node" element={<NodeControl />} />
+                <Route path="/tasks" element={<TasksPage />} />
+                <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
                 <Route path="/marketplace" element={<Marketplace />} />
                 <Route path="/settings" element={<Settings />} />
               </Routes>
