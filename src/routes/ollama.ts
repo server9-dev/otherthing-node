@@ -6,10 +6,11 @@ import { Request, Response } from 'express';
 import type { RouteDependencies } from './types';
 
 export function registerOllamaRoutes(deps: RouteDependencies): void {
-  const { app, ollamaManager } = deps;
+  const { app } = deps;
 
   app.get('/api/v1/ollama/status', async (req: Request, res: Response) => {
     try {
+      const ollamaManager = deps.managers.ollamaManager;
       if (!ollamaManager) {
         res.json({ installed: false, running: false, models: [] });
         return;
@@ -24,6 +25,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
 
   app.post('/api/v1/ollama/start', async (req: Request, res: Response) => {
     try {
+      const ollamaManager = deps.managers.ollamaManager;
       if (!ollamaManager) {
         res.status(400).json({ success: false, error: 'Ollama manager not initialized' });
         return;
@@ -37,6 +39,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
 
   app.post('/api/v1/ollama/stop', async (req: Request, res: Response) => {
     try {
+      const ollamaManager = deps.managers.ollamaManager;
       if (!ollamaManager) {
         res.status(400).json({ success: false, error: 'Ollama manager not initialized' });
         return;
@@ -50,6 +53,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
 
   app.get('/api/v1/ollama/models', async (req: Request, res: Response) => {
     try {
+      const ollamaManager = deps.managers.ollamaManager;
       if (!ollamaManager) {
         res.json([]);
         return;
@@ -68,6 +72,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
         res.status(400).json({ success: false, error: 'Model name required' });
         return;
       }
+      const ollamaManager = deps.managers.ollamaManager;
       if (!ollamaManager) {
         res.status(400).json({ success: false, error: 'Ollama manager not initialized' });
         return;
@@ -82,6 +87,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
   app.delete('/api/v1/ollama/models/:model', async (req: Request, res: Response) => {
     try {
       const { model } = req.params;
+      const ollamaManager = deps.managers.ollamaManager;
       if (!ollamaManager) {
         res.status(400).json({ success: false, error: 'Ollama manager not initialized' });
         return;

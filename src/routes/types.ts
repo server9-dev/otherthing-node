@@ -66,12 +66,17 @@ export interface WorkspaceNodeRecord {
   isLocal: boolean;
 }
 
-export interface RouteDependencies {
-  app: express.Application;
-  workspaceManager: WorkspaceManager;
+// Mutable container for managers that are set after construction
+export interface ManagerRefs {
   ollamaManager: OllamaManager | null;
   sandboxManager: SandboxManager | null;
   ipfsManager: IPFSManager | null;
+}
+
+export interface RouteDependencies {
+  app: express.Application;
+  workspaceManager: WorkspaceManager;
+  managers: ManagerRefs;
   localAuth: express.RequestHandler;
   agentExecutions: Map<string, AgentExecutionLocal>;
   onChainNodes: Map<string, OnChainNodeRecord>;
@@ -79,4 +84,15 @@ export interface RouteDependencies {
   localNodeShareKey: string;
   agentsWsClients: Map<string, Set<WebSocket>>;
   broadcastAgentProgress: (execution: AgentExecutionLocal) => void;
+}
+
+// Convenience accessors (read from mutable ref)
+export function getOllamaManager(deps: RouteDependencies): OllamaManager | null {
+  return deps.managers.ollamaManager;
+}
+export function getSandboxManager(deps: RouteDependencies): SandboxManager | null {
+  return deps.managers.sandboxManager;
+}
+export function getIPFSManager(deps: RouteDependencies): IPFSManager | null {
+  return deps.managers.ipfsManager;
 }

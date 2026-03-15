@@ -6,10 +6,11 @@ import { Request, Response } from 'express';
 import type { RouteDependencies } from './types';
 
 export function registerIPFSRoutes(deps: RouteDependencies): void {
-  const { app, ipfsManager } = deps;
+  const { app } = deps;
 
   app.get('/api/v1/ipfs/status', async (req: Request, res: Response) => {
     try {
+      const ipfsManager = deps.managers.ipfsManager;
       if (!ipfsManager) {
         res.json({ running: false, has_binary: false, peer_id: null, stats: null });
         return;
@@ -29,6 +30,7 @@ export function registerIPFSRoutes(deps: RouteDependencies): void {
 
   app.post('/api/v1/ipfs/start', async (req: Request, res: Response) => {
     try {
+      const ipfsManager = deps.managers.ipfsManager;
       if (!ipfsManager) {
         res.status(400).json({ success: false, error: 'IPFS manager not initialized' });
         return;
@@ -42,6 +44,7 @@ export function registerIPFSRoutes(deps: RouteDependencies): void {
 
   app.post('/api/v1/ipfs/stop', async (req: Request, res: Response) => {
     try {
+      const ipfsManager = deps.managers.ipfsManager;
       if (!ipfsManager) {
         res.status(400).json({ success: false, error: 'IPFS manager not initialized' });
         return;
@@ -60,6 +63,7 @@ export function registerIPFSRoutes(deps: RouteDependencies): void {
         res.status(400).json({ success: false, error: 'Content required' });
         return;
       }
+      const ipfsManager = deps.managers.ipfsManager;
       if (!ipfsManager) {
         res.status(400).json({ success: false, error: 'IPFS manager not initialized' });
         return;
@@ -74,6 +78,7 @@ export function registerIPFSRoutes(deps: RouteDependencies): void {
   app.post('/api/v1/ipfs/pin/:cid', async (req: Request, res: Response) => {
     try {
       const { cid } = req.params;
+      const ipfsManager = deps.managers.ipfsManager;
       if (!ipfsManager) {
         res.status(400).json({ success: false, error: 'IPFS manager not initialized' });
         return;
@@ -88,6 +93,7 @@ export function registerIPFSRoutes(deps: RouteDependencies): void {
   app.delete('/api/v1/ipfs/pin/:cid', async (req: Request, res: Response) => {
     try {
       const { cid } = req.params;
+      const ipfsManager = deps.managers.ipfsManager;
       if (!ipfsManager) {
         res.status(400).json({ success: false, error: 'IPFS manager not initialized' });
         return;
@@ -105,7 +111,7 @@ export function registerIPFSRoutes(deps: RouteDependencies): void {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const manager = ipfsManager || new (require('../ipfs-manager').IPFSManager)(
+    const manager = deps.managers.ipfsManager || new (require('../ipfs-manager').IPFSManager)(
       require('../electron-compat').getUserDataPath()
     );
 
@@ -137,7 +143,7 @@ export function registerIPFSRoutes(deps: RouteDependencies): void {
   // Non-SSE download endpoint
   app.post('/api/v1/ipfs/download', async (req: Request, res: Response) => {
     try {
-      const manager = ipfsManager || new (require('../ipfs-manager').IPFSManager)(
+      const manager = deps.managers.ipfsManager || new (require('../ipfs-manager').IPFSManager)(
         require('../electron-compat').getUserDataPath()
       );
 

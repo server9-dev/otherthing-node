@@ -9,7 +9,7 @@ import { adapterManager } from '../adapters/adapter-manager';
 import type { RouteDependencies, WorkspaceNodeRecord } from './types';
 
 export function registerNodeRoutes(deps: RouteDependencies): void {
-  const { app, localAuth, workspaceManager, ollamaManager, workspaceNodes, localNodeShareKey } = deps;
+  const { app, localAuth, workspaceManager, workspaceNodes, localNodeShareKey } = deps;
 
   app.get('/api/v1/workspaces/:id/nodes', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
@@ -108,6 +108,7 @@ export function registerNodeRoutes(deps: RouteDependencies): void {
   // My Nodes Endpoint (for web UI node detection)
   app.get('/api/v1/my-nodes', localAuth, async (req: Request, res: Response) => {
     try {
+      const ollamaManager = deps.managers.ollamaManager;
       const ollamaStatus = ollamaManager ? await ollamaManager.getStatus() : null;
 
       const adapters = adapterManager.listAdapters().map(reg => ({
@@ -174,8 +175,8 @@ export function registerNodeRoutes(deps: RouteDependencies): void {
         id: 'local',
         name: 'Local Node',
         status: 'online',
-        ollama: ollamaManager ? 'available' : 'unavailable',
-        sandbox: deps.sandboxManager ? 'available' : 'unavailable',
+        ollama: deps.managers.ollamaManager ? 'available' : 'unavailable',
+        sandbox: deps.managers.sandboxManager ? 'available' : 'unavailable',
       }],
     });
   });

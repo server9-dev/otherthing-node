@@ -20,7 +20,7 @@ import { adapterManager } from './adapters/adapter-manager';
 import { appwriteService } from './services/appwrite-service';
 import { registerAllRoutes } from './routes';
 import { chainSyncService } from './services/chain-sync';
-import type { AgentExecutionLocal, OnChainNodeRecord, WorkspaceNodeRecord } from './routes/types';
+import type { AgentExecutionLocal, OnChainNodeRecord, WorkspaceNodeRecord, ManagerRefs } from './routes/types';
 
 const PORT = 8080;
 
@@ -39,9 +39,7 @@ export class ApiServer {
   private server: http.Server | null = null;
   private wss: WebSocketServer | null = null;
   private workspaceManager: WorkspaceManager;
-  private ollamaManager: OllamaManager | null = null;
-  private sandboxManager: SandboxManager | null = null;
-  private ipfsManager: IPFSManager | null = null;
+  private managerRefs: ManagerRefs = { ollamaManager: null, sandboxManager: null, ipfsManager: null };
   private agentsWsClients: Map<string, Set<WebSocket>> = new Map();
   private agentExecutions: Map<string, AgentExecutionLocal> = new Map();
   // On-chain node tracking
@@ -73,9 +71,9 @@ export class ApiServer {
     sandbox: SandboxManager | null,
     ipfs: IPFSManager | null
   ): void {
-    this.ollamaManager = ollama;
-    this.sandboxManager = sandbox;
-    this.ipfsManager = ipfs;
+    this.managerRefs.ollamaManager = ollama;
+    this.managerRefs.sandboxManager = sandbox;
+    this.managerRefs.ipfsManager = ipfs;
     agentService.setManagers(ollama, sandbox);
   }
 
@@ -93,9 +91,7 @@ export class ApiServer {
     registerAllRoutes({
       app: this.app,
       workspaceManager: this.workspaceManager,
-      ollamaManager: this.ollamaManager,
-      sandboxManager: this.sandboxManager,
-      ipfsManager: this.ipfsManager,
+      managers: this.managerRefs,
       localAuth,
       agentExecutions: this.agentExecutions,
       onChainNodes: this.onChainNodes,

@@ -10,7 +10,7 @@ import { zlayerService } from '../services/zlayer-service';
 import type { RouteDependencies } from './types';
 
 export function registerComputeRoutes(deps: RouteDependencies): void {
-  const { app, localAuth, ollamaManager, sandboxManager } = deps;
+  const { app, localAuth } = deps;
 
   // Compute Summary Endpoint
   app.get('/api/v1/workspaces/:id/compute', localAuth, async (req: Request, res: Response) => {
@@ -19,6 +19,7 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     const freeMem = os.freemem();
 
     let localModels: string[] = [];
+    const ollamaManager = deps.managers.ollamaManager;
     if (ollamaManager) {
       try {
         const status = await ollamaManager.getStatus();
@@ -49,6 +50,7 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
   app.get('/api/v1/workspaces/:id/sandbox/files', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const dirPath = (req.query.path as string) || '.';
+    const sandboxManager = deps.managers.sandboxManager;
     if (!sandboxManager) {
       res.status(503).json({ error: 'Sandbox not configured' });
       return;
@@ -64,6 +66,7 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
   app.get('/api/v1/workspaces/:id/sandbox/file', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const filePath = (req.query.path as string) || '';
+    const sandboxManager = deps.managers.sandboxManager;
     if (!sandboxManager) {
       res.status(503).json({ error: 'Sandbox not configured' });
       return;
@@ -80,6 +83,7 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     const workspaceId = req.params.id as string;
     const filePath = (req.query.path as string) || req.body.path || '';
     const { content } = req.body;
+    const sandboxManager = deps.managers.sandboxManager;
     if (!sandboxManager) {
       res.status(503).json({ error: 'Sandbox not configured' });
       return;
@@ -95,6 +99,7 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
   app.delete('/api/v1/workspaces/:id/sandbox/file', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const filePath = (req.query.path as string) || '';
+    const sandboxManager = deps.managers.sandboxManager;
     if (!sandboxManager) {
       res.status(503).json({ error: 'Sandbox not configured' });
       return;
@@ -152,9 +157,9 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     res.json({
       mode: 'local',
       nodes: 1,
-      ollama: ollamaManager ? 'available' : 'unavailable',
-      sandbox: sandboxManager ? 'available' : 'unavailable',
-      ipfs: deps.ipfsManager ? 'available' : 'unavailable',
+      ollama: deps.managers.ollamaManager ? 'available' : 'unavailable',
+      sandbox: deps.managers.sandboxManager ? 'available' : 'unavailable',
+      ipfs: deps.managers.ipfsManager ? 'available' : 'unavailable',
     });
   });
 
@@ -182,6 +187,7 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
 
   // Models Endpoint
   app.get('/api/v1/models', localAuth, async (req: Request, res: Response) => {
+    const ollamaManager = deps.managers.ollamaManager;
     if (!ollamaManager) {
       res.json({ models: [], provider: 'none' });
       return;
@@ -491,6 +497,7 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
       const workspaceId = req.params.workspaceId as string;
       const options = req.body;
 
+      const sandboxManager = deps.managers.sandboxManager;
       if (!sandboxManager) {
         return res.status(500).json({ error: 'Sandbox manager not available' });
       }

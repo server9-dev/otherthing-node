@@ -8,7 +8,7 @@ import { web3Service, CONTRACT_ADDRESSES } from '../services/web3-service';
 import type { RouteDependencies, OnChainNodeRecord } from './types';
 
 export function registerWeb3Routes(deps: RouteDependencies): void {
-  const { app, localAuth, ollamaManager, sandboxManager, onChainNodes } = deps;
+  const { app, localAuth, onChainNodes } = deps;
 
   // Get contract addresses for the frontend
   app.get('/api/v1/web3/contracts', (req: Request, res: Response) => {
@@ -112,6 +112,7 @@ export function registerWeb3Routes(deps: RouteDependencies): void {
     const totalMem = os.totalmem();
 
     let hasOllama = false;
+    const ollamaManager = deps.managers.ollamaManager;
     if (ollamaManager) {
       try {
         const status = await ollamaManager.getStatus();
@@ -121,7 +122,7 @@ export function registerWeb3Routes(deps: RouteDependencies): void {
       }
     }
 
-    const hasSandbox = sandboxManager !== null;
+    const hasSandbox = deps.managers.sandboxManager !== null;
 
     res.json({
       capabilities: {

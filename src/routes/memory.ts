@@ -7,9 +7,10 @@ import { semanticMemory } from '../services/semantic-memory';
 import type { RouteDependencies } from './types';
 
 export function registerMemoryRoutes(deps: RouteDependencies): void {
-  const { app, localAuth, ollamaManager } = deps;
+  const { app, localAuth } = deps;
 
   // Initialize semantic memory with Ollama when available
+  const ollamaManager = deps.managers.ollamaManager;
   if (ollamaManager) {
     semanticMemory.setOllamaManager(ollamaManager);
   }

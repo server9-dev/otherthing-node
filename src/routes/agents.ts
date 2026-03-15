@@ -9,7 +9,7 @@ import type { RouteDependencies, AgentExecutionLocal } from './types';
 import { WebSocket } from 'ws';
 
 export function registerAgentRoutes(deps: RouteDependencies): void {
-  const { app, localAuth, ollamaManager, agentExecutions, agentsWsClients, broadcastAgentProgress } = deps;
+  const { app, localAuth, agentExecutions, agentsWsClients, broadcastAgentProgress } = deps;
 
   app.get('/api/v1/workspaces/:id/agents', localAuth, (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
@@ -34,6 +34,7 @@ export function registerAgentRoutes(deps: RouteDependencies): void {
     let selectedModel = model || '';
     let selectedProvider = provider || 'ollama';
 
+    const ollamaManager = deps.managers.ollamaManager;
     if (ollamaManager) {
       try {
         const status = await ollamaManager.getStatus();
@@ -83,6 +84,7 @@ export function registerAgentRoutes(deps: RouteDependencies): void {
     const { goal } = req.body;
 
     let models: string[] = [];
+    const ollamaManager = deps.managers.ollamaManager;
     if (ollamaManager) {
       try {
         const status = await ollamaManager.getStatus();
