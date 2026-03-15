@@ -22,6 +22,16 @@ export const COLLECTIONS = {
   UAF_RELATIONSHIPS: 'uaf_relationships',
   SMART_CONTRACTS: 'smart_contracts',
   COMPUTE_JOBS: 'compute_jobs',
+  USER_PROFILES: 'user_profiles',
+  WORKSPACE_REPOS: 'workspace_repos',
+  WORKSPACE_API_KEYS: 'workspace_api_keys',
+  STORED_FILES: 'stored_files',
+  RESOURCE_USAGE: 'resource_usage',
+  WHITEBOARDS: 'whiteboards',
+  AGREEMENTS: 'agreements',
+  AGREEMENT_SIGNATURES: 'agreement_signatures',
+  TASKS: 'tasks',
+  IP_REGISTRATIONS: 'ip_registrations',
 } as const;
 
 // Database ID
@@ -527,6 +537,403 @@ class AppwriteService {
    */
   getFileDownloadUrl(bucketId: string, fileId: string): string {
     return `${this.client.config.endpoint}/storage/buckets/${bucketId}/files/${fileId}/download?project=${this.client.config.project}`;
+  }
+
+  // ============ USER PROFILES ============
+
+  async createUserProfile(data: {
+    userId: string;
+    displayName?: string;
+    avatar?: string;
+    bio?: string;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.USER_PROFILES,
+      ID.unique(),
+      {
+        ...data,
+        reputation: 0,
+        totalEarned: '0',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+    );
+  }
+
+  async getUserProfile(userId: string): Promise<any> {
+    const result = await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.USER_PROFILES,
+      [Query.equal('userId', userId)]
+    );
+    return result.documents[0] || null;
+  }
+
+  async getUserByWallet(walletAddress: string, chainId?: number): Promise<any> {
+    const queries = [Query.equal('walletAddress', walletAddress)];
+    if (chainId) queries.push(Query.equal('chainId', chainId));
+    const result = await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.USER_PROFILES,
+      queries
+    );
+    return result.documents[0] || null;
+  }
+
+  async updateUserProfile(profileId: string, data: Partial<any>): Promise<any> {
+    return await this.databases.updateDocument(
+      DATABASE_ID,
+      COLLECTIONS.USER_PROFILES,
+      profileId,
+      { ...data, updatedAt: new Date().toISOString() }
+    );
+  }
+
+  async linkWallet(profileId: string, walletAddress: string, chainId: number): Promise<any> {
+    return await this.databases.updateDocument(
+      DATABASE_ID,
+      COLLECTIONS.USER_PROFILES,
+      profileId,
+      { walletAddress, chainId, updatedAt: new Date().toISOString() }
+    );
+  }
+
+  async unlinkWallet(profileId: string): Promise<any> {
+    return await this.databases.updateDocument(
+      DATABASE_ID,
+      COLLECTIONS.USER_PROFILES,
+      profileId,
+      { walletAddress: null, chainId: null, updatedAt: new Date().toISOString() }
+    );
+  }
+
+  // ============ WORKSPACE REPOS ============
+
+  async createWorkspaceRepo(workspaceId: string, data: {
+    url: string;
+    name: string;
+    addedBy: string;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.WORKSPACE_REPOS,
+      ID.unique(),
+      { workspaceId, ...data, status: 'pending', addedAt: new Date().toISOString() }
+    );
+  }
+
+  async listWorkspaceRepos(workspaceId: string): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.WORKSPACE_REPOS,
+      [Query.equal('workspaceId', workspaceId)]
+    );
+  }
+
+  async updateWorkspaceRepo(repoId: string, data: Partial<any>): Promise<any> {
+    const updateData: any = { ...data };
+    if (data.data && typeof data.data !== 'string') {
+      updateData.data = JSON.stringify(data.data);
+    }
+    return await this.databases.updateDocument(
+      DATABASE_ID,
+      COLLECTIONS.WORKSPACE_REPOS,
+      repoId,
+      updateData
+    );
+  }
+
+  async deleteWorkspaceRepo(repoId: string): Promise<void> {
+    await this.databases.deleteDocument(DATABASE_ID, COLLECTIONS.WORKSPACE_REPOS, repoId);
+  }
+
+  // ============ WORKSPACE API KEYS ============
+
+  async createWorkspaceApiKey(workspaceId: string, data: {
+    provider: string;
+    name: string;
+    encryptedKey: string;
+    addedBy: string;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.WORKSPACE_API_KEYS,
+      ID.unique(),
+      { workspaceId, ...data, addedAt: new Date().toISOString() }
+    );
+  }
+
+  async listWorkspaceApiKeys(workspaceId: string): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.WORKSPACE_API_KEYS,
+      [Query.equal('workspaceId', workspaceId)]
+    );
+  }
+
+  async deleteWorkspaceApiKey(keyId: string): Promise<void> {
+    await this.databases.deleteDocument(DATABASE_ID, COLLECTIONS.WORKSPACE_API_KEYS, keyId);
+  }
+
+  // ============ STORED FILES ============
+
+  async createStoredFile(workspaceId: string, data: {
+    cid: string;
+    name: string;
+    size: number;
+    mimeType?: string;
+    addedBy: string;
+    pinned?: boolean;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.STORED_FILES,
+      ID.unique(),
+      { workspaceId, ...data, addedAt: new Date().toISOString() }
+    );
+  }
+
+  async listStoredFiles(workspaceId: string): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.STORED_FILES,
+      [Query.equal('workspaceId', workspaceId)]
+    );
+  }
+
+  async deleteStoredFile(fileId: string): Promise<void> {
+    await this.databases.deleteDocument(DATABASE_ID, COLLECTIONS.STORED_FILES, fileId);
+  }
+
+  // ============ RESOURCE USAGE ============
+
+  async recordUsage(data: {
+    workspaceId: string;
+    flowId?: string;
+    flowName?: string;
+    type: string;
+    provider?: string;
+    tokensUsed?: number;
+    computeSeconds?: number;
+    costCents?: number;
+    userId?: string;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.RESOURCE_USAGE,
+      ID.unique(),
+      { ...data, timestamp: new Date().toISOString() }
+    );
+  }
+
+  async listUsage(workspaceId: string, limit = 100): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.RESOURCE_USAGE,
+      [Query.equal('workspaceId', workspaceId), Query.limit(limit), Query.orderDesc('timestamp')]
+    );
+  }
+
+  // ============ WHITEBOARDS ============
+
+  async createWhiteboard(workspaceId: string, data: {
+    name: string;
+    createdBy: string;
+    elementsCid?: string;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.WHITEBOARDS,
+      ID.unique(),
+      {
+        workspaceId, ...data,
+        version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+    );
+  }
+
+  async listWhiteboards(workspaceId: string): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.WHITEBOARDS,
+      [Query.equal('workspaceId', workspaceId)]
+    );
+  }
+
+  async updateWhiteboard(whiteboardId: string, data: Partial<any>): Promise<any> {
+    return await this.databases.updateDocument(
+      DATABASE_ID,
+      COLLECTIONS.WHITEBOARDS,
+      whiteboardId,
+      { ...data, updatedAt: new Date().toISOString() }
+    );
+  }
+
+  async deleteWhiteboard(whiteboardId: string): Promise<void> {
+    await this.databases.deleteDocument(DATABASE_ID, COLLECTIONS.WHITEBOARDS, whiteboardId);
+  }
+
+  // ============ AGREEMENTS ============
+
+  async createAgreement(data: {
+    workspaceId: string;
+    documentHash: string;
+    title: string;
+    type: string;
+    issuerAddress: string;
+    expiresAt?: string;
+    required: boolean;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.AGREEMENTS,
+      ID.unique(),
+      { ...data, createdAt: new Date().toISOString() }
+    );
+  }
+
+  async listAgreements(workspaceId: string): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.AGREEMENTS,
+      [Query.equal('workspaceId', workspaceId)]
+    );
+  }
+
+  async getAgreement(agreementId: string): Promise<any> {
+    return await this.databases.getDocument(DATABASE_ID, COLLECTIONS.AGREEMENTS, agreementId);
+  }
+
+  async recordSignature(data: {
+    agreementId: string;
+    signerAddress: string;
+    txHash?: string;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.AGREEMENT_SIGNATURES,
+      ID.unique(),
+      { ...data, signedAt: new Date().toISOString() }
+    );
+  }
+
+  async getSignatures(agreementId: string): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.AGREEMENT_SIGNATURES,
+      [Query.equal('agreementId', agreementId)]
+    );
+  }
+
+  async getSignaturesByAddress(signerAddress: string): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.AGREEMENT_SIGNATURES,
+      [Query.equal('signerAddress', signerAddress)]
+    );
+  }
+
+  // ============ TASKS ============
+
+  async createTask(data: {
+    taskId: string;
+    workspaceId: string;
+    title?: string;
+    description?: string;
+    milestones?: any;
+    assigneeAddress?: string;
+    status: string;
+    createdBy: string;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.TASKS,
+      ID.unique(),
+      {
+        ...data,
+        milestones: data.milestones ? JSON.stringify(data.milestones) : null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+    );
+  }
+
+  async listWorkspaceTasks(workspaceId: string): Promise<any> {
+    const result = await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.TASKS,
+      [Query.equal('workspaceId', workspaceId)]
+    );
+    result.documents = result.documents.map((doc: any) => ({
+      ...doc,
+      milestones: doc.milestones ? JSON.parse(doc.milestones) : [],
+    }));
+    return result;
+  }
+
+  async updateTask(docId: string, data: Partial<any>): Promise<any> {
+    const updateData: any = { ...data, updatedAt: new Date().toISOString() };
+    if (data.milestones && typeof data.milestones !== 'string') {
+      updateData.milestones = JSON.stringify(data.milestones);
+    }
+    return await this.databases.updateDocument(
+      DATABASE_ID,
+      COLLECTIONS.TASKS,
+      docId,
+      updateData
+    );
+  }
+
+  async getTaskByChainId(taskId: string): Promise<any> {
+    const result = await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.TASKS,
+      [Query.equal('taskId', taskId)]
+    );
+    if (result.documents.length > 0) {
+      const doc = result.documents[0];
+      doc.milestones = doc.milestones ? JSON.parse(doc.milestones) : [];
+      return doc;
+    }
+    return null;
+  }
+
+  // ============ IP REGISTRATIONS ============
+
+  async registerIP(data: {
+    workspaceId: string;
+    taskId: string;
+    creatorAddress: string;
+    licenseType: string;
+    licenseCid?: string;
+    txHash?: string;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.IP_REGISTRATIONS,
+      ID.unique(),
+      { ...data, createdAt: new Date().toISOString() }
+    );
+  }
+
+  async getIPForTask(taskId: string): Promise<any> {
+    const result = await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.IP_REGISTRATIONS,
+      [Query.equal('taskId', taskId)]
+    );
+    return result.documents[0] || null;
+  }
+
+  async listWorkspaceIP(workspaceId: string): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.IP_REGISTRATIONS,
+      [Query.equal('workspaceId', workspaceId)]
+    );
   }
 
   // ============ HELPERS ============

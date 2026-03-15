@@ -122,6 +122,183 @@ const collections = [
     ],
   },
   {
+    id: 'user_profiles',
+    name: 'User Profiles',
+    attributes: [
+      { key: 'userId', type: 'string', size: 36, required: true },
+      { key: 'walletAddress', type: 'string', size: 42, required: false },
+      { key: 'chainId', type: 'integer', required: false },
+      { key: 'displayName', type: 'string', size: 255, required: false },
+      { key: 'avatar', type: 'string', size: 500, required: false },
+      { key: 'bio', type: 'string', size: 2000, required: false },
+      { key: 'reputation', type: 'integer', required: false },
+      { key: 'totalEarned', type: 'string', size: 50, required: false }, // BigInt as string
+      { key: 'createdAt', type: 'datetime', required: true },
+      { key: 'updatedAt', type: 'datetime', required: true },
+    ],
+    indexes: [
+      { key: 'userId_idx', type: 'unique', attributes: ['userId'] },
+      { key: 'wallet_idx', type: 'key', attributes: ['walletAddress', 'chainId'] },
+    ],
+  },
+  {
+    id: 'workspace_repos',
+    name: 'Workspace Repos',
+    attributes: [
+      { key: 'workspaceId', type: 'string', size: 36, required: true },
+      { key: 'url', type: 'string', size: 500, required: true },
+      { key: 'name', type: 'string', size: 255, required: true },
+      { key: 'status', type: 'string', size: 20, required: true },
+      { key: 'error', type: 'string', size: 2000, required: false },
+      { key: 'data', type: 'string', size: 1000000, required: false }, // JSON
+      { key: 'addedBy', type: 'string', size: 36, required: true },
+      { key: 'addedAt', type: 'datetime', required: true },
+      { key: 'analyzedAt', type: 'datetime', required: false },
+    ],
+    indexes: [
+      { key: 'workspaceId_idx', type: 'key', attributes: ['workspaceId'] },
+    ],
+  },
+  {
+    id: 'workspace_api_keys',
+    name: 'Workspace API Keys',
+    attributes: [
+      { key: 'workspaceId', type: 'string', size: 36, required: true },
+      { key: 'provider', type: 'string', size: 50, required: true },
+      { key: 'name', type: 'string', size: 255, required: true },
+      { key: 'encryptedKey', type: 'string', size: 500, required: true },
+      { key: 'addedBy', type: 'string', size: 36, required: true },
+      { key: 'addedAt', type: 'datetime', required: true },
+    ],
+    indexes: [
+      { key: 'workspaceId_idx', type: 'key', attributes: ['workspaceId'] },
+    ],
+  },
+  {
+    id: 'stored_files',
+    name: 'Stored Files',
+    attributes: [
+      { key: 'workspaceId', type: 'string', size: 36, required: true },
+      { key: 'cid', type: 'string', size: 100, required: true },
+      { key: 'name', type: 'string', size: 255, required: true },
+      { key: 'size', type: 'integer', required: true },
+      { key: 'mimeType', type: 'string', size: 100, required: false },
+      { key: 'addedBy', type: 'string', size: 36, required: true },
+      { key: 'addedAt', type: 'datetime', required: true },
+      { key: 'pinned', type: 'boolean', required: false },
+    ],
+    indexes: [
+      { key: 'workspaceId_idx', type: 'key', attributes: ['workspaceId'] },
+      { key: 'cid_workspace_idx', type: 'unique', attributes: ['cid', 'workspaceId'] },
+    ],
+  },
+  {
+    id: 'resource_usage',
+    name: 'Resource Usage',
+    attributes: [
+      { key: 'workspaceId', type: 'string', size: 36, required: true },
+      { key: 'flowId', type: 'string', size: 36, required: false },
+      { key: 'flowName', type: 'string', size: 255, required: false },
+      { key: 'type', type: 'string', size: 50, required: true },
+      { key: 'provider', type: 'string', size: 50, required: false },
+      { key: 'tokensUsed', type: 'integer', required: false },
+      { key: 'computeSeconds', type: 'integer', required: false },
+      { key: 'costCents', type: 'integer', required: false },
+      { key: 'userId', type: 'string', size: 36, required: false },
+      { key: 'timestamp', type: 'datetime', required: true },
+    ],
+    indexes: [
+      { key: 'workspaceId_idx', type: 'key', attributes: ['workspaceId'] },
+      { key: 'timestamp_idx', type: 'key', attributes: ['timestamp'] },
+    ],
+  },
+  {
+    id: 'whiteboards',
+    name: 'Whiteboards',
+    attributes: [
+      { key: 'workspaceId', type: 'string', size: 36, required: true },
+      { key: 'name', type: 'string', size: 255, required: true },
+      { key: 'elementsCid', type: 'string', size: 100, required: false },
+      { key: 'createdBy', type: 'string', size: 36, required: true },
+      { key: 'createdAt', type: 'datetime', required: true },
+      { key: 'updatedAt', type: 'datetime', required: true },
+      { key: 'version', type: 'integer', required: false },
+    ],
+    indexes: [
+      { key: 'workspaceId_idx', type: 'key', attributes: ['workspaceId'] },
+    ],
+  },
+  {
+    id: 'agreements',
+    name: 'Agreements',
+    attributes: [
+      { key: 'workspaceId', type: 'string', size: 36, required: true },
+      { key: 'documentHash', type: 'string', size: 66, required: true },
+      { key: 'title', type: 'string', size: 255, required: true },
+      { key: 'type', type: 'string', size: 50, required: true }, // nda, tos, ip_assignment, custom
+      { key: 'issuerAddress', type: 'string', size: 42, required: true },
+      { key: 'expiresAt', type: 'datetime', required: false },
+      { key: 'required', type: 'boolean', required: true },
+      { key: 'createdAt', type: 'datetime', required: true },
+    ],
+    indexes: [
+      { key: 'workspaceId_idx', type: 'key', attributes: ['workspaceId'] },
+      { key: 'type_idx', type: 'key', attributes: ['type'] },
+    ],
+  },
+  {
+    id: 'agreement_signatures',
+    name: 'Agreement Signatures',
+    attributes: [
+      { key: 'agreementId', type: 'string', size: 36, required: true },
+      { key: 'signerAddress', type: 'string', size: 42, required: true },
+      { key: 'signedAt', type: 'datetime', required: true },
+      { key: 'txHash', type: 'string', size: 66, required: false },
+    ],
+    indexes: [
+      { key: 'agreementId_idx', type: 'key', attributes: ['agreementId'] },
+      { key: 'signerAddress_idx', type: 'key', attributes: ['signerAddress'] },
+    ],
+  },
+  {
+    id: 'tasks',
+    name: 'Tasks',
+    attributes: [
+      { key: 'taskId', type: 'string', size: 66, required: true }, // bytes32
+      { key: 'workspaceId', type: 'string', size: 36, required: true },
+      { key: 'title', type: 'string', size: 255, required: false },
+      { key: 'description', type: 'string', size: 5000, required: false },
+      { key: 'milestones', type: 'string', size: 100000, required: false }, // JSON
+      { key: 'assigneeAddress', type: 'string', size: 42, required: false },
+      { key: 'status', type: 'string', size: 20, required: true },
+      { key: 'createdBy', type: 'string', size: 42, required: true },
+      { key: 'createdAt', type: 'datetime', required: true },
+      { key: 'updatedAt', type: 'datetime', required: true },
+    ],
+    indexes: [
+      { key: 'workspaceId_idx', type: 'key', attributes: ['workspaceId'] },
+      { key: 'status_idx', type: 'key', attributes: ['status'] },
+      { key: 'assigneeAddress_idx', type: 'key', attributes: ['assigneeAddress'] },
+    ],
+  },
+  {
+    id: 'ip_registrations',
+    name: 'IP Registrations',
+    attributes: [
+      { key: 'workspaceId', type: 'string', size: 36, required: true },
+      { key: 'taskId', type: 'string', size: 66, required: true },
+      { key: 'creatorAddress', type: 'string', size: 42, required: true },
+      { key: 'licenseType', type: 'string', size: 50, required: true },
+      { key: 'licenseCid', type: 'string', size: 100, required: false },
+      { key: 'txHash', type: 'string', size: 66, required: false },
+      { key: 'createdAt', type: 'datetime', required: true },
+    ],
+    indexes: [
+      { key: 'workspaceId_idx', type: 'key', attributes: ['workspaceId'] },
+      { key: 'taskId_idx', type: 'key', attributes: ['taskId'] },
+    ],
+  },
+  {
     id: 'compute_jobs',
     name: 'Compute Jobs',
     attributes: [

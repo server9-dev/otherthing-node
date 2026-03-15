@@ -62,6 +62,34 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ReentrancyGuard__factory>;
     getContractFactory(
+      name: "AgreementRegistry",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.AgreementRegistry__factory>;
+    getContractFactory(
+      name: "IAgreementRegistry",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IAgreementRegistry__factory>;
+    getContractFactory(
+      name: "IIPRegistry",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IIPRegistry__factory>;
+    getContractFactory(
+      name: "INodeRegistry",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.INodeRegistry__factory>;
+    getContractFactory(
+      name: "IWorkspaceRegistry",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IWorkspaceRegistry__factory>;
+    getContractFactory(
+      name: "IPRegistry",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IPRegistry__factory>;
+    getContractFactory(
+      name: "MilestoneEscrow",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MilestoneEscrow__factory>;
+    getContractFactory(
       name: "NodeRegistry",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.NodeRegistry__factory>;
@@ -139,6 +167,41 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.ReentrancyGuard>;
     getContractAt(
+      name: "AgreementRegistry",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.AgreementRegistry>;
+    getContractAt(
+      name: "IAgreementRegistry",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IAgreementRegistry>;
+    getContractAt(
+      name: "IIPRegistry",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IIPRegistry>;
+    getContractAt(
+      name: "INodeRegistry",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.INodeRegistry>;
+    getContractAt(
+      name: "IWorkspaceRegistry",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IWorkspaceRegistry>;
+    getContractAt(
+      name: "IPRegistry",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IPRegistry>;
+    getContractAt(
+      name: "MilestoneEscrow",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MilestoneEscrow>;
+    getContractAt(
       name: "NodeRegistry",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -208,6 +271,34 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ReentrancyGuard>;
     deployContract(
+      name: "AgreementRegistry",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.AgreementRegistry>;
+    deployContract(
+      name: "IAgreementRegistry",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IAgreementRegistry>;
+    deployContract(
+      name: "IIPRegistry",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IIPRegistry>;
+    deployContract(
+      name: "INodeRegistry",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.INodeRegistry>;
+    deployContract(
+      name: "IWorkspaceRegistry",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IWorkspaceRegistry>;
+    deployContract(
+      name: "IPRegistry",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IPRegistry>;
+    deployContract(
+      name: "MilestoneEscrow",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MilestoneEscrow>;
+    deployContract(
       name: "NodeRegistry",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.NodeRegistry>;
@@ -284,6 +375,41 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ReentrancyGuard>;
+    deployContract(
+      name: "AgreementRegistry",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.AgreementRegistry>;
+    deployContract(
+      name: "IAgreementRegistry",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IAgreementRegistry>;
+    deployContract(
+      name: "IIPRegistry",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IIPRegistry>;
+    deployContract(
+      name: "INodeRegistry",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.INodeRegistry>;
+    deployContract(
+      name: "IWorkspaceRegistry",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IWorkspaceRegistry>;
+    deployContract(
+      name: "IPRegistry",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IPRegistry>;
+    deployContract(
+      name: "MilestoneEscrow",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MilestoneEscrow>;
     deployContract(
       name: "NodeRegistry",
       args: any[],

@@ -8,18 +8,24 @@
 import { ethers, BrowserProvider, JsonRpcSigner, Contract } from 'ethers';
 
 // Contract addresses (Sepolia testnet)
-export const CONTRACT_ADDRESSES = {
+export const CONTRACT_ADDRESSES: Record<string, Record<string, string>> = {
   sepolia: {
     OTT: '0x201333A5C882751a98E483f9B763DF4D8e5A1055',
     NodeRegistry: '0xFaCB01A565ea526FC8CAC87D5D4622983735e8F3',
     TaskEscrow: '0x246127F9743AC938baB7fc221546a785C880ad86',
     WorkspaceRegistry: '0x8433285448DB684b9a37b4bc97DBDcd72e148DCa',
+    AgreementRegistry: '',  // Set after deploy-phase2
+    IPRegistry: '',          // Set after deploy-phase2
+    MilestoneEscrow: '',     // Set after deploy-phase2
   },
   localhost: {
     OTT: '',
     NodeRegistry: '',
     TaskEscrow: '',
     WorkspaceRegistry: '',
+    AgreementRegistry: '',
+    IPRegistry: '',
+    MilestoneEscrow: '',
   },
 };
 
@@ -144,6 +150,86 @@ export const WORKSPACE_REGISTRY_ABI = [
   'event WorkspaceUpdated(bytes32 indexed workspaceId, string name, string description)',
 ];
 
+// ============ Phase 2 Contract ABIs ============
+
+export const AGREEMENT_REGISTRY_ABI = [
+  'function createAgreement(bytes32 workspaceId, bytes32 documentHash, string title, uint8 agreementType, uint256 expiresAt, bool required) returns (uint256)',
+  'function signAgreement(uint256 agreementId)',
+  'function hasSignedRequired(bytes32 workspaceId, address user) view returns (bool)',
+  'function getAgreements(bytes32 workspaceId) view returns (uint256[])',
+  'function getAgreement(uint256 agreementId) view returns (tuple(uint256 id, bytes32 workspaceId, bytes32 documentHash, string title, uint8 agreementType, address creator, uint256 expiresAt, bool required, uint256 createdAt))',
+  'function getSignatures(uint256 agreementId) view returns (address[])',
+  'function hasSigned(uint256 agreementId, address user) view returns (bool)',
+  'event AgreementCreated(uint256 indexed agreementId, bytes32 indexed workspaceId, bytes32 documentHash)',
+  'event AgreementSigned(uint256 indexed agreementId, address indexed signer)',
+];
+
+export const IP_REGISTRY_ABI = [
+  'function registerIP(bytes32 workspaceId, bytes32 taskId, uint8 licenseType, string licenseCid) returns (uint256)',
+  'function getIPForTask(bytes32 taskId) view returns (tuple(uint256 id, bytes32 workspaceId, bytes32 taskId, address creator, uint8 licenseType, string licenseCid, uint256 createdAt))',
+  'function hasIPRegistered(bytes32 taskId) view returns (bool)',
+  'function getWorkspaceIP(bytes32 workspaceId) view returns (uint256[])',
+  'event IPRegistered(uint256 indexed registrationId, bytes32 indexed workspaceId, bytes32 indexed taskId, address creator)',
+];
+
+export const MILESTONE_ESCROW_ABI = [
+  'function createTask(bytes32 workspaceId, string descriptionCid, uint256 deadline, string[] milestoneDescriptions, uint256[] milestoneAmounts) returns (bytes32)',
+  'function assignWorker(bytes32 taskId, address workerAddress, bytes32 nodeId)',
+  'function submitMilestone(bytes32 taskId, uint256 milestoneIndex, string workCid)',
+  'function approveMilestone(bytes32 taskId, uint256 milestoneIndex)',
+  'function releaseMilestonePayment(bytes32 taskId, uint256 milestoneIndex)',
+  'function disputeMilestone(bytes32 taskId, uint256 milestoneIndex)',
+  'function cancelTask(bytes32 taskId)',
+  'function getTask(bytes32 taskId) view returns (tuple(bytes32 id, address creator, address worker, bytes32 workspaceId, string descriptionCid, uint256 deadline, uint8 status, uint256 totalAmount, uint256 platformFee, uint256 milestoneCount, uint256 createdAt))',
+  'function getMilestones(bytes32 taskId) view returns (tuple(string description, uint256 amount, uint8 status, string workCid, uint256 submittedAt, uint256 approvedAt)[])',
+  'function getWorkerTasks(address worker) view returns (bytes32[])',
+  'function getCreatorTasks(address creator) view returns (bytes32[])',
+  'function platformFeePercent() view returns (uint256)',
+  'event TaskCreated(bytes32 indexed taskId, address indexed creator, bytes32 indexed workspaceId, uint256 totalAmount)',
+  'event WorkerAssigned(bytes32 indexed taskId, address indexed worker)',
+  'event MilestoneSubmitted(bytes32 indexed taskId, uint256 milestoneIndex, string workCid)',
+  'event MilestoneApproved(bytes32 indexed taskId, uint256 milestoneIndex)',
+  'event MilestonePaymentReleased(bytes32 indexed taskId, uint256 milestoneIndex, address indexed worker, uint256 amount)',
+  'event MilestoneDisputed(bytes32 indexed taskId, uint256 milestoneIndex)',
+  'event TaskCancelled(bytes32 indexed taskId)',
+];
+
+// Milestone status enum
+export enum MilestoneStatus {
+  Pending = 0,
+  Submitted = 1,
+  Approved = 2,
+  Paid = 3,
+  Disputed = 4,
+}
+
+// MilestoneTask status enum
+export enum MilestoneTaskStatus {
+  Created = 0,
+  Assigned = 1,
+  InProgress = 2,
+  Completed = 3,
+  Disputed = 4,
+  Cancelled = 5,
+}
+
+// Agreement types enum
+export enum AgreementType {
+  NDA = 0,
+  TOS = 1,
+  IPAssignment = 2,
+  Custom = 3,
+}
+
+// License types enum
+export enum LicenseType {
+  MIT = 0,
+  Apache2 = 1,
+  Proprietary = 2,
+  WorkForHire = 3,
+  Custom = 4,
+}
+
 // Node capabilities interface
 export interface NodeCapabilities {
   cpuCores: number;
@@ -243,6 +329,9 @@ export class Web3Service {
   private nodeRegistryContract: Contract | null = null;
   private taskEscrowContract: Contract | null = null;
   private workspaceRegistryContract: Contract | null = null;
+  private agreementRegistryContract: Contract | null = null;
+  private ipRegistryContract: Contract | null = null;
+  private milestoneEscrowContract: Contract | null = null;
 
   // Connection state
   public connected: boolean = false;
@@ -264,6 +353,22 @@ export class Web3Service {
     }
     if (addresses.WorkspaceRegistry) {
       this.workspaceRegistryContract = new Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, this.provider);
+    }
+    this.initPhase2Contracts(addresses, this.provider);
+  }
+
+  /**
+   * Initialize Phase 2 contracts (AgreementRegistry, IPRegistry, MilestoneEscrow)
+   */
+  private initPhase2Contracts(addresses: Record<string, string>, signerOrProvider: any): void {
+    if (addresses.AgreementRegistry) {
+      this.agreementRegistryContract = new Contract(addresses.AgreementRegistry, AGREEMENT_REGISTRY_ABI, signerOrProvider);
+    }
+    if (addresses.IPRegistry) {
+      this.ipRegistryContract = new Contract(addresses.IPRegistry, IP_REGISTRY_ABI, signerOrProvider);
+    }
+    if (addresses.MilestoneEscrow) {
+      this.milestoneEscrowContract = new Contract(addresses.MilestoneEscrow, MILESTONE_ESCROW_ABI, signerOrProvider);
     }
   }
 
@@ -306,6 +411,7 @@ export class Web3Service {
     if (addresses.WorkspaceRegistry) {
       this.workspaceRegistryContract = new Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, this.signer);
     }
+    this.initPhase2Contracts(addresses, this.signer);
 
     this.connected = true;
     return this.address;
@@ -323,6 +429,9 @@ export class Web3Service {
     this.nodeRegistryContract = null;
     this.taskEscrowContract = null;
     this.workspaceRegistryContract = null;
+    this.agreementRegistryContract = null;
+    this.ipRegistryContract = null;
+    this.milestoneEscrowContract = null;
   }
 
   /**
@@ -683,6 +792,7 @@ export class Web3Service {
     if (addresses.WorkspaceRegistry) {
       this.workspaceRegistryContract = new Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, wallet);
     }
+    this.initPhase2Contracts(addresses, wallet);
   }
 
   // ============ Workspace Registry Functions ============
@@ -881,6 +991,182 @@ export class Web3Service {
   async getWorkspaceCount(): Promise<bigint> {
     if (!this.workspaceRegistryContract) throw new Error('WorkspaceRegistry not initialized');
     return await this.workspaceRegistryContract.workspaceCount();
+  }
+
+  // ============ Agreement Registry Functions ============
+
+  async createAgreement(
+    workspaceId: string,
+    documentHash: string,
+    title: string,
+    agreementType: AgreementType,
+    expiresAt: number,
+    required: boolean
+  ): Promise<number> {
+    if (!this.agreementRegistryContract) throw new Error('AgreementRegistry not initialized');
+    const workspaceIdBytes = ethers.id(workspaceId);
+    const tx = await this.agreementRegistryContract.createAgreement(
+      workspaceIdBytes, documentHash, title, agreementType, expiresAt, required
+    );
+    const receipt = await tx.wait();
+    const event = receipt.logs.find((log: any) => {
+      try {
+        const parsed = this.agreementRegistryContract!.interface.parseLog(log);
+        return parsed?.name === 'AgreementCreated';
+      } catch { return false; }
+    });
+    if (event) {
+      const parsed = this.agreementRegistryContract.interface.parseLog(event);
+      return Number(parsed?.args[0]);
+    }
+    throw new Error('AgreementCreated event not found');
+  }
+
+  async signAgreement(agreementId: number): Promise<ethers.TransactionResponse> {
+    if (!this.agreementRegistryContract) throw new Error('AgreementRegistry not initialized');
+    return await this.agreementRegistryContract.signAgreement(agreementId);
+  }
+
+  async hasSignedRequired(workspaceId: string, userAddress: string): Promise<boolean> {
+    if (!this.agreementRegistryContract) throw new Error('AgreementRegistry not initialized');
+    const workspaceIdBytes = ethers.id(workspaceId);
+    return await this.agreementRegistryContract.hasSignedRequired(workspaceIdBytes, userAddress);
+  }
+
+  async getAgreements(workspaceId: string): Promise<number[]> {
+    if (!this.agreementRegistryContract) throw new Error('AgreementRegistry not initialized');
+    const workspaceIdBytes = ethers.id(workspaceId);
+    const ids = await this.agreementRegistryContract.getAgreements(workspaceIdBytes);
+    return ids.map((id: any) => Number(id));
+  }
+
+  async getAgreement(agreementId: number): Promise<any> {
+    if (!this.agreementRegistryContract) throw new Error('AgreementRegistry not initialized');
+    return await this.agreementRegistryContract.getAgreement(agreementId);
+  }
+
+  async getAgreementSignatures(agreementId: number): Promise<string[]> {
+    if (!this.agreementRegistryContract) throw new Error('AgreementRegistry not initialized');
+    return await this.agreementRegistryContract.getSignatures(agreementId);
+  }
+
+  async hasSigned(agreementId: number, userAddress: string): Promise<boolean> {
+    if (!this.agreementRegistryContract) throw new Error('AgreementRegistry not initialized');
+    return await this.agreementRegistryContract.hasSigned(agreementId, userAddress);
+  }
+
+  // ============ IP Registry Functions ============
+
+  async registerIP(
+    workspaceId: string,
+    taskId: string,
+    licenseType: LicenseType,
+    licenseCid: string
+  ): Promise<number> {
+    if (!this.ipRegistryContract) throw new Error('IPRegistry not initialized');
+    const workspaceIdBytes = ethers.id(workspaceId);
+    const tx = await this.ipRegistryContract.registerIP(workspaceIdBytes, taskId, licenseType, licenseCid);
+    const receipt = await tx.wait();
+    const event = receipt.logs.find((log: any) => {
+      try {
+        const parsed = this.ipRegistryContract!.interface.parseLog(log);
+        return parsed?.name === 'IPRegistered';
+      } catch { return false; }
+    });
+    if (event) {
+      const parsed = this.ipRegistryContract.interface.parseLog(event);
+      return Number(parsed?.args[0]);
+    }
+    throw new Error('IPRegistered event not found');
+  }
+
+  async getIPForTask(taskId: string): Promise<any> {
+    if (!this.ipRegistryContract) throw new Error('IPRegistry not initialized');
+    return await this.ipRegistryContract.getIPForTask(taskId);
+  }
+
+  async hasIPRegistered(taskId: string): Promise<boolean> {
+    if (!this.ipRegistryContract) throw new Error('IPRegistry not initialized');
+    return await this.ipRegistryContract.hasIPRegistered(taskId);
+  }
+
+  // ============ Milestone Escrow Functions ============
+
+  async createMilestoneTask(
+    workspaceId: string,
+    descriptionCid: string,
+    deadline: number,
+    milestoneDescriptions: string[],
+    milestoneAmounts: bigint[]
+  ): Promise<string> {
+    if (!this.milestoneEscrowContract || !this.ottContract) throw new Error('MilestoneEscrow not initialized');
+
+    const totalAmount = milestoneAmounts.reduce((a, b) => a + b, 0n);
+    const platformFee = totalAmount * 5n / 100n;
+    const totalRequired = totalAmount + platformFee;
+
+    // Approve tokens
+    const addresses = CONTRACT_ADDRESSES[this.network];
+    const approveTx = await this.ottContract.approve(addresses.MilestoneEscrow, totalRequired);
+    await approveTx.wait();
+
+    const workspaceIdBytes = ethers.id(workspaceId);
+    const tx = await this.milestoneEscrowContract.createTask(
+      workspaceIdBytes, descriptionCid, deadline, milestoneDescriptions, milestoneAmounts
+    );
+    const receipt = await tx.wait();
+
+    const event = receipt.logs.find((log: any) => {
+      try {
+        const parsed = this.milestoneEscrowContract!.interface.parseLog(log);
+        return parsed?.name === 'TaskCreated';
+      } catch { return false; }
+    });
+    if (event) {
+      const parsed = this.milestoneEscrowContract.interface.parseLog(event);
+      return parsed?.args[0]; // taskId
+    }
+    throw new Error('TaskCreated event not found');
+  }
+
+  async assignMilestoneWorker(taskId: string, workerAddress: string, nodeId: string): Promise<ethers.TransactionResponse> {
+    if (!this.milestoneEscrowContract) throw new Error('MilestoneEscrow not initialized');
+    return await this.milestoneEscrowContract.assignWorker(taskId, workerAddress, nodeId);
+  }
+
+  async submitMilestone(taskId: string, milestoneIndex: number, workCid: string): Promise<ethers.TransactionResponse> {
+    if (!this.milestoneEscrowContract) throw new Error('MilestoneEscrow not initialized');
+    return await this.milestoneEscrowContract.submitMilestone(taskId, milestoneIndex, workCid);
+  }
+
+  async approveMilestoneEscrow(taskId: string, milestoneIndex: number): Promise<ethers.TransactionResponse> {
+    if (!this.milestoneEscrowContract) throw new Error('MilestoneEscrow not initialized');
+    return await this.milestoneEscrowContract.approveMilestone(taskId, milestoneIndex);
+  }
+
+  async releaseMilestonePayment(taskId: string, milestoneIndex: number): Promise<ethers.TransactionResponse> {
+    if (!this.milestoneEscrowContract) throw new Error('MilestoneEscrow not initialized');
+    return await this.milestoneEscrowContract.releaseMilestonePayment(taskId, milestoneIndex);
+  }
+
+  async disputeMilestone(taskId: string, milestoneIndex: number): Promise<ethers.TransactionResponse> {
+    if (!this.milestoneEscrowContract) throw new Error('MilestoneEscrow not initialized');
+    return await this.milestoneEscrowContract.disputeMilestone(taskId, milestoneIndex);
+  }
+
+  async cancelMilestoneTask(taskId: string): Promise<ethers.TransactionResponse> {
+    if (!this.milestoneEscrowContract) throw new Error('MilestoneEscrow not initialized');
+    return await this.milestoneEscrowContract.cancelTask(taskId);
+  }
+
+  async getMilestoneTask(taskId: string): Promise<any> {
+    if (!this.milestoneEscrowContract) throw new Error('MilestoneEscrow not initialized');
+    return await this.milestoneEscrowContract.getTask(taskId);
+  }
+
+  async getMilestones(taskId: string): Promise<any[]> {
+    if (!this.milestoneEscrowContract) throw new Error('MilestoneEscrow not initialized');
+    return await this.milestoneEscrowContract.getMilestones(taskId);
   }
 
   // ============ Utility Functions ============

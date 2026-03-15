@@ -4,6 +4,9 @@ release/
 *.log
 .env
 
+# Keys - private keys and secrets
+keys/
+
 # IDE
 .idea/
 .vscode/
