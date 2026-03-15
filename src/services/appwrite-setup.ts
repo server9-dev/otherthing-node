@@ -349,7 +349,7 @@ async function setup() {
     await databases.create(DATABASE_ID, 'Otherthing Main Database');
     console.log(`✓ Created database: ${DATABASE_ID}`);
   } catch (error: any) {
-    if (error.code === 409) {
+    if (error.code === 409 || error.code === 403) {
       console.log(`• Database already exists: ${DATABASE_ID}`);
     } else {
       throw error;

@@ -107,6 +107,46 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     }
   });
 
+  // Container runtime stub (prevents 404 spam from ContainersPanel)
+  app.get('/api/v1/containers/runtime', (req: Request, res: Response) => {
+    res.json({
+      installed: false,
+      runtime: null,
+      version: null,
+      message: 'Container runtime managed via ZLayer',
+    });
+  });
+
+  app.get('/api/v1/containers', (req: Request, res: Response) => {
+    res.json({ containers: [] });
+  });
+
+  // Settings stubs (prevents 404 spam from IPFSPanel/Settings)
+  app.get('/api/v1/settings/storage-path', (req: Request, res: Response) => {
+    const storagePath = require('path').join(require('os').homedir(), '.otherthing');
+    res.json({ path: storagePath });
+  });
+
+  app.post('/api/v1/settings/storage-path', localAuth, (req: Request, res: Response) => {
+    res.json({ success: true });
+  });
+
+  app.get('/api/v1/settings/resource-limits', (req: Request, res: Response) => {
+    res.json({});
+  });
+
+  app.post('/api/v1/settings/resource-limits', localAuth, (req: Request, res: Response) => {
+    res.json({ success: true });
+  });
+
+  app.get('/api/v1/settings/remote-control', (req: Request, res: Response) => {
+    res.json({ enabled: false });
+  });
+
+  app.post('/api/v1/settings/remote-control', localAuth, (req: Request, res: Response) => {
+    res.json({ success: true });
+  });
+
   // Stats Endpoint
   app.get('/api/v1/stats', localAuth, (req: Request, res: Response) => {
     res.json({

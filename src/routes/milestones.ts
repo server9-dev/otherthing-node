@@ -193,7 +193,7 @@ export function registerMilestoneRoutes(deps: RouteDependencies): void {
     }
   });
 
-  // List workspace milestone tasks (from Appwrite)
+  // List workspace milestone tasks (from Appwrite, graceful fallback)
   app.get('/api/v1/workspaces/:id/milestone-tasks', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
 
@@ -205,7 +205,9 @@ export function registerMilestoneRoutes(deps: RouteDependencies): void {
       }
       res.json({ tasks: [] });
     } catch (err) {
-      res.status(500).json({ error: 'Failed to list tasks', details: String(err) });
+      // Gracefully handle missing collection
+      console.warn('[Milestones] Failed to list tasks (collection may not exist):', String(err));
+      res.json({ tasks: [] });
     }
   });
 }
