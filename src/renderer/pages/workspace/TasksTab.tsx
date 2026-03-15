@@ -195,6 +195,15 @@ export function TasksTab({ workspaceId }: Props) {
                           }}>
                             {task.priority}
                           </span>
+                          {(task as any).bounty && parseFloat((task as any).bounty) > 0 && (
+                            <span style={{
+                              fontSize: '0.6rem', padding: '1px 5px', borderRadius: 8,
+                              background: 'rgba(0,212,255,0.1)', color: 'var(--primary)',
+                              fontWeight: 600,
+                            }}>
+                              {parseFloat((task as any).bounty).toFixed(0)} OTT
+                            </span>
+                          )}
                         </div>
                       </>
                     )}

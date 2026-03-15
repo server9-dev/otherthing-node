@@ -16,12 +16,14 @@ interface MilestoneTask {
   workspaceId: string;
   title: string;
   description: string;
-  milestones: { description: string; amount: string }[];
-  assigneeAddress: string | null;
+  milestones?: { description: string; amount: string }[];
+  assigneeAddress?: string | null;
   status: string;
-  createdBy: string;
+  priority?: string;
+  createdBy?: string;
   createdAt: string;
   totalAmount?: string;
+  bounty?: string;
   workspaceName?: string;
 }
 
@@ -135,6 +137,7 @@ export function TasksPage() {
     setTxStatus('Creating task...');
 
     try {
+      const totalPayout = milestones.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0);
       const res = await fetch(`${API_BASE}/workspaces/${selectedWorkspace}/tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer local-token' },
@@ -143,6 +146,12 @@ export function TasksPage() {
           description: taskDescription,
           status: 'todo',
           priority: 'medium',
+          milestones: milestones.filter(m => m.description && m.amount).map(m => ({
+            description: m.description,
+            amount: m.amount,
+          })),
+          bounty: totalPayout > 0 ? totalPayout.toString() : undefined,
+          deadline: taskDeadline || undefined,
         }),
       });
 
@@ -361,16 +370,20 @@ export function TasksPage() {
                 </div>
 
                 <div style={{ textAlign: 'right', marginLeft: '1rem', flexShrink: 0 }}>
-                  <div style={{
-                    fontSize: '1.25rem', fontWeight: 700,
-                    background: 'var(--gradient-brand)', WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                  }}>
-                    {parseFloat(task.totalAmount || '0').toFixed(0)} OTT
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                    Bounty
-                  </div>
+                  {(parseFloat(task.totalAmount || task.bounty || '0') > 0) && (
+                    <>
+                      <div style={{
+                        fontSize: '1.25rem', fontWeight: 700,
+                        background: 'var(--gradient-brand)', WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                      }}>
+                        {parseFloat(task.totalAmount || task.bounty || '0').toFixed(0)} OTT
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                        Bounty
+                      </div>
+                    </>
+                  )}
                   <ChevronRight size={16} style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }} />
                 </div>
               </div>
