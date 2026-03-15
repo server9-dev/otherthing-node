@@ -47,9 +47,16 @@ export function IPFSPanel() {
 
       const storagePath = await api.getStoragePath();
       if (storagePath) {
-        // Extract drive letter from path
-        const drive = storagePath.match(/^([A-Z]:)/i)?.[1] || storagePath;
-        setSelectedDrive(drive);
+        // Match drive to known mounts: "C:" on Windows, "/mnt/c" or "/" on Linux
+        const winMatch = storagePath.match(/^([A-Z]:)/i);
+        if (winMatch) {
+          setSelectedDrive(winMatch[1]);
+        } else {
+          // Find the longest matching mount point from the drives list
+          const sorted = [...drives].sort((a, b) => b.mount.length - a.mount.length);
+          const match = sorted.find(d => storagePath.startsWith(d.mount));
+          if (match) setSelectedDrive(match.mount);
+        }
       }
 
       const limit = await api.getIPFSStorageLimit();
@@ -71,8 +78,7 @@ export function IPFSPanel() {
   }, []);
 
   useEffect(() => {
-    refreshStatus();
-    loadDrives();
+    loadDrives().then(() => refreshStatus());
 
     // Listen for status changes
     if (true) {
@@ -134,13 +140,16 @@ export function IPFSPanel() {
     }
   };
 
-  const handleDriveChange = async (drive: string) => {
-    
-    setSelectedDrive(drive);
+  const handleDriveChange = async (mount: string) => {
+    setSelectedDrive(mount);
     try {
-      // Set storage path to the drive root + otherthing folder
-      const path = `${drive}\\OtherThing\\ipfs`;
-      await api.setStoragePath(path);
+      // Build storage path using platform-appropriate separator
+      // Windows drives look like "C:", Linux/WSL mounts look like "/" or "/mnt/c"
+      const isWindows = mount.match(/^[A-Z]:$/i);
+      const sep = isWindows ? '\\' : '/';
+      const base = mount.endsWith(sep) ? mount : mount + sep;
+      const storagePath = base + ['otherthing', 'ipfs'].join(sep);
+      await api.setStoragePath(storagePath);
     } catch (err) {
       console.error('Failed to set storage path:', err);
     }

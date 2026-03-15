@@ -126,14 +126,43 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     res.json({ containers: [] });
   });
 
-  // Settings stubs (prevents 404 spam from IPFSPanel/Settings)
+  // Settings - storage path (reads from node config)
   app.get('/api/v1/settings/storage-path', (req: Request, res: Response) => {
-    const storagePath = require('path').join(require('os').homedir(), '.otherthing');
-    res.json({ path: storagePath });
+    const configPath = require('path').join(
+      require('./types').default?.storagePath ||
+      require('path').join(require('os').homedir(), '.otherthing')
+    );
+    // Read from saved config
+    try {
+      const nodeConfigPath = require('path').join(
+        require('../electron-compat').getUserDataPath(), 'node-config.json'
+      );
+      if (require('fs').existsSync(nodeConfigPath)) {
+        const config = JSON.parse(require('fs').readFileSync(nodeConfigPath, 'utf-8'));
+        res.json({ path: config.storagePath || require('path').join(require('os').homedir(), '.otherthing') });
+        return;
+      }
+    } catch {}
+    res.json({ path: require('path').join(require('os').homedir(), '.otherthing') });
   });
 
   app.post('/api/v1/settings/storage-path', localAuth, (req: Request, res: Response) => {
-    res.json({ success: true });
+    // Note: changing storage path requires app restart to take effect.
+    // We save it to config but don't hot-reload IPFS (would lose data).
+    const { path: newPath } = req.body;
+    try {
+      const nodeConfigPath = require('path').join(
+        require('../electron-compat').getUserDataPath(), 'node-config.json'
+      );
+      if (require('fs').existsSync(nodeConfigPath)) {
+        const config = JSON.parse(require('fs').readFileSync(nodeConfigPath, 'utf-8'));
+        config.storagePath = newPath;
+        require('fs').writeFileSync(nodeConfigPath, JSON.stringify(config, null, 2));
+      }
+    } catch (err) {
+      console.error('[Settings] Failed to save storage path:', err);
+    }
+    res.json({ success: true, message: 'Storage path saved. Restart app to apply.' });
   });
 
   app.get('/api/v1/settings/resource-limits', (req: Request, res: Response) => {
