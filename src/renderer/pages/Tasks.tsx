@@ -298,7 +298,7 @@ export function TasksPage() {
           {filteredTasks.map(task => (
             <div
               key={task.taskId || task.id}
-              onClick={() => navigate(`/tasks/${task.taskId || task.id}`)}
+              onClick={() => navigate(`/workspace/${task.workspaceId}?tab=tasks`)}
               style={{
                 background: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)',
                 border: '1px solid var(--border-subtle)', padding: '1.25rem',
