@@ -1,37 +1,16 @@
 /**
- * Unified API bridge that works with both Electron and Tauri
- * In Tauri mode, uses the sidecar REST API at localhost:8080
+ * Unified API bridge for Electron desktop app
+ * Uses electronAPI (preload) when available, REST API as fallback
  */
 
-// Detect if we're running in Tauri or if electronAPI is missing (use REST API as fallback)
-const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
 const hasElectronAPI = typeof window !== 'undefined' && 'electronAPI' in window && (window as any).electronAPI;
+const useRestApi = !hasElectronAPI;
 
-// Use REST API if in Tauri OR if electronAPI is not available
-const useRestApi = isTauri || !hasElectronAPI;
+console.log('[API Bridge] Initializing, hasElectronAPI:', hasElectronAPI, 'useRestApi:', useRestApi);
 
-console.log('[API Bridge] Initializing, isTauri:', isTauri, 'hasElectronAPI:', hasElectronAPI, 'useRestApi:', useRestApi);
-
-// Lazy load Tauri APIs only when needed
-let tauriWindow: any = null;
-let tauriShell: any = null;
-
-async function getTauriWindow() {
-  if (!tauriWindow && isTauri) {
-    tauriWindow = await import('@tauri-apps/api/window');
-  }
-  return tauriWindow;
-}
-
-async function getTauriShell() {
-  if (!tauriShell && isTauri) {
-    tauriShell = await import('@tauri-apps/plugin-shell');
-  }
-  return tauriShell;
-}
-
-// Sidecar API base URL
+// REST API base URL
 const SIDECAR_API = 'http://localhost:8080/api/v1';
+const API_BASE = 'http://localhost:8080';
 
 // Types
 interface ResourceLimits {
@@ -91,8 +70,7 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
 // The unified API
 export const api = {
   // Platform detection
-  isTauri,
-  isElectron: !isTauri && typeof window !== 'undefined' && 'electronAPI' in window,
+  isElectron: typeof window !== 'undefined' && 'electronAPI' in window,
 
   // ============ Hardware ============
 
@@ -137,8 +115,7 @@ export const api = {
   async getNodeStatus(): Promise<NodeStatus> {
     if (useRestApi) {
       try {
-        // Health endpoint is at root, not under /api/v1
-        const response = await fetch('http://localhost:8080/health');
+        const response = await fetch(`${API_BASE}/health`);
         const health = await response.json();
         return {
           running: health.status === 'ok',
@@ -155,7 +132,6 @@ export const api = {
 
   async startNode(config: { orchestratorUrl?: string; workspaceIds: string[] }): Promise<CommandResult> {
     if (useRestApi) {
-      // Node is already running as sidecar
       return { success: true };
     }
     return (window as any).electronAPI.startNode(config);
@@ -163,7 +139,6 @@ export const api = {
 
   async stopNode(): Promise<CommandResult> {
     if (useRestApi) {
-      // Can't stop sidecar from frontend
       return { success: true };
     }
     return (window as any).electronAPI.stopNode();
@@ -173,7 +148,6 @@ export const api = {
 
   async connectToNetwork(config: { url?: string; workspaceIds?: string[] }): Promise<CommandResult> {
     if (useRestApi) {
-      // Network managed by sidecar
       return { success: true };
     }
     return (window as any).electronAPI.connectToNetwork(config);
@@ -189,7 +163,7 @@ export const api = {
   async isNetworkConnected(): Promise<boolean> {
     if (useRestApi) {
       try {
-        const response = await fetch('http://localhost:8080/health');
+        const response = await fetch(`${API_BASE}/health`);
         return response.ok;
       } catch {
         return false;
@@ -274,7 +248,6 @@ export const api = {
 
   async setOllamaPath(path: string): Promise<CommandResult> {
     if (useRestApi) {
-      // TODO: Add endpoint if needed
       return { success: true };
     }
     return (window as any).electronAPI.setOllamaPath(path);
@@ -289,31 +262,25 @@ export const api = {
 
   async installOllama(): Promise<CommandResult> {
     if (useRestApi) {
-      // Ollama should be installed manually in Tauri mode
       return { success: false, error: 'Please install Ollama manually from ollama.ai' };
     }
     return (window as any).electronAPI.installOllama();
   },
 
   onOllamaPullProgress(callback: (data: any) => void) {
-    if (useRestApi) {
-      // No-op in Tauri mode - pull progress not yet implemented
-    } else if ((window as any).electronAPI?.onOllamaPullProgress) {
+    if (!useRestApi && (window as any).electronAPI?.onOllamaPullProgress) {
       (window as any).electronAPI.onOllamaPullProgress(callback);
     }
   },
 
   onOllamaInstallProgress(callback: (percent: number) => void) {
-    if (useRestApi) {
-      // No-op in Tauri mode
-    } else if ((window as any).electronAPI?.onOllamaInstallProgress) {
+    if (!useRestApi && (window as any).electronAPI?.onOllamaInstallProgress) {
       (window as any).electronAPI.onOllamaInstallProgress(callback);
     }
   },
 
   async browseForFile(options?: any): Promise<string | null> {
     if (useRestApi) {
-      // TODO: Implement file dialog for Tauri
       return null;
     }
     return (window as any).electronAPI.browseForFile(options);
@@ -325,7 +292,6 @@ export const api = {
     if (useRestApi) {
       try {
         const data = await fetchApi<any>('/ipfs/status');
-        // Transform property names to match what components expect
         return {
           running: data.running,
           hasBinary: data.has_binary,
@@ -404,7 +370,6 @@ export const api = {
 
   async downloadIPFSBinary(): Promise<CommandResult> {
     if (useRestApi) {
-      // Use SSE endpoint for progress updates
       return new Promise((resolve) => {
         const eventSource = new EventSource(`${API_BASE}/api/v1/ipfs/download`);
 
@@ -444,7 +409,6 @@ export const api = {
 
   async setIPFSStorageLimit(limit: number): Promise<CommandResult> {
     if (useRestApi) {
-      // TODO: Implement storage limit setting
       return { success: true };
     }
     return (window as any).electronAPI.setIPFSStorageLimit?.(limit) || { success: true };
@@ -452,79 +416,44 @@ export const api = {
 
   onIPFSDownloadProgress(callback: (percent: number) => void) {
     if (useRestApi) {
-      // Store callback for SSE updates
       api._ipfsProgressCallback = callback;
     } else if ((window as any).electronAPI?.onIPFSDownloadProgress) {
       (window as any).electronAPI.onIPFSDownloadProgress(callback);
     }
   },
 
-  // ============ Window Controls (Tauri native) ============
+  // ============ Window Controls (Electron) ============
 
   async minimizeWindow() {
-    if (useRestApi) {
-      const { getCurrentWindow } = await getTauriWindow();
-      const win = getCurrentWindow();
-      return win.minimize();
-    }
-    return (window as any).electronAPI.minimizeWindow();
+    return (window as any).electronAPI?.minimizeWindow();
   },
 
   async maximizeWindow() {
-    if (useRestApi) {
-      const { getCurrentWindow } = await getTauriWindow();
-      const win = getCurrentWindow();
-      const isMaximized = await win.isMaximized();
-      return isMaximized ? win.unmaximize() : win.maximize();
-    }
-    return (window as any).electronAPI.maximizeWindow();
+    return (window as any).electronAPI?.maximizeWindow();
   },
 
   async closeWindow() {
-    if (useRestApi) {
-      const { getCurrentWindow } = await getTauriWindow();
-      const win = getCurrentWindow();
-      return win.close();
-    }
-    return (window as any).electronAPI.closeWindow();
+    return (window as any).electronAPI?.closeWindow();
   },
 
   async toggleFullscreen() {
-    if (useRestApi) {
-      const { getCurrentWindow } = await getTauriWindow();
-      const win = getCurrentWindow();
-      const isFullscreen = await win.isFullscreen();
-      return win.setFullscreen(!isFullscreen);
-    }
-    return (window as any).electronAPI.toggleFullscreen();
+    return (window as any).electronAPI?.toggleFullscreen();
   },
 
   async isFullscreen(): Promise<boolean> {
-    if (useRestApi) {
-      const { getCurrentWindow } = await getTauriWindow();
-      const win = getCurrentWindow();
-      return win.isFullscreen();
-    }
-    return (window as any).electronAPI.isFullscreen();
+    return (window as any).electronAPI?.isFullscreen() ?? false;
   },
 
   // ============ External Links ============
 
   async openDashboard() {
-    if (useRestApi) {
-      const { open } = await getTauriShell();
-      await open('http://155.117.46.228');
-      return;
-    }
-    return (window as any).electronAPI.openDashboard();
+    return (window as any).electronAPI?.openDashboard();
   },
 
   // ============ Event Subscriptions ============
-  // For Tauri, we'll poll the API instead of using events
 
   onNodeStatus(callback: (status: any) => void) {
     if (useRestApi) {
-      // Poll every 5 seconds
       const poll = async () => {
         try {
           const status = await api.getNodeStatus();
@@ -569,9 +498,7 @@ export const api = {
   },
 
   onFullscreenChange(callback: (isFullscreen: boolean) => void) {
-    if (useRestApi) {
-      // Tauri doesn't have a direct fullscreen event, so we skip this
-    } else {
+    if (!useRestApi) {
       (window as any).electronAPI.onFullscreenChange(callback);
     }
   },
