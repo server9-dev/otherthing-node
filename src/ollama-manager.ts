@@ -161,6 +161,10 @@ export class OllamaManager extends EventEmitter {
   // Store the working endpoint
   private ollamaEndpoint = 'http://127.0.0.1:11434';
 
+  getEndpoint(): string {
+    return this.ollamaEndpoint;
+  }
+
   /**
    * Get list of installed models
    */

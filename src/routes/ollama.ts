@@ -84,6 +84,104 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
     }
   });
 
+  // Streaming chat endpoint (SSE)
+  app.post('/api/v1/ollama/chat', async (req: Request, res: Response) => {
+    const ollamaManager = deps.managers.ollamaManager;
+    if (!ollamaManager) {
+      res.status(400).json({ error: 'Ollama not available' });
+      return;
+    }
+
+    const { model, messages, temperature, max_tokens } = req.body;
+    if (!model || !messages) {
+      res.status(400).json({ error: 'model and messages are required' });
+      return;
+    }
+
+    // Ensure Ollama is running
+    const running = await ollamaManager.checkRunning();
+    if (!running) {
+      res.status(503).json({ error: 'Ollama is not running' });
+      return;
+    }
+
+    const endpoint = ollamaManager.getEndpoint();
+
+    // SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const controller = new AbortController();
+    req.on('close', () => controller.abort());
+
+    try {
+      const ollamaRes = await fetch(`${endpoint}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages,
+          stream: true,
+          options: {
+            ...(temperature !== undefined && { temperature }),
+            ...(max_tokens !== undefined && { num_predict: max_tokens }),
+          },
+        }),
+        signal: controller.signal,
+      });
+
+      if (!ollamaRes.ok || !ollamaRes.body) {
+        res.write(`data: ${JSON.stringify({ error: 'Ollama request failed' })}\n\n`);
+        res.end();
+        return;
+      }
+
+      const reader = ollamaRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const chunk = JSON.parse(line);
+            res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+            if (chunk.done) {
+              res.end();
+              return;
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+
+      // Process remaining buffer
+      if (buffer.trim()) {
+        try {
+          const chunk = JSON.parse(buffer);
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        } catch {}
+      }
+
+      res.end();
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
+      try {
+        res.write(`data: ${JSON.stringify({ error: String(err) })}\n\n`);
+        res.end();
+      } catch {}
+    }
+  });
+
   app.delete('/api/v1/ollama/models/:model', async (req: Request, res: Response) => {
     try {
       const { model } = req.params;
