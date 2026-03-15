@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Copy, Check, Shield, Crown, User, RefreshCw } from 'lucide-react';
+import { Copy, Check, Shield, Crown, User, RefreshCw, Settings, Globe, Lock } from 'lucide-react';
 import { CyberButton } from '../../components';
-import type { OnChainWorkspace } from '../../context/Web3Context';
+import { useWeb3, type OnChainWorkspace } from '../../context/Web3Context';
 
 interface Props {
   workspace: OnChainWorkspace;
@@ -12,15 +12,32 @@ interface Props {
 }
 
 export function MembersTab({ workspace, workspaceId, members, isOwner, address }: Props) {
+  const { setWorkspaceInviteCode } = useWeb3();
   const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   // Get invite code from localStorage
   const stored = localStorage.getItem('workspace-invite-codes');
-  let inviteCode: string | null = null;
-  if (stored && workspaceId) {
-    try { inviteCode = JSON.parse(stored)[workspaceId] || null; } catch {}
-  }
+  let storedCodes: Record<string, string> = {};
+  try { storedCodes = stored ? JSON.parse(stored) : {}; } catch {}
+  const [inviteCode, setInviteCodeState] = useState<string | null>(storedCodes[workspaceId] || null);
+
+  const generateInviteCode = async () => {
+    setGenerating(true);
+    try {
+      const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+      await setWorkspaceInviteCode(workspaceId, code);
+      // Save locally
+      const codes = { ...storedCodes, [workspaceId]: code };
+      localStorage.setItem('workspace-invite-codes', JSON.stringify(codes));
+      setInviteCodeState(code);
+    } catch (err) {
+      console.error('Failed to generate invite code:', err);
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const copyAddress = (addr: string) => {
     navigator.clipboard.writeText(addr);
@@ -48,9 +65,32 @@ export function MembersTab({ workspace, workspaceId, members, isOwner, address }
           </h3>
 
           {workspace.isPublic ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
-              This is a public workspace. Anyone can join by browsing public workspaces.
-            </p>
+            <div>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+                This is a public workspace. Anyone can join by browsing public workspaces.
+              </p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                You can also generate an invite code for direct invitations:
+              </p>
+              {inviteCode ? (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem',
+                  background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)',
+                  padding: '0.6rem 0.75rem', border: '1px solid var(--border-subtle)',
+                }}>
+                  <code style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {workspaceId.slice(0, 10)}...:{inviteCode}
+                  </code>
+                  <button onClick={copyInviteCode} style={{ background: 'none', border: 'none', cursor: 'pointer', color: copiedInvite ? 'var(--primary)' : 'var(--text-muted)', padding: '4px', flexShrink: 0 }}>
+                    {copiedInvite ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
+              ) : (
+                <CyberButton variant="primary" icon={RefreshCw} onClick={generateInviteCode} loading={generating} style={{ marginTop: '0.5rem' }}>
+                  Generate Invite Code
+                </CyberButton>
+              )}
+            </div>
           ) : inviteCode ? (
             <div>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
@@ -75,12 +115,23 @@ export function MembersTab({ workspace, workspaceId, members, isOwner, address }
                 }}>
                   {copiedInvite ? <Check size={14} /> : <Copy size={14} />}
                 </button>
+                <button onClick={generateInviteCode} title="Regenerate invite code" style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-muted)', padding: '4px', flexShrink: 0,
+                }}>
+                  <RefreshCw size={14} />
+                </button>
               </div>
             </div>
           ) : (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
-              No invite code stored locally. You can set one from the workspace settings.
-            </p>
+            <div>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+                Generate an invite code so others can join this private workspace.
+              </p>
+              <CyberButton variant="primary" icon={RefreshCw} onClick={generateInviteCode} loading={generating}>
+                Generate Invite Code
+              </CyberButton>
+            </div>
           )}
         </div>
       )}

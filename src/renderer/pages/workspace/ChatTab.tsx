@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Bot, User, Loader, ChevronDown, Sparkles } from 'lucide-react';
+import { Send, Bot, User, Loader, ChevronDown, Sparkles, Users, MessageSquare } from 'lucide-react';
 import type { OnChainWorkspace } from '../../context/Web3Context';
+import { useWeb3 } from '../../context/Web3Context';
 
 const API_BASE = 'http://localhost:8080/api/v1';
+
+type ChatMode = 'ai' | 'team';
 
 interface ChatMessage {
   id: string;
@@ -10,6 +13,14 @@ interface ChatMessage {
   content: string;
   timestamp: number;
   model?: string;
+}
+
+interface TeamMessage {
+  id: string;
+  sender: string;
+  senderName: string;
+  content: string;
+  timestamp: string;
 }
 
 interface OllamaModel {
@@ -28,6 +39,47 @@ interface Props {
 }
 
 export function ChatTab({ workspace, workspaceId }: Props) {
+  const { address } = useWeb3();
+  const [chatMode, setChatMode] = useState<ChatMode>('ai');
+
+  // Team chat state
+  const [teamMessages, setTeamMessages] = useState<TeamMessage[]>([]);
+  const [teamInput, setTeamInput] = useState('');
+  const teamEndRef = useRef<HTMLDivElement>(null);
+
+  // Load team messages + poll
+  useEffect(() => {
+    if (chatMode !== 'team') return;
+    const load = () => {
+      fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, { headers: { Authorization: 'Bearer local-token' } })
+        .then(r => r.json()).then(d => setTeamMessages(d.messages || [])).catch(() => {});
+    };
+    load();
+    const interval = setInterval(load, 3000);
+    return () => clearInterval(interval);
+  }, [chatMode, workspaceId]);
+
+  useEffect(() => {
+    teamEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [teamMessages]);
+
+  const sendTeamMessage = async () => {
+    if (!teamInput.trim()) return;
+    try {
+      await fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        body: JSON.stringify({ content: teamInput, senderAddress: address }),
+      });
+      setTeamInput('');
+      // Immediate refresh
+      const r = await fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, { headers: { Authorization: 'Bearer local-token' } });
+      const d = await r.json();
+      setTeamMessages(d.messages || []);
+    } catch {}
+  };
+
+  // AI chat state
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     conversationCache.get(workspaceId) || []
   );
@@ -171,12 +223,36 @@ export function ChatTab({ workspace, workspaceId }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Model selector */}
+      {/* Mode toggle + controls */}
       <div style={{
         padding: '0.5rem 1rem', borderBottom: '1px solid var(--border-subtle)',
         display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'var(--bg-secondary)', flexShrink: 0,
       }}>
-        <Sparkles size={14} style={{ color: 'var(--primary)' }} />
+        {/* AI / Team toggle */}
+        <div style={{
+          display: 'flex', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)',
+          border: '1px solid var(--border-subtle)', overflow: 'hidden',
+        }}>
+          {([['ai', 'AI Chat', Sparkles], ['team', 'Team', Users]] as const).map(([mode, label, Icon]) => (
+            <button
+              key={mode}
+              onClick={() => setChatMode(mode as ChatMode)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.3rem',
+                padding: '0.3rem 0.6rem', border: 'none', cursor: 'pointer',
+                background: chatMode === mode ? 'var(--primary)' : 'transparent',
+                color: chatMode === mode ? 'var(--bg-primary)' : 'var(--text-muted)',
+                fontSize: '0.75rem', fontWeight: 500, transition: 'all 0.15s',
+              }}
+            >
+              <Icon size={12} /> {label}
+            </button>
+          ))}
+        </div>
+
+        {/* AI-specific controls */}
+        {chatMode === 'ai' && (
+          <>
         <select
           value={selectedModel}
           onChange={e => setSelectedModel(e.target.value)}
@@ -207,10 +283,99 @@ export function ChatTab({ workspace, workspaceId }: Props) {
             Clear
           </button>
         )}
+          </>
+        )}
+        {chatMode === 'team' && (
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            {teamMessages.length} messages
+          </span>
+        )}
       </div>
 
-      {/* Messages */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
+      {/* Team Chat View */}
+      {chatMode === 'team' && (
+        <>
+          <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
+            {teamMessages.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                <Users size={48} style={{ color: 'var(--text-muted)', opacity: 0.3, marginBottom: '1rem' }} />
+                <h3 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem', fontWeight: 600 }}>Team Chat</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  Chat with workspace members. Messages are visible to all members.
+                </p>
+              </div>
+            )}
+            {teamMessages.map(msg => {
+              const isMe = msg.sender === address || msg.senderName === 'local';
+              return (
+                <div key={msg.id} style={{
+                  display: 'flex', gap: '0.75rem', marginBottom: '0.75rem',
+                  flexDirection: isMe ? 'row-reverse' : 'row',
+                }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                    background: isMe ? 'rgba(0,212,255,0.15)' : 'rgba(155,89,182,0.15)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: `1px solid ${isMe ? 'rgba(0,212,255,0.3)' : 'rgba(155,89,182,0.3)'}`,
+                  }}>
+                    <User size={14} style={{ color: isMe ? 'var(--primary)' : 'var(--secondary)' }} />
+                  </div>
+                  <div style={{ maxWidth: '75%' }}>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                      {msg.sender?.startsWith('0x') ? `${msg.sender.slice(0, 6)}...${msg.sender.slice(-4)}` : msg.senderName || 'Unknown'}
+                      <span style={{ marginLeft: '0.5rem' }}>{new Date(msg.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                    <div style={{
+                      padding: '0.6rem 0.85rem', borderRadius: 'var(--radius-lg)',
+                      background: isMe ? 'rgba(0,212,255,0.1)' : 'var(--bg-elevated)',
+                      border: `1px solid ${isMe ? 'rgba(0,212,255,0.2)' : 'var(--border-subtle)'}`,
+                      fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: 1.5, whiteSpace: 'pre-wrap',
+                    }}>
+                      {msg.content}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={teamEndRef} />
+          </div>
+          <div style={{
+            padding: '0.75rem 1rem', borderTop: '1px solid var(--border-subtle)',
+            background: 'var(--bg-secondary)', flexShrink: 0,
+          }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+              <input
+                type="text" value={teamInput}
+                onChange={e => setTeamInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTeamMessage(); } }}
+                placeholder="Message the team..."
+                style={{
+                  flex: 1, background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
+                  padding: '0.6rem 0.75rem', fontSize: '0.85rem', outline: 'none',
+                }}
+              />
+              <button
+                onClick={sendTeamMessage}
+                disabled={!teamInput.trim()}
+                style={{
+                  width: 38, height: 38, borderRadius: 'var(--radius-md)',
+                  background: teamInput.trim() ? 'var(--primary)' : 'var(--bg-tertiary)',
+                  border: 'none', cursor: teamInput.trim() ? 'pointer' : 'not-allowed',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: teamInput.trim() ? 'var(--bg-primary)' : 'var(--text-muted)',
+                  flexShrink: 0,
+                }}
+              >
+                <Send size={16} />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* AI Messages */}
+      {chatMode === 'ai' && <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
         {messages.length === 0 && !isStreaming && (
           <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
             <Bot size={48} style={{ color: 'var(--text-muted)', opacity: 0.3, marginBottom: '1rem' }} />
@@ -279,10 +444,10 @@ export function ChatTab({ workspace, workspaceId }: Props) {
         )}
 
         <div ref={messagesEndRef} />
-      </div>
+      </div>}
 
-      {/* Input */}
-      <div style={{
+      {/* AI Input */}
+      {chatMode === 'ai' && <div style={{
         padding: '0.75rem 1rem', borderTop: '1px solid var(--border-subtle)',
         background: 'var(--bg-secondary)', flexShrink: 0,
       }}>
@@ -326,7 +491,7 @@ export function ChatTab({ workspace, workspaceId }: Props) {
         <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
           Enter to send, Shift+Enter for newline
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

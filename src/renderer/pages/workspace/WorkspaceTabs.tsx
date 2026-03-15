@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   LayoutDashboard, MessageSquare, CheckSquare, Code, FolderOpen,
-  Users, ArrowLeft, Globe, Lock, Wallet
+  Users, ArrowLeft, Globe, Lock, Wallet, PenTool
 } from 'lucide-react';
 import { CyberButton } from '../../components';
 import { useWeb3, OnChainWorkspace } from '../../context/Web3Context';
@@ -12,6 +12,7 @@ import { TasksTab } from './TasksTab';
 import { CodeTab } from './CodeTab';
 import { FilesTab } from './FilesTab';
 import { MembersTab } from './MembersTab';
+import { WhiteboardTab } from './WhiteboardTab';
 
 const API_BASE = 'http://localhost:8080';
 
@@ -21,6 +22,7 @@ const TABS = [
   { id: 'tasks', label: 'Tasks', icon: CheckSquare },
   { id: 'code', label: 'Code', icon: Code },
   { id: 'files', label: 'Files', icon: FolderOpen },
+  { id: 'whiteboard', label: 'Whiteboard', icon: PenTool },
   { id: 'members', label: 'Members', icon: Users },
 ];
 
@@ -151,6 +153,9 @@ export function WorkspaceTabs() {
         )}
         {activeTab === 'files' && (
           <FilesTab workspaceId={workspaceId!} />
+        )}
+        {activeTab === 'whiteboard' && (
+          <WhiteboardTab workspaceId={workspaceId!} />
         )}
         {activeTab === 'members' && (
           <MembersTab

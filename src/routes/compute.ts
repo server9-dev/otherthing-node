@@ -181,6 +181,47 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     res.json({ success: true });
   });
 
+  // ============ Team Chat (in-memory) ============
+
+  const chatMessages: Map<string, any[]> = new Map();
+
+  app.get('/api/v1/workspaces/:id/chat', localAuth, (req: Request, res: Response) => {
+    const workspaceId = req.params.id as string;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const msgs = chatMessages.get(workspaceId) || [];
+    res.json({ messages: msgs.slice(-limit) });
+  });
+
+  app.post('/api/v1/workspaces/:id/chat', localAuth, (req: Request, res: Response) => {
+    const workspaceId = req.params.id as string;
+    const session = (req as any).session;
+    const { content, senderAddress } = req.body;
+
+    if (!content?.trim()) {
+      res.status(400).json({ error: 'Content is required' });
+      return;
+    }
+
+    const msg = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      workspaceId,
+      sender: senderAddress || session.userId,
+      senderName: session.username,
+      content: content.trim(),
+      timestamp: new Date().toISOString(),
+    };
+
+    if (!chatMessages.has(workspaceId)) {
+      chatMessages.set(workspaceId, []);
+    }
+    const msgs = chatMessages.get(workspaceId)!;
+    msgs.push(msg);
+    // Keep last 500 messages per workspace
+    if (msgs.length > 500) msgs.splice(0, msgs.length - 500);
+
+    res.status(201).json({ message: msg });
+  });
+
   // Stats Endpoint
   app.get('/api/v1/stats', localAuth, (req: Request, res: Response) => {
     res.json({
