@@ -62,38 +62,6 @@ export function WorkspaceDetailPage() {
     }
   }, [workspaceId]);
 
-  // Load workspace from Web3 context (on-chain data)
-  const loadWorkspace = useCallback(async () => {
-    if (!workspaceId || !connected) return;
-
-    setLoading(true);
-    try {
-      // Find workspace in myWorkspaces (already fetched from chain)
-      const found = myWorkspaces.find(ws => ws.id === workspaceId);
-      if (found) {
-        setWorkspace(found);
-        // Also fetch members
-        try {
-          const memberList = await getWorkspaceMembers(workspaceId);
-          setMembers(memberList);
-        } catch (err) {
-          console.error('Failed to load members:', err);
-        }
-      } else {
-        // Workspace not in user's list - refresh and try again
-        await refreshWorkspaces();
-        const retryFound = myWorkspaces.find(ws => ws.id === workspaceId);
-        if (retryFound) {
-          setWorkspace(retryFound);
-        }
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load workspace');
-    } finally {
-      setLoading(false);
-    }
-  }, [workspaceId, connected, myWorkspaces, refreshWorkspaces, getWorkspaceMembers]);
-
   // Load workspace nodes
   const loadNodes = useCallback(async () => {
     if (!workspaceId) return;
@@ -124,15 +92,43 @@ export function WorkspaceDetailPage() {
     }
   }, []);
 
+  // Load workspace from myWorkspaces + members (runs once on mount or when connected)
+  const hasLoadedRef = { current: false };
   useEffect(() => {
-    if (connected && workspaceId) {
-      loadWorkspace();
-      loadNodes();
-      loadLocalNodeKey();
-    }
-  }, [connected, workspaceId, loadWorkspace, loadNodes, loadLocalNodeKey]);
+    if (!connected || !workspaceId || hasLoadedRef.current) return;
 
-  // Also refresh when myWorkspaces changes
+    const load = async () => {
+      setLoading(true);
+      try {
+        let found = myWorkspaces.find(ws => ws.id === workspaceId);
+        if (!found && myWorkspaces.length === 0) {
+          // Workspaces haven't loaded yet — wait for them
+          await refreshWorkspaces();
+          return; // Will re-run when myWorkspaces updates
+        }
+        if (found) {
+          setWorkspace(found);
+          hasLoadedRef.current = true;
+          try {
+            const memberList = await getWorkspaceMembers(workspaceId);
+            setMembers(memberList);
+          } catch (err) {
+            console.error('Failed to load members:', err);
+          }
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load workspace');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+    loadNodes();
+    loadLocalNodeKey();
+  }, [connected, workspaceId, myWorkspaces.length]);
+
+  // Sync workspace data when myWorkspaces updates (without re-triggering loads)
   useEffect(() => {
     if (workspaceId && myWorkspaces.length > 0) {
       const found = myWorkspaces.find(ws => ws.id === workspaceId);

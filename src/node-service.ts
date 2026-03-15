@@ -223,6 +223,63 @@ export class NodeService extends EventEmitter {
     this.running = true;
     this.log('Local node ready', 'success');
     this.emit('statusChange');
+
+    // Auto-install IPFS binary and ZLayer in background (silent, non-blocking)
+    this.autoInstallServices();
+  }
+
+  /**
+   * Auto-download IPFS and ZLayer binaries if not present.
+   * Runs silently in the background — does not block startup.
+   */
+  private async autoInstallServices(): Promise<void> {
+    // Auto-install IPFS binary
+    if (this.ipfsManager && !this.ipfsManager.hasBinary()) {
+      try {
+        this.log('Auto-downloading IPFS binary...', 'info');
+        await this.ipfsManager.downloadBinary((percent: number) => {
+          if (percent % 25 === 0) this.log(`IPFS download: ${percent}%`, 'info');
+        });
+        this.log('IPFS binary installed', 'success');
+        // Auto-start IPFS after download
+        try {
+          await this.ipfsManager.start();
+          this.log('IPFS started automatically', 'success');
+        } catch (err) {
+          this.log(`IPFS auto-start failed: ${err}`, 'info');
+        }
+      } catch (err) {
+        this.log(`IPFS auto-download failed: ${err}`, 'info');
+      }
+    } else if (this.ipfsManager && this.ipfsManager.hasBinary()) {
+      // Binary exists, auto-start if not running
+      try {
+        const stats = await this.ipfsManager.getStats();
+        if (!stats.isOnline) {
+          await this.ipfsManager.start();
+          this.log('IPFS started automatically', 'success');
+        }
+      } catch (err) {
+        this.log(`IPFS auto-start failed: ${err}`, 'info');
+      }
+    }
+
+    // Auto-install ZLayer (container runtime)
+    try {
+      const { zlayerService } = require('./services/zlayer-service');
+      const info = await zlayerService.initialize();
+      if (!info.installed) {
+        this.log('Auto-installing ZLayer container runtime...', 'info');
+        const success = await zlayerService.install((percent: number, message: string) => {
+          if (percent % 25 === 0) this.log(`ZLayer install: ${percent}% - ${message}`, 'info');
+        });
+        if (success) {
+          this.log('ZLayer container runtime installed', 'success');
+        }
+      }
+    } catch (err) {
+      this.log(`ZLayer auto-install skipped: ${err}`, 'info');
+    }
   }
 
   /**
