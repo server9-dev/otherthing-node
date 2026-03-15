@@ -186,7 +186,7 @@ export function TasksTab({ workspaceId }: Props) {
                             {task.description}
                           </div>
                         )}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.4rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
                           <span style={{
                             fontSize: '0.6rem', padding: '1px 5px', borderRadius: 8,
                             background: `${PRIORITY_COLORS[task.priority] || 'var(--text-muted)'}20`,
@@ -204,7 +204,36 @@ export function TasksTab({ workspaceId }: Props) {
                               {parseFloat((task as any).bounty).toFixed(0)} OTT
                             </span>
                           )}
+                          {(task as any).milestones?.length > 0 && (
+                            <span style={{
+                              fontSize: '0.6rem', padding: '1px 5px', borderRadius: 8,
+                              background: 'rgba(155,89,182,0.1)', color: 'var(--secondary)',
+                              fontWeight: 600,
+                            }}>
+                              {(task as any).milestones.length} milestones
+                            </span>
+                          )}
                         </div>
+                        {/* Milestone breakdown when expanded */}
+                        {editingId === task.id && (task as any).milestones?.length > 0 && (
+                          <div style={{ marginTop: '0.5rem', padding: '0.4rem', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Escrow Breakdown</div>
+                            {(task as any).milestones.map((m: any, i: number) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', padding: '0.15rem 0' }}>
+                                <span>{m.description}</span>
+                                <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{parseFloat(m.amount).toFixed(0)} OTT</span>
+                              </div>
+                            ))}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginTop: '0.25rem', paddingTop: '0.25rem', borderTop: '1px solid var(--border-subtle)' }}>
+                              <span style={{ color: 'var(--text-muted)' }}>Platform fee (5%)</span>
+                              <span style={{ color: 'var(--text-muted)' }}>{(parseFloat((task as any).bounty) * 0.05).toFixed(1)} OTT</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, marginTop: '0.2rem' }}>
+                              <span style={{ color: 'var(--text-primary)' }}>Total Escrow</span>
+                              <span style={{ color: 'var(--primary)' }}>{(parseFloat((task as any).bounty) * 1.05).toFixed(0)} OTT</span>
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
                   </div>

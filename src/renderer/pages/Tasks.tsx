@@ -621,7 +621,7 @@ export function TasksPage() {
                 icon={Coins}
                 onClick={handleCreateTask}
                 loading={creating}
-                disabled={creating || !selectedWorkspace || !taskTitle || milestones.some(m => !m.description || !m.amount)}
+                disabled={creating || !selectedWorkspace || !taskTitle}
               >
                 Post Task & Escrow {(totalPayout + platformFee).toFixed(0)} OTT
               </CyberButton>
