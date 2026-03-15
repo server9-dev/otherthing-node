@@ -20,12 +20,20 @@ export function registerTaskRoutes(deps: RouteDependencies): void {
 
   app.post('/api/v1/workspaces/:id/tasks', localAuth, (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
+    const milestones = req.body.milestones || [];
+    const bounty = req.body.bounty || (milestones.length > 0
+      ? milestones.reduce((sum: number, m: any) => sum + (parseFloat(m.amount) || 0), 0).toString()
+      : undefined);
     const task = {
       id: req.body.id || uuidv4(),
       title: req.body.title || '',
       description: req.body.description || '',
       status: req.body.status || 'todo',
       priority: req.body.priority || 'medium',
+      milestones: milestones.length > 0 ? milestones : undefined,
+      bounty,
+      deadline: req.body.deadline || undefined,
+      assignee: req.body.assignee || undefined,
       createdAt: req.body.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

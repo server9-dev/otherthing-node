@@ -355,9 +355,11 @@ export function TasksPage() {
                         <Globe size={12} /> {task.workspaceName}
                       </span>
                     )}
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <FileText size={12} /> {task.milestones?.length || 0} milestones
-                    </span>
+                    {(task.milestones?.length || 0) > 0 && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <FileText size={12} /> {task.milestones!.length} milestones
+                      </span>
+                    )}
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                       <Clock size={12} /> {new Date(task.createdAt).toLocaleDateString()}
                     </span>
@@ -370,20 +372,28 @@ export function TasksPage() {
                 </div>
 
                 <div style={{ textAlign: 'right', marginLeft: '1rem', flexShrink: 0 }}>
-                  {(parseFloat(task.totalAmount || task.bounty || '0') > 0) && (
-                    <>
-                      <div style={{
-                        fontSize: '1.25rem', fontWeight: 700,
-                        background: 'var(--gradient-brand)', WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                      }}>
-                        {parseFloat(task.totalAmount || task.bounty || '0').toFixed(0)} OTT
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                        Bounty
-                      </div>
-                    </>
-                  )}
+                  {(() => {
+                    const bountyVal = parseFloat(task.totalAmount || task.bounty || '0');
+                    const fee = bountyVal * 0.05;
+                    if (bountyVal <= 0) return null;
+                    return (
+                      <>
+                        <div style={{
+                          fontSize: '1.25rem', fontWeight: 700,
+                          background: 'var(--gradient-brand)', WebkitBackgroundClip: 'text',
+                          WebkitTextFillColor: 'transparent',
+                        }}>
+                          {bountyVal.toFixed(0)} OTT
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                          + {fee.toFixed(1)} fee
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
+                          Escrow: {(bountyVal + fee).toFixed(0)} OTT
+                        </div>
+                      </>
+                    );
+                  })()}
                   <ChevronRight size={16} style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }} />
                 </div>
               </div>
