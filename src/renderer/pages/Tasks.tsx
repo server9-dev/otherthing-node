@@ -11,7 +11,8 @@ import { useWeb3 } from '../context/Web3Context';
 const API_BASE = 'http://localhost:8080/api/v1';
 
 interface MilestoneTask {
-  taskId: string;
+  id?: string;
+  taskId?: string;
   workspaceId: string;
   title: string;
   description: string;
@@ -53,13 +54,14 @@ export function TasksPage() {
       // Load tasks from all workspaces the user is in
       for (const ws of myWorkspaces) {
         try {
-          const res = await fetch(`${API_BASE}/workspaces/${ws.id}/milestone-tasks`, {
+          const res = await fetch(`${API_BASE}/workspaces/${ws.id}/tasks`, {
             headers: { 'Authorization': 'Bearer local-token' },
           });
           if (res.ok) {
             const data = await res.json();
             const wsTasks = (data.tasks || []).map((t: any) => ({
               ...t,
+              workspaceId: ws.id,
               workspaceName: ws.name,
               totalAmount: t.milestones?.reduce((sum: number, m: any) =>
                 sum + parseFloat(m.amount || '0'), 0).toString() || '0',
@@ -130,21 +132,17 @@ export function TasksPage() {
 
     setCreating(true);
     setError(null);
-    setTxStatus('Submitting task to blockchain...');
+    setTxStatus('Creating task...');
 
     try {
-      const deadline = taskDeadline || new Date(Date.now() + 30 * 86400000).toISOString();
-
-      const res = await fetch(`${API_BASE}/workspaces/${selectedWorkspace}/milestone-tasks`, {
+      const res = await fetch(`${API_BASE}/workspaces/${selectedWorkspace}/tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer local-token' },
         body: JSON.stringify({
-          descriptionCid: taskDescription || taskTitle,
-          deadline,
-          milestones: milestones.map(m => ({
-            description: m.description,
-            amount: m.amount,
-          })),
+          title: taskTitle,
+          description: taskDescription,
+          status: 'todo',
+          priority: 'medium',
         }),
       });
 
@@ -153,9 +151,8 @@ export function TasksPage() {
         throw new Error(err.error || 'Failed to create task');
       }
 
-      const data = await res.json();
-      setTxStatus('Task created on-chain!');
-      await new Promise(r => setTimeout(r, 1500));
+      setTxStatus('Task created!');
+      await new Promise(r => setTimeout(r, 1000));
 
       setShowCreateModal(false);
       setTaskTitle('');
@@ -164,10 +161,6 @@ export function TasksPage() {
       setMilestones([{ description: '', amount: '' }]);
       setTxStatus(null);
       await loadTasks();
-
-      if (data.taskId) {
-        navigate(`/tasks/${data.taskId}`);
-      }
     } catch (err: any) {
       setError(err.message);
       setTxStatus(null);
@@ -304,8 +297,8 @@ export function TasksPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           {filteredTasks.map(task => (
             <div
-              key={task.taskId}
-              onClick={() => navigate(`/tasks/${task.taskId}`)}
+              key={task.taskId || task.id}
+              onClick={() => navigate(`/tasks/${task.taskId || task.id}`)}
               style={{
                 background: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)',
                 border: '1px solid var(--border-subtle)', padding: '1.25rem',
