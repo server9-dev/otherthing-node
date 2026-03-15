@@ -228,6 +228,7 @@ export function RepoConnectionPanel({ workspaceId, onRepoConnected }: RepoConnec
         body: JSON.stringify({ url, name }),
       });
       if (res.ok) {
+        // Repo is now cloning in the background
         onRepoConnected?.(url, name);
       } else {
         const data = await res.json();

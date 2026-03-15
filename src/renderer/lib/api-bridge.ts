@@ -3,7 +3,9 @@
  * Uses electronAPI (preload) when available, REST API as fallback
  */
 
-const hasElectronAPI = typeof window !== 'undefined' && 'electronAPI' in window && (window as any).electronAPI;
+// Capture the original electronAPI before we potentially overwrite it
+const _originalElectronAPI = typeof window !== 'undefined' && (window as any).electronAPI ? (window as any).electronAPI : null;
+const hasElectronAPI = !!_originalElectronAPI;
 const useRestApi = !hasElectronAPI;
 
 console.log('[API Bridge] Initializing, hasElectronAPI:', hasElectronAPI, 'useRestApi:', useRestApi);
@@ -83,7 +85,7 @@ export const api = {
         return null;
       }
     }
-    return (window as any).electronAPI.getHardware();
+    return _originalElectronAPI.getHardware();
   },
 
   async getDetectedHardware() {
@@ -95,7 +97,7 @@ export const api = {
         return null;
       }
     }
-    return (window as any).electronAPI.getDetectedHardware();
+    return _originalElectronAPI.getDetectedHardware();
   },
 
   async getDrives(): Promise<DriveInfo[]> {
@@ -107,7 +109,7 @@ export const api = {
         return [];
       }
     }
-    return (window as any).electronAPI.getDrives();
+    return _originalElectronAPI.getDrives();
   },
 
   // ============ Node Status ============
@@ -127,21 +129,21 @@ export const api = {
         return { running: false, connected: false, node_id: null, share_key: null };
       }
     }
-    return (window as any).electronAPI.getNodeStatus();
+    return _originalElectronAPI.getNodeStatus();
   },
 
   async startNode(config: { orchestratorUrl?: string; workspaceIds: string[] }): Promise<CommandResult> {
     if (useRestApi) {
       return { success: true };
     }
-    return (window as any).electronAPI.startNode(config);
+    return _originalElectronAPI.startNode(config);
   },
 
   async stopNode(): Promise<CommandResult> {
     if (useRestApi) {
       return { success: true };
     }
-    return (window as any).electronAPI.stopNode();
+    return _originalElectronAPI.stopNode();
   },
 
   // ============ Network ============
@@ -150,14 +152,14 @@ export const api = {
     if (useRestApi) {
       return { success: true };
     }
-    return (window as any).electronAPI.connectToNetwork(config);
+    return _originalElectronAPI.connectToNetwork(config);
   },
 
   async disconnectFromNetwork(): Promise<CommandResult> {
     if (useRestApi) {
       return { success: true };
     }
-    return (window as any).electronAPI.disconnectFromNetwork();
+    return _originalElectronAPI.disconnectFromNetwork();
   },
 
   async isNetworkConnected(): Promise<boolean> {
@@ -169,7 +171,7 @@ export const api = {
         return false;
       }
     }
-    return (window as any).electronAPI.isNetworkConnected();
+    return _originalElectronAPI.isNetworkConnected();
   },
 
   // ============ Ollama ============
@@ -183,7 +185,7 @@ export const api = {
         return { installed: false, running: false, models: [] };
       }
     }
-    return (window as any).electronAPI.getOllamaStatus();
+    return _originalElectronAPI.getOllamaStatus();
   },
 
   async startOllama(): Promise<CommandResult> {
@@ -194,7 +196,7 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.startOllama();
+    return _originalElectronAPI.startOllama();
   },
 
   async stopOllama(): Promise<CommandResult> {
@@ -205,7 +207,7 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.stopOllama();
+    return _originalElectronAPI.stopOllama();
   },
 
   async getOllamaModels(): Promise<any[]> {
@@ -216,7 +218,7 @@ export const api = {
         return [];
       }
     }
-    return (window as any).electronAPI.getOllamaModels();
+    return _originalElectronAPI.getOllamaModels();
   },
 
   async pullOllamaModel(modelName: string): Promise<CommandResult> {
@@ -230,7 +232,7 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.pullOllamaModel(modelName);
+    return _originalElectronAPI.pullOllamaModel(modelName);
   },
 
   async deleteOllamaModel(modelName: string): Promise<CommandResult> {
@@ -243,39 +245,39 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.deleteOllamaModel(modelName);
+    return _originalElectronAPI.deleteOllamaModel(modelName);
   },
 
   async setOllamaPath(path: string): Promise<CommandResult> {
     if (useRestApi) {
       return { success: true };
     }
-    return (window as any).electronAPI.setOllamaPath(path);
+    return _originalElectronAPI.setOllamaPath(path);
   },
 
   async getOllamaPath(): Promise<string | null> {
     if (useRestApi) {
       return null;
     }
-    return (window as any).electronAPI.getOllamaPath();
+    return _originalElectronAPI.getOllamaPath();
   },
 
   async installOllama(): Promise<CommandResult> {
     if (useRestApi) {
       return { success: false, error: 'Please install Ollama manually from ollama.ai' };
     }
-    return (window as any).electronAPI.installOllama();
+    return _originalElectronAPI.installOllama();
   },
 
   onOllamaPullProgress(callback: (data: any) => void) {
-    if (!useRestApi && (window as any).electronAPI?.onOllamaPullProgress) {
-      (window as any).electronAPI.onOllamaPullProgress(callback);
+    if (!useRestApi && _originalElectronAPI?.onOllamaPullProgress) {
+      _originalElectronAPI.onOllamaPullProgress(callback);
     }
   },
 
   onOllamaInstallProgress(callback: (percent: number) => void) {
-    if (!useRestApi && (window as any).electronAPI?.onOllamaInstallProgress) {
-      (window as any).electronAPI.onOllamaInstallProgress(callback);
+    if (!useRestApi && _originalElectronAPI?.onOllamaInstallProgress) {
+      _originalElectronAPI.onOllamaInstallProgress(callback);
     }
   },
 
@@ -283,7 +285,7 @@ export const api = {
     if (useRestApi) {
       return null;
     }
-    return (window as any).electronAPI.browseForFile(options);
+    return _originalElectronAPI.browseForFile(options);
   },
 
   // ============ IPFS ============
@@ -303,7 +305,7 @@ export const api = {
         return { running: false, hasBinary: false, peerId: null, stats: null } as any;
       }
     }
-    return (window as any).electronAPI.getIPFSStatus();
+    return _originalElectronAPI.getIPFSStatus();
   },
 
   async startIPFS(): Promise<CommandResult> {
@@ -314,7 +316,7 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.startIPFS();
+    return _originalElectronAPI.startIPFS();
   },
 
   async stopIPFS(): Promise<CommandResult> {
@@ -325,7 +327,7 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.stopIPFS();
+    return _originalElectronAPI.stopIPFS();
   },
 
   async ipfsAddContent(content: string): Promise<{ success: boolean; cid?: string; error?: string }> {
@@ -340,7 +342,7 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.ipfsAddContent(content);
+    return _originalElectronAPI.ipfsAddContent(content);
   },
 
   async ipfsPin(cid: string): Promise<CommandResult> {
@@ -351,7 +353,7 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.ipfsPin(cid);
+    return _originalElectronAPI.ipfsPin(cid);
   },
 
   async ipfsUnpin(cid: string): Promise<CommandResult> {
@@ -362,7 +364,7 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.ipfsUnpin(cid);
+    return _originalElectronAPI.ipfsUnpin(cid);
   },
 
   // Store progress callback for SSE updates
@@ -397,57 +399,57 @@ export const api = {
         };
       });
     }
-    return (window as any).electronAPI.downloadIPFSBinary();
+    return _originalElectronAPI.downloadIPFSBinary();
   },
 
   async getIPFSStorageLimit(): Promise<number | null> {
     if (useRestApi) {
       return 50; // Default 50GB
     }
-    return (window as any).electronAPI.getIPFSStorageLimit?.() || 50;
+    return _originalElectronAPI.getIPFSStorageLimit?.() || 50;
   },
 
   async setIPFSStorageLimit(limit: number): Promise<CommandResult> {
     if (useRestApi) {
       return { success: true };
     }
-    return (window as any).electronAPI.setIPFSStorageLimit?.(limit) || { success: true };
+    return _originalElectronAPI.setIPFSStorageLimit?.(limit) || { success: true };
   },
 
   onIPFSDownloadProgress(callback: (percent: number) => void) {
     if (useRestApi) {
       api._ipfsProgressCallback = callback;
-    } else if ((window as any).electronAPI?.onIPFSDownloadProgress) {
-      (window as any).electronAPI.onIPFSDownloadProgress(callback);
+    } else if (_originalElectronAPI?.onIPFSDownloadProgress) {
+      _originalElectronAPI.onIPFSDownloadProgress(callback);
     }
   },
 
   // ============ Window Controls (Electron) ============
 
   async minimizeWindow() {
-    return (window as any).electronAPI?.minimizeWindow();
+    return _originalElectronAPI?.minimizeWindow();
   },
 
   async maximizeWindow() {
-    return (window as any).electronAPI?.maximizeWindow();
+    return _originalElectronAPI?.maximizeWindow();
   },
 
   async closeWindow() {
-    return (window as any).electronAPI?.closeWindow();
+    return _originalElectronAPI?.closeWindow();
   },
 
   async toggleFullscreen() {
-    return (window as any).electronAPI?.toggleFullscreen();
+    return _originalElectronAPI?.toggleFullscreen();
   },
 
   async isFullscreen(): Promise<boolean> {
-    return (window as any).electronAPI?.isFullscreen() ?? false;
+    return _originalElectronAPI?.isFullscreen() ?? false;
   },
 
   // ============ External Links ============
 
   async openDashboard() {
-    return (window as any).electronAPI?.openDashboard();
+    return _originalElectronAPI?.openDashboard();
   },
 
   // ============ Event Subscriptions ============
@@ -463,7 +465,7 @@ export const api = {
       poll();
       setInterval(poll, 5000);
     } else {
-      (window as any).electronAPI.onNodeStatus(callback);
+      _originalElectronAPI.onNodeStatus(callback);
     }
   },
 
@@ -478,7 +480,7 @@ export const api = {
       poll();
       setInterval(poll, 5000);
     } else {
-      (window as any).electronAPI.onOllamaStatusChange(callback);
+      _originalElectronAPI.onOllamaStatusChange(callback);
     }
   },
 
@@ -493,13 +495,13 @@ export const api = {
       poll();
       setInterval(poll, 5000);
     } else {
-      (window as any).electronAPI.onIPFSStatus(callback);
+      _originalElectronAPI.onIPFSStatus(callback);
     }
   },
 
   onFullscreenChange(callback: (isFullscreen: boolean) => void) {
     if (!useRestApi) {
-      (window as any).electronAPI.onFullscreenChange(callback);
+      _originalElectronAPI.onFullscreenChange(callback);
     }
   },
 
@@ -513,7 +515,7 @@ export const api = {
         return {};
       }
     }
-    return (window as any).electronAPI.getResourceLimits();
+    return _originalElectronAPI.getResourceLimits();
   },
 
   async setResourceLimits(limits: ResourceLimits): Promise<CommandResult> {
@@ -527,7 +529,7 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.setResourceLimits(limits);
+    return _originalElectronAPI.setResourceLimits(limits);
   },
 
   async getStoragePath(): Promise<string | null> {
@@ -539,7 +541,7 @@ export const api = {
         return null;
       }
     }
-    return (window as any).electronAPI.getStoragePath();
+    return _originalElectronAPI.getStoragePath();
   },
 
   async setStoragePath(path: string | null): Promise<CommandResult> {
@@ -553,7 +555,7 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.setStoragePath(path);
+    return _originalElectronAPI.setStoragePath(path);
   },
 
   async getRemoteControlEnabled(): Promise<boolean> {
@@ -565,7 +567,7 @@ export const api = {
         return false;
       }
     }
-    return (window as any).electronAPI.getRemoteControlEnabled();
+    return _originalElectronAPI.getRemoteControlEnabled();
   },
 
   async setRemoteControlEnabled(enabled: boolean): Promise<CommandResult> {
@@ -579,7 +581,7 @@ export const api = {
         return { success: false, error: err.message };
       }
     }
-    return (window as any).electronAPI.setRemoteControlEnabled(enabled);
+    return _originalElectronAPI.setRemoteControlEnabled(enabled);
   },
 };
 

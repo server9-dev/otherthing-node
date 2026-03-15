@@ -26,10 +26,14 @@ export function registerNodeRoutes(deps: RouteDependencies): void {
       return;
     }
 
-    const workspace = workspaceManager.getWorkspace(workspaceId);
-    if (!workspace) {
-      res.status(404).json({ error: 'Workspace not found' });
-      return;
+    // Check workspace exists (local manager or on-chain hex ID)
+    const isOnChainId = workspaceId.startsWith('0x') && workspaceId.length === 66;
+    if (!isOnChainId) {
+      const workspace = workspaceManager.getWorkspace(workspaceId);
+      if (!workspace) {
+        res.status(404).json({ error: 'Workspace not found' });
+        return;
+      }
     }
 
     if (!workspaceNodes.has(workspaceId)) {

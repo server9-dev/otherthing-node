@@ -70,6 +70,17 @@ export function WorkspaceCodebasePage() {
     loadRepos();
   }, [loadRepos]);
 
+  // Poll while any repo is cloning or analyzing
+  useEffect(() => {
+    const hasPending = repos.some(r => r.status === 'cloning' || r.status === 'analyzing' || r.status === 'pending');
+    if (!hasPending) return;
+
+    const interval = setInterval(() => {
+      loadRepos();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [repos, loadRepos]);
+
   const analyzeRepo = async (repo: WorkspaceRepo) => {
     if (!repo.localPath) {
       setError('Repository must be cloned first');
