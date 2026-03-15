@@ -23,7 +23,7 @@ interface RegisteredNode {
 const API_BASE = 'http://localhost:8080';
 
 export function Marketplace() {
-  const { account, isConnected } = useWeb3();
+  const { address, connected } = useWeb3();
   const [nodes, setNodes] = useState<RegisteredNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,14 +37,34 @@ export function Marketplace() {
       setLoading(true);
       setError(null);
 
-      // Fetch from API which reads from blockchain
-      const res = await fetch(`${API_BASE}/api/v1/blockchain/nodes`);
-      if (!res.ok) {
-        throw new Error('Failed to load nodes from registry');
+      // Fetch registered nodes from web3 stats + verified nodes
+      const [statsRes, verifiedRes] = await Promise.all([
+        fetch(`${API_BASE}/api/v1/web3/stats`, { headers: { 'Authorization': 'Bearer local-token' } }),
+        fetch(`${API_BASE}/api/v1/web3/nodes/verified`, { headers: { 'Authorization': 'Bearer local-token' } }),
+      ]);
+
+      const registeredNodes: RegisteredNode[] = [];
+
+      if (verifiedRes.ok) {
+        const verifiedData = await verifiedRes.json();
+        for (const n of verifiedData.nodes || []) {
+          registeredNodes.push({
+            nodeId: n.onChainNodeId,
+            owner: n.walletAddress,
+            gpuType: 'Compute Node',
+            vramMB: 0,
+            cpuCores: 0,
+            ramMB: 0,
+            storageMB: 0,
+            hourlyRate: '0',
+            isActive: true,
+            totalComputeSeconds: n.computeSeconds || 0,
+            registeredAt: n.verifiedAt,
+          });
+        }
       }
 
-      const data = await res.json();
-      setNodes(data.nodes || []);
+      setNodes(registeredNodes);
     } catch (err) {
       console.error('Failed to load nodes:', err);
       setNodes([]);
@@ -418,9 +438,9 @@ export function Marketplace() {
                   <CyberButton
                     variant="primary"
                     style={{ flex: 1 }}
-                    disabled={!node.isActive || !isConnected}
+                    disabled={!node.isActive || !connected}
                   >
-                    {!isConnected ? 'CONNECT WALLET' : node.isActive ? 'RENT NODE' : 'OFFLINE'}
+                    {!connected ? 'CONNECT WALLET' : node.isActive ? 'RENT NODE' : 'OFFLINE'}
                   </CyberButton>
                   <CyberButton icon={ExternalLink} title="View on explorer">
                     VIEW
