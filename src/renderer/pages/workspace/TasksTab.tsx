@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, GripVertical, Edit3, Trash2, X, Check, Coins } from 'lucide-react';
+import { Plus, GripVertical, Edit3, Trash2, X, Check, Coins, Lock, UserCheck } from 'lucide-react';
 import { CyberButton } from '../../components';
+import { useWeb3 } from '../../context/Web3Context';
 
 const API_BASE = 'http://localhost:8080/api/v1';
 
@@ -28,12 +29,44 @@ const PRIORITY_COLORS: Record<string, string> = {
 interface Props { workspaceId: string; }
 
 export function TasksTab({ workspaceId }: Props) {
+  const { address, escrowTask, connected } = useWeb3();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+
+  const [escrowingId, setEscrowingId] = useState<string | null>(null);
+  const [escrowError, setEscrowError] = useState<string | null>(null);
+
+  const handleEscrow = async (task: Task) => {
+    if (!connected || !(task as any).milestones?.length) return;
+    setEscrowingId(task.id);
+    setEscrowError(null);
+    try {
+      const milestones = (task as any).milestones;
+      const descriptions = milestones.map((m: any) => m.description);
+      const amounts = milestones.map((m: any) => m.amount);
+      const deadline = Math.floor(Date.now() / 1000) + 30 * 86400; // 30 days
+
+      const onChainTaskId = await escrowTask(
+        workspaceId, task.description || task.title, deadline, descriptions, amounts
+      );
+
+      // Save the on-chain task ID back to the task
+      await fetch(`${API_BASE}/workspaces/${workspaceId}/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        body: JSON.stringify({ onChainTaskId, escrowed: true }),
+      });
+      loadTasks();
+    } catch (err: any) {
+      setEscrowError(err.message || 'Escrow failed');
+    } finally {
+      setEscrowingId(null);
+    }
+  };
 
   // Create form
   const [newTitle, setNewTitle] = useState('');
@@ -214,7 +247,7 @@ export function TasksTab({ workspaceId }: Props) {
                             </span>
                           )}
                         </div>
-                        {/* Milestone breakdown when expanded */}
+                        {/* Milestone breakdown + escrow actions */}
                         {editingId === task.id && (task as any).milestones?.length > 0 && (
                           <div style={{ marginTop: '0.5rem', padding: '0.4rem', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                             <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Escrow Breakdown</div>
@@ -231,6 +264,37 @@ export function TasksTab({ workspaceId }: Props) {
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, marginTop: '0.2rem' }}>
                               <span style={{ color: 'var(--text-primary)' }}>Total Escrow</span>
                               <span style={{ color: 'var(--primary)' }}>{(parseFloat((task as any).bounty) * 1.05).toFixed(0)} OTT</span>
+                            </div>
+
+                            {/* Escrow action buttons */}
+                            <div style={{ marginTop: '0.5rem', paddingTop: '0.4rem', borderTop: '1px solid var(--border-subtle)' }}>
+                              {(task as any).escrowed ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.7rem', color: '#00FF88' }}>
+                                  <Check size={12} /> Escrowed on-chain
+                                  {(task as any).onChainTaskId && (
+                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-muted)', marginLeft: '0.3rem' }}>
+                                      {(task as any).onChainTaskId.slice(0, 10)}...
+                                    </span>
+                                  )}
+                                </div>
+                              ) : connected ? (
+                                <CyberButton
+                                  variant="primary"
+                                  icon={Lock}
+                                  onClick={(e: any) => { e.stopPropagation(); handleEscrow(task); }}
+                                  loading={escrowingId === task.id}
+                                  style={{ width: '100%', fontSize: '0.7rem', padding: '0.3rem' }}
+                                >
+                                  Escrow {(parseFloat((task as any).bounty) * 1.05).toFixed(0)} OTT On-Chain
+                                </CyberButton>
+                              ) : (
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                  Connect wallet to escrow on-chain
+                                </div>
+                              )}
+                              {escrowError && escrowingId === null && (
+                                <div style={{ fontSize: '0.65rem', color: 'var(--accent)', marginTop: '0.3rem' }}>{escrowError}</div>
+                              )}
                             </div>
                           </div>
                         )}

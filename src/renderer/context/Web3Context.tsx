@@ -6,18 +6,20 @@ import EthereumProvider from '@walletconnect/ethereum-provider';
 const WALLETCONNECT_PROJECT_ID = 'e8c2c97bc93e37d1d5a4c6f48c0e75a7';
 
 // Contract addresses - update after deployment
-const CONTRACT_ADDRESSES: Record<string, { OTT: string; NodeRegistry: string; TaskEscrow: string; WorkspaceRegistry: string }> = {
+const CONTRACT_ADDRESSES: Record<string, Record<string, string>> = {
   sepolia: {
     OTT: '0x201333A5C882751a98E483f9B763DF4D8e5A1055',
     NodeRegistry: '0xFaCB01A565ea526FC8CAC87D5D4622983735e8F3',
     TaskEscrow: '0x246127F9743AC938baB7fc221546a785C880ad86',
     WorkspaceRegistry: '0x8433285448DB684b9a37b4bc97DBDcd72e148DCa',
+    MilestoneEscrow: '0xBD29Ed6B5C2cC8e7dfefD31D2aCf39b1C760b015',
   },
   localhost: {
     OTT: '',
     NodeRegistry: '',
     TaskEscrow: '',
     WorkspaceRegistry: '',
+    MilestoneEscrow: '',
   },
 };
 
@@ -58,6 +60,20 @@ const WORKSPACE_REGISTRY_ABI = [
   'event WorkspaceCreated(bytes32 indexed workspaceId, string name, address indexed owner, bool isPublic)',
   'event MemberJoined(bytes32 indexed workspaceId, address indexed member, uint8 role)',
   'event MemberLeft(bytes32 indexed workspaceId, address indexed member)',
+];
+
+const MILESTONE_ESCROW_ABI = [
+  'function createTask(bytes32 workspaceId, string descriptionCid, uint256 deadline, string[] milestoneDescriptions, uint256[] milestoneAmounts) returns (bytes32)',
+  'function assignWorker(bytes32 taskId, address workerAddress, bytes32 nodeId)',
+  'function submitMilestone(bytes32 taskId, uint256 milestoneIndex, string workCid)',
+  'function approveMilestone(bytes32 taskId, uint256 milestoneIndex)',
+  'function releaseMilestonePayment(bytes32 taskId, uint256 milestoneIndex)',
+  'function cancelTask(bytes32 taskId)',
+  'function getTask(bytes32 taskId) view returns (tuple(bytes32 id, address creator, address worker, bytes32 workspaceId, string descriptionCid, uint256 deadline, uint8 status, uint256 totalAmount, uint256 platformFee, uint256 milestoneCount, uint256 createdAt))',
+  'function getMilestones(bytes32 taskId) view returns (tuple(string description, uint256 amount, uint8 status, string workCid, uint256 submittedAt, uint256 approvedAt)[])',
+  'function platformFeePercent() view returns (uint256)',
+  'event TaskCreated(bytes32 indexed taskId, address indexed creator, bytes32 indexed workspaceId, uint256 totalAmount)',
+  'event WorkerAssigned(bytes32 indexed taskId, address indexed worker)',
 ];
 
 // Workspace member roles
@@ -166,6 +182,10 @@ interface Web3ContextType {
   loadingWorkspaces: boolean;
   publicWorkspaces: OnChainWorkspace[];
 
+  // Milestone escrow actions
+  escrowTask: (workspaceId: string, descriptionCid: string, deadline: number, milestoneDescriptions: string[], milestoneAmounts: string[]) => Promise<string>;
+  assignWorkerOnChain: (taskId: string, workerAddress: string, nodeId: string) => Promise<void>;
+
   // Workspace actions
   refreshWorkspaces: () => Promise<void>;
   createWorkspace: (name: string, description: string, isPublic: boolean, inviteCode?: string) => Promise<string>;
@@ -209,6 +229,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const [ottContract, setOttContract] = useState<ethers.Contract | null>(null);
   const [nodeRegistryContract, setNodeRegistryContract] = useState<ethers.Contract | null>(null);
   const [workspaceRegistryContract, setWorkspaceRegistryContract] = useState<ethers.Contract | null>(null);
+  const [milestoneEscrowContract, setMilestoneEscrowContract] = useState<ethers.Contract | null>(null);
   const [myWorkspaces, setMyWorkspaces] = useState<OnChainWorkspace[]>([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
   const [publicWorkspaces, setPublicWorkspaces] = useState<OnChainWorkspace[]>([]);
@@ -263,6 +284,10 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       if (addresses.WorkspaceRegistry) {
         const workspaceRegistry = new ethers.Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, jsonRpcSigner);
         setWorkspaceRegistryContract(workspaceRegistry);
+      }
+
+      if (addresses.MilestoneEscrow) {
+        setMilestoneEscrowContract(new ethers.Contract(addresses.MilestoneEscrow, MILESTONE_ESCROW_ABI, jsonRpcSigner));
       }
 
       // Get ETH balance
@@ -371,6 +396,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     setOttContract(null);
     setNodeRegistryContract(null);
     setWorkspaceRegistryContract(null);
+    setMilestoneEscrowContract(null);
     setMyNodes([]);
     setMyWorkspaces([]);
     setPublicWorkspaces([]);
@@ -437,6 +463,9 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       if (addresses.WorkspaceRegistry) {
         const workspaceRegistry = new ethers.Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, connectedWallet);
         setWorkspaceRegistryContract(workspaceRegistry);
+      }
+      if (addresses.MilestoneEscrow) {
+        setMilestoneEscrowContract(new ethers.Contract(addresses.MilestoneEscrow, MILESTONE_ESCROW_ABI, connectedWallet));
       }
 
       // Get ETH balance (will be 0 for new wallet)
@@ -505,6 +534,9 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       if (addresses.WorkspaceRegistry) {
         const workspaceRegistry = new ethers.Contract(addresses.WorkspaceRegistry, WORKSPACE_REGISTRY_ABI, wallet);
         setWorkspaceRegistryContract(workspaceRegistry);
+      }
+      if (addresses.MilestoneEscrow) {
+        setMilestoneEscrowContract(new ethers.Contract(addresses.MilestoneEscrow, MILESTONE_ESCROW_ABI, wallet));
       }
 
       // Get ETH balance
@@ -689,6 +721,52 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     await tx.wait();
     await refreshNodes();
     await refreshBalances();
+  };
+
+  // ============ Milestone Escrow Functions ============
+
+  const escrowTask = async (
+    workspaceId: string,
+    descriptionCid: string,
+    deadline: number,
+    milestoneDescriptions: string[],
+    milestoneAmounts: string[]
+  ): Promise<string> => {
+    if (!milestoneEscrowContract || !ottContract) throw new Error('Contracts not initialized');
+
+    const amounts = milestoneAmounts.map(a => parseOtt(a));
+    const total = amounts.reduce((a, b) => a + b, 0n);
+    const fee = total * 5n / 100n;
+    const totalRequired = total + fee;
+
+    // Approve OTT
+    const networkKey = getNetworkKey(chainId || 0);
+    const addresses = CONTRACT_ADDRESSES[networkKey];
+    const approveTx = await ottContract.approve(addresses.MilestoneEscrow, totalRequired);
+    await approveTx.wait();
+
+    // Create task on-chain
+    const tx = await milestoneEscrowContract.createTask(
+      workspaceId, descriptionCid, deadline, milestoneDescriptions, amounts
+    );
+    const receipt = await tx.wait();
+
+    for (const log of receipt.logs) {
+      try {
+        const parsed = milestoneEscrowContract.interface.parseLog(log);
+        if (parsed?.name === 'TaskCreated') {
+          await refreshBalances();
+          return parsed.args[0]; // taskId (bytes32)
+        }
+      } catch {}
+    }
+    throw new Error('TaskCreated event not found');
+  };
+
+  const assignWorkerOnChain = async (taskId: string, workerAddress: string, nodeId: string): Promise<void> => {
+    if (!milestoneEscrowContract) throw new Error('MilestoneEscrow not initialized');
+    const tx = await milestoneEscrowContract.assignWorker(taskId, workerAddress, nodeId);
+    await tx.wait();
   };
 
   // ============ Workspace Functions ============
@@ -889,6 +967,9 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       withdrawStake,
       formatOtt,
       parseOtt,
+      // Milestone escrow
+      escrowTask,
+      assignWorkerOnChain,
       // Workspace state
       myWorkspaces,
       loadingWorkspaces,
