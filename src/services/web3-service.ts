@@ -14,9 +14,9 @@ export const CONTRACT_ADDRESSES: Record<string, Record<string, string>> = {
     NodeRegistry: '0xFaCB01A565ea526FC8CAC87D5D4622983735e8F3',
     TaskEscrow: '0x246127F9743AC938baB7fc221546a785C880ad86',
     WorkspaceRegistry: '0x8433285448DB684b9a37b4bc97DBDcd72e148DCa',
-    AgreementRegistry: '',  // Set after deploy-phase2
-    IPRegistry: '',          // Set after deploy-phase2
-    MilestoneEscrow: '',     // Set after deploy-phase2
+    AgreementRegistry: '0xf5AfcA509Ed426d336d9676746cF6EdE3A2e7367',
+    IPRegistry: '0xBCDD635bE62Bd83Cb99fc331818828cF685e1450',
+    MilestoneEscrow: '0xBD29Ed6B5C2cC8e7dfefD31D2aCf39b1C760b015',
   },
   localhost: {
     OTT: '',
