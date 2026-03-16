@@ -6,46 +6,71 @@ Desktop + headless application for the OtherThing network. Run local AI models, 
 
 **Live API: https://api.otherthing.ai**
 
+## Install (Linux)
+
+One-line installer — handles all dependencies automatically:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/server9-dev/otherthing-node/main/install.sh | bash
+```
+
+The installer checks for and installs (if missing):
+- **Node.js** (v18+)
+- **Ollama** — local AI model inference
+- **IPFS** (Kubo) — distributed file storage
+- **code-server** — VS Code editor in workspaces
+- **Build tools** — gcc, make, python3, Electron dependencies (GTK, NSS, etc.)
+- **npm packages** — app + smart contract dependencies
+- Desktop launcher entry
+
+Already have some of these? The installer detects existing installations and skips them.
+
+### Manual Install
+
+```bash
+git clone https://github.com/server9-dev/otherthing-node.git
+cd otherthing-node
+npm install
+cp .env.example .env  # Configure credentials
+npm run dev            # Development mode
+npm start              # Production mode
+```
+
+### Headless Server (WSL/Docker/CLI)
+
+```bash
+npm install
+cp .env.example .env
+npm run server         # API at http://localhost:8080
+```
+
 ## What It Does
 
 OtherThing lets teams collaborate on projects with:
-- **Shared AI Agents** - Run tasks using local or distributed LLMs
-- **P2P Compute** - Share CPU/GPU resources across the network
-- **Smart Contracts** - Escrow payments, milestone releases, IP licensing
-- **Enterprise Architecture** - UAF framework for systems modeling
-- **Sandboxed Execution** - Isolated code execution with container/WASM support
+- **Workspace Voice/Video Chat** — WebRTC-based calls with team members
+- **Shared AI Agents** — Run tasks using local or distributed LLMs
+- **Code Editor** — Full VS Code (code-server) embedded in workspaces with pop-out
+- **Whiteboard** — Excalidraw embedded with pop-out support
+- **P2P Compute** — Share CPU/GPU resources across the network
+- **Smart Contracts** — Escrow payments, milestone releases, OTT treasury
+- **Enterprise Architecture** — UAF framework for systems modeling
+- **Sandboxed Execution** — Isolated code execution with container/WASM support
 
 ## Current Stack
 
 | Layer | Technology | Purpose |
 |-------|------------|---------|
+| **Desktop** | Electron + React | Cross-platform app with embedded tools |
 | **Backend** | Appwrite Cloud | Users, workspaces, UAF elements, contracts |
-| **API** | Express + WebSocket | REST API + real-time agent streaming |
-| **AI** | Ollama | Local LLM inference (Llama, Mistral, etc.) |
+| **API** | Express + WebSocket | REST API + real-time streaming + WebRTC signaling |
+| **AI** | Ollama | Local LLM inference (Llama, Mistral, Qwen, etc.) |
+| **Editor** | code-server | VS Code in workspaces (MIT licensed) |
+| **Whiteboard** | Excalidraw | Collaborative drawing |
 | **Memory** | ELID | Semantic search without vector DB |
 | **Containers** | ZLayer | Daemonless orchestration + WASM |
 | **Storage** | IPFS | Distributed file storage |
-| **Blockchain** | Ethereum (Sepolia) | OTT token, escrow, node registry |
+| **Blockchain** | Ethereum (Sepolia) | OTT token, escrow, node registry, treasury |
 | **CDN/Tunnel** | Cloudflare | Public API at api.otherthing.ai |
-
-## Quick Start
-
-### Desktop App (Electron)
-```bash
-git clone https://github.com/server9-dev/otherthing-node.git
-cd otherthing-node
-npm install
-npm start
-```
-
-### Headless Server (WSL/Docker/CLI)
-```bash
-npm install
-cp .env.example .env  # Configure Appwrite credentials
-npm run server
-```
-
-The API will be available at `http://localhost:8080`.
 
 ## Configuration
 
@@ -82,7 +107,15 @@ This creates collections for: workspaces, flows, UAF elements, relationships, sm
 | `/api/v1/agents/run` | POST | Execute an AI agent |
 | `/api/v1/ollama/status` | GET | Ollama status and models |
 | `/api/v1/ollama/pull` | POST | Pull a model |
-| `ws://localhost:8080/ws/agents` | WS | Real-time agent streaming |
+| `ws://localhost:8080/ws/agents` | WS | Real-time agent streaming + WebRTC signaling |
+
+### Workspace Tools
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/workspaces/:id/code-server` | POST/GET/DELETE | Start/check/stop code-server |
+| `/api/v1/workspaces/:id/chat` | GET/POST | Team chat messages |
+| `/api/v1/workspaces/:id/sandbox/files` | GET/POST | File operations |
+| `/api/v1/workspaces/:id/sandbox/execute` | POST | Run shell command |
 
 ### UAF (Architecture Framework)
 | Endpoint | Method | Description |
@@ -109,11 +142,10 @@ This creates collections for: workspaces, flows, UAF elements, relationships, sm
 | `/api/v1/zlayer/deploy` | POST | Deploy a service |
 | `/api/v1/zlayer/wasm/run` | POST | Execute WASM module |
 
-### Sandbox (Code Execution)
+### Treasury
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/v1/workspaces/:id/sandbox/files` | GET/POST | File operations |
-| `/api/v1/workspaces/:id/sandbox/execute` | POST | Run shell command |
+| `/api/v1/treasury/stats` | GET | Treasury statistics |
 
 ## Agent Tools
 
@@ -124,25 +156,6 @@ Agents have access to these tools:
 **Memory**: `memory_store`, `memory_search`, `memory_recent`, `memory_stats`
 
 **UAF**: `uaf_create_element`, `uaf_query_elements`, `uaf_link_elements`, `uaf_generate_view`, `uaf_stats`, `uaf_export`
-
-## UAF Framework
-
-Implements the OMG Unified Architecture Framework (ISO/IEC 19540) for enterprise/systems architecture:
-
-**11 Viewpoints:**
-- Strategic (WHY) - Capabilities, goals, vision
-- Operational (WHAT) - Activities, performers, exchanges
-- Services - Service definitions and interfaces
-- Personnel (WHO) - Roles, organizations, skills
-- Resources (HOW) - Systems, software, hardware
-- Security - Controls, threats, risks
-- Projects (WHEN) - Timelines, milestones
-- Standards - Protocols, guidance
-- And more...
-
-**14 Model Kinds:** Taxonomy, Structure, Connectivity, Processes, States, Scenarios, Information, Parameters, Constraints, Traceability, Roadmap, Dictionary, Requirements
-
-This creates a 71-cell grid for comprehensive architecture modeling.
 
 ## Smart Contracts (Sepolia)
 
@@ -158,7 +171,7 @@ This creates a 71-cell grid for comprehensive architecture modeling.
 src/
 ├── main.ts              # Electron main process
 ├── server.ts            # Headless server entry
-├── api-server.ts        # REST/WebSocket API
+├── api-server.ts        # REST/WebSocket/WebRTC signaling
 ├── node-service.ts      # Core node functionality
 ├── ollama-manager.ts    # Ollama LLM integration
 ├── sandbox-manager.ts   # Code execution sandbox
@@ -169,14 +182,28 @@ src/
 ├── services/
 │   ├── appwrite-service.ts   # Appwrite backend
 │   ├── uaf-service.ts        # UAF CRUD operations
-│   ├── uaf-types.ts          # UAF TypeScript types
-│   ├── uaf-views.ts          # Mermaid diagram generation
 │   ├── semantic-memory.ts    # ELID-based memory
-│   ├── elid-service.ts       # Embedding locality IDs
 │   ├── zlayer-service.ts     # Container orchestration
 │   ├── web3-service.ts       # Blockchain integration
 │   └── workspace-manager.ts  # Workspace management
-└── renderer/            # React frontend
+├── routes/
+│   ├── compute.ts       # Sandbox, chat, code-server, hardware
+│   ├── treasury.ts      # OTT treasury endpoints
+│   └── ...              # Other route modules
+└── renderer/
+    ├── App.tsx           # Main app shell with OTT balance display
+    ├── hooks/
+    │   └── useVoiceVideo.ts  # WebRTC voice/video hook
+    ├── pages/
+    │   ├── workspace/
+    │   │   ├── ChatTab.tsx       # AI + team chat with voice/video
+    │   │   ├── CodeTab.tsx       # code-server iframe editor
+    │   │   ├── WhiteboardTab.tsx # Excalidraw iframe
+    │   │   └── ...
+    │   ├── Treasury.tsx  # Buy/redeem OTT tokens
+    │   └── Settings.tsx  # User profile + node config
+    └── context/
+        └── Web3Context.tsx  # Wallet, contracts, OTT balance
 ```
 
 ## Development
@@ -191,8 +218,8 @@ npm run build:main
 # Run headless server
 npm run server
 
-# TypeScript check
-npx tsc --noEmit
+# Build Linux packages (AppImage + .deb)
+npm run dist:linux
 ```
 
 ## Deployment
@@ -222,9 +249,14 @@ docker run -p 8080:8080 -e APPWRITE_PROJECT_ID=xxx otherthing/node
 - [x] UAF architecture framework
 - [x] Appwrite cloud backend
 - [x] Headless server mode
+- [x] Voice/video chat in workspaces
+- [x] Embedded code editor (code-server)
+- [x] Whiteboard (Excalidraw)
+- [x] OTT Treasury (buy/redeem)
+- [x] User profiles and display names
 - [ ] P2P compute marketplace
 - [ ] Multi-node task distribution
-- [ ] Production smart contracts
+- [ ] Production smart contracts (mainnet)
 - [ ] Mobile app
 
 ## License
