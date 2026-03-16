@@ -247,34 +247,43 @@ export function TasksTab({ workspaceId }: Props) {
                             </span>
                           )}
                         </div>
-                        {/* Milestone breakdown + escrow actions */}
-                        {editingId === task.id && (task as any).milestones?.length > 0 && (
+                        {/* Escrow status + actions — always visible on bounty tasks */}
+                        {(task as any).milestones?.length > 0 && (task as any).bounty && (
                           <div style={{ marginTop: '0.5rem', padding: '0.4rem', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Escrow Breakdown</div>
+                            {/* Milestone list */}
                             {(task as any).milestones.map((m: any, i: number) => (
-                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', padding: '0.15rem 0' }}>
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', padding: '0.1rem 0' }}>
                                 <span>{m.description}</span>
                                 <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{parseFloat(m.amount).toFixed(0)} OTT</span>
                               </div>
                             ))}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginTop: '0.25rem', paddingTop: '0.25rem', borderTop: '1px solid var(--border-subtle)' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Platform fee (5%)</span>
-                              <span style={{ color: 'var(--text-muted)' }}>{(parseFloat((task as any).bounty) * 0.05).toFixed(1)} OTT</span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, marginTop: '0.2rem' }}>
-                              <span style={{ color: 'var(--text-primary)' }}>Total Escrow</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginTop: '0.2rem', paddingTop: '0.2rem', borderTop: '1px solid var(--border-subtle)', fontWeight: 600 }}>
+                              <span style={{ color: 'var(--text-primary)' }}>Total</span>
                               <span style={{ color: 'var(--primary)' }}>{(parseFloat((task as any).bounty) * 1.05).toFixed(0)} OTT</span>
                             </div>
 
-                            {/* Escrow action buttons */}
-                            <div style={{ marginTop: '0.5rem', paddingTop: '0.4rem', borderTop: '1px solid var(--border-subtle)' }}>
+                            {/* Action buttons */}
+                            <div style={{ marginTop: '0.4rem' }}>
                               {(task as any).escrowed ? (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.7rem', color: '#00FF88' }}>
-                                  <Check size={12} /> Escrowed on-chain
-                                  {(task as any).onChainTaskId && (
-                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-muted)', marginLeft: '0.3rem' }}>
-                                      {(task as any).onChainTaskId.slice(0, 10)}...
-                                    </span>
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.7rem', color: '#00FF88', marginBottom: '0.3rem' }}>
+                                    <Check size={12} /> Escrowed on-chain
+                                  </div>
+                                  {/* Worker can accept */}
+                                  {!(task as any).assignee && address && (
+                                    <CyberButton
+                                      variant="success"
+                                      icon={UserCheck}
+                                      onClick={(e: any) => { e.stopPropagation(); /* TODO: apply flow */ }}
+                                      style={{ width: '100%', fontSize: '0.7rem', padding: '0.3rem' }}
+                                    >
+                                      Apply for this Task
+                                    </CyberButton>
+                                  )}
+                                  {(task as any).assignee && (
+                                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                                      Assigned to {(task as any).assignee.slice(0, 6)}...{(task as any).assignee.slice(-4)}
+                                    </div>
                                   )}
                                 </div>
                               ) : connected ? (
@@ -288,11 +297,11 @@ export function TasksTab({ workspaceId }: Props) {
                                   Escrow {(parseFloat((task as any).bounty) * 1.05).toFixed(0)} OTT On-Chain
                                 </CyberButton>
                               ) : (
-                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                                  Connect wallet to escrow on-chain
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                                  Connect wallet to escrow
                                 </div>
                               )}
-                              {escrowError && escrowingId === null && (
+                              {escrowError && (
                                 <div style={{ fontSize: '0.65rem', color: 'var(--accent)', marginTop: '0.3rem' }}>{escrowError}</div>
                               )}
                             </div>
