@@ -24,6 +24,7 @@ import { registerProfileRoutes } from './profiles';
 import { registerAgreementRoutes } from './agreements';
 import { registerMilestoneRoutes } from './milestones';
 import { registerIPRoutes } from './ip';
+import { registerTreasuryRoutes } from './treasury';
 
 export function registerAllRoutes(deps: RouteDependencies): void {
   // Health Check (stays in api-server.ts or here)
@@ -51,6 +52,7 @@ export function registerAllRoutes(deps: RouteDependencies): void {
   registerAgreementRoutes(deps);
   registerMilestoneRoutes(deps);
   registerIPRoutes(deps);
+  registerTreasuryRoutes(deps);
 }
 
 export type { RouteDependencies } from './types';

@@ -4,4 +4,5 @@
 export type { IAgreementRegistry } from "./IAgreementRegistry";
 export type { IIPRegistry } from "./IIPRegistry";
 export type { INodeRegistry } from "./INodeRegistry";
+export type { IOTT } from "./IOTT";
 export type { IWorkspaceRegistry } from "./IWorkspaceRegistry";

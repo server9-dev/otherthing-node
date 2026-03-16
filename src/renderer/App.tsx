@@ -1,6 +1,6 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, Server, Settings as SettingsIcon, Wifi, WifiOff, HardDrive, Users, Bot, Store, Maximize2, Minimize2, Briefcase } from 'lucide-react';
+import { LayoutDashboard, Server, Settings as SettingsIcon, Wifi, WifiOff, HardDrive, Users, Bot, Store, Maximize2, Minimize2, Briefcase, Coins, CircleDollarSign } from 'lucide-react';
 import { Dashboard } from './pages/Dashboard';
 import { NodeControl } from './pages/NodeControl';
 import { Settings } from './pages/Settings';
@@ -10,13 +10,31 @@ import { AgentsPage } from './pages/Agents';
 import { Marketplace } from './pages/Marketplace';
 import { TasksPage } from './pages/Tasks';
 import { TaskDetailPage } from './pages/TaskDetail';
+import { Treasury } from './pages/Treasury';
 import { ModuleProvider } from './context/ModuleContext';
 import { CredentialProvider } from './context/CredentialContext';
 import { Web3Provider } from './context/Web3Context';
 import { WalletButton } from './components';
+import { useWeb3 } from './context/Web3Context';
 
 // Import logo - files in public/ are served at root
 import logoUrl from '/logo.png?url';
+
+function OttBalance() {
+  const { connected, ottBalance } = useWeb3();
+  if (!connected || !ottBalance) return null;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: '0.35rem',
+      padding: '0.25rem 0.6rem', borderRadius: 'var(--radius-sm)',
+      background: 'rgba(0, 212, 255, 0.08)', border: '1px solid rgba(0, 212, 255, 0.15)',
+      fontSize: '0.8rem', fontWeight: 600, color: 'var(--primary)',
+    }}>
+      <Coins size={14} />
+      {parseFloat(ottBalance).toLocaleString(undefined, { maximumFractionDigits: 1 })} OTT
+    </div>
+  );
+}
 
 function App() {
   const [connected, setConnected] = useState(false);
@@ -77,6 +95,7 @@ function App() {
                   }}
                 />
                 <h1 className="logo-text">OtherThing</h1>
+                <OttBalance />
               </div>
 
               <nav className="header-nav">
@@ -103,6 +122,10 @@ function App() {
                 <NavLink to="/marketplace" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                   <Store size={16} />
                   <span>Marketplace</span>
+                </NavLink>
+                <NavLink to="/treasury" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <Coins size={16} />
+                  <span>Treasury</span>
                 </NavLink>
                 <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                   <SettingsIcon size={16} />
@@ -152,6 +175,7 @@ function App() {
                 <Route path="/tasks" element={<TasksPage />} />
                 <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
                 <Route path="/marketplace" element={<Marketplace />} />
+                <Route path="/treasury" element={<Treasury />} />
                 <Route path="/settings" element={<Settings />} />
               </Routes>
             </main>

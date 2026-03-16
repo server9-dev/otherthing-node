@@ -1,9 +1,11 @@
 /**
- * Compute Routes - sandbox, GPU, zlayer
+ * Compute Routes - sandbox, GPU, zlayer, code-server
  */
 
 import { Request, Response } from 'express';
 import os from 'os';
+import { spawn, ChildProcess } from 'child_process';
+import path from 'path';
 import { cloudGPUProvider } from '../services/cloud-gpu-provider';
 import { HardwareDetector } from '../hardware';
 import { zlayerService } from '../services/zlayer-service';
@@ -195,7 +197,7 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
   app.post('/api/v1/workspaces/:id/chat', localAuth, (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const session = (req as any).session;
-    const { content, senderAddress } = req.body;
+    const { content, senderAddress, displayName } = req.body;
 
     if (!content?.trim()) {
       res.status(400).json({ error: 'Content is required' });
@@ -206,7 +208,7 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       workspaceId,
       sender: senderAddress || session.userId,
-      senderName: session.username,
+      senderName: displayName || session.username,
       content: content.trim(),
       timestamp: new Date().toISOString(),
     };
@@ -220,6 +222,106 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     if (msgs.length > 500) msgs.splice(0, msgs.length - 500);
 
     res.status(201).json({ message: msg });
+  });
+
+  // ── Code Server (code-server per workspace) ──
+  const codeServers: Map<string, { process: ChildProcess; port: number }> = new Map();
+  const CODE_SERVER_BASE_PORT = 13370;
+
+  function findCodeServerBin(): string | null {
+    const candidates = [
+      path.join(os.homedir(), '.local', 'code-server', 'bin', 'code-server'),
+      path.join(os.homedir(), '.local', 'bin', 'code-server'),
+      '/usr/bin/code-server',
+      '/usr/local/bin/code-server',
+    ];
+    const fs = require('fs');
+    return candidates.find(p => fs.existsSync(p)) || null;
+  }
+
+  app.post('/api/v1/workspaces/:id/code-server', localAuth, (req: Request, res: Response) => {
+    const workspaceId = req.params.id as string;
+
+    // Already running?
+    const existing = codeServers.get(workspaceId);
+    if (existing) {
+      res.json({ port: existing.port, status: 'running' });
+      return;
+    }
+
+    const bin = findCodeServerBin();
+    if (!bin) {
+      res.status(500).json({ error: 'code-server not found. Install via: curl -fsSL https://code-server.dev/install.sh | sh' });
+      return;
+    }
+
+    // Assign a unique port per workspace
+    const usedPorts = new Set(Array.from(codeServers.values()).map(s => s.port));
+    let port = CODE_SERVER_BASE_PORT;
+    while (usedPorts.has(port)) port++;
+
+    // Workspace folder — use home dir as default, can be made workspace-specific later
+    const folder = req.body?.folder || os.homedir();
+
+    const proc = spawn(bin, [
+      '--auth', 'none',
+      '--bind-addr', `127.0.0.1:${port}`,
+      '--disable-telemetry',
+      '--disable-getting-started-override',
+      folder,
+    ], {
+      stdio: 'pipe',
+      env: { ...process.env },
+    });
+
+    proc.on('error', (err) => {
+      console.error(`[CodeServer] Failed to start for workspace ${workspaceId}:`, err);
+      codeServers.delete(workspaceId);
+    });
+
+    proc.on('exit', (code) => {
+      console.log(`[CodeServer] Exited for workspace ${workspaceId} with code ${code}`);
+      codeServers.delete(workspaceId);
+    });
+
+    proc.stderr?.on('data', (data: Buffer) => {
+      const msg = data.toString();
+      if (msg.includes('HTTP server listening')) {
+        console.log(`[CodeServer] Ready for workspace ${workspaceId} on port ${port}`);
+      }
+    });
+
+    codeServers.set(workspaceId, { process: proc, port });
+    console.log(`[CodeServer] Starting for workspace ${workspaceId} on port ${port}`);
+
+    res.json({ port, status: 'starting' });
+  });
+
+  app.get('/api/v1/workspaces/:id/code-server', localAuth, (req: Request, res: Response) => {
+    const workspaceId = req.params.id as string;
+    const existing = codeServers.get(workspaceId);
+    if (existing) {
+      res.json({ port: existing.port, status: 'running' });
+    } else {
+      res.json({ port: null, status: 'stopped' });
+    }
+  });
+
+  app.delete('/api/v1/workspaces/:id/code-server', localAuth, (req: Request, res: Response) => {
+    const workspaceId = req.params.id as string;
+    const existing = codeServers.get(workspaceId);
+    if (existing) {
+      existing.process.kill();
+      codeServers.delete(workspaceId);
+    }
+    res.json({ status: 'stopped' });
+  });
+
+  // Clean up code-servers on process exit
+  process.on('exit', () => {
+    for (const [, server] of codeServers) {
+      server.process.kill();
+    }
   });
 
   // Stats Endpoint

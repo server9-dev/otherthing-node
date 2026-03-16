@@ -18,6 +18,8 @@ export function WalletButton() {
     chainId,
     balance,
     ottBalance,
+    usdcBalance,
+    backingPerOTT,
     disconnectWallet,
     isConnecting,
     connectWallet,
@@ -819,7 +821,7 @@ export function WalletButton() {
           </div>
 
           <div style={{ padding: '16px', borderBottom: '1px solid var(--border-subtle)' }}>
-            <div style={{ display: 'flex', gap: '24px' }}>
+            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                   ETH Balance
@@ -835,7 +837,22 @@ export function WalletButton() {
                 <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--primary)' }}>
                   {ottBalance ? parseFloat(ottBalance).toFixed(2) : '0'} OTT
                 </div>
+                {backingPerOTT && parseFloat(backingPerOTT) > 0 && (
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    ~${(parseFloat(ottBalance || '0') * parseFloat(backingPerOTT)).toFixed(2)} backed
+                  </div>
+                )}
               </div>
+              {usdcBalance && (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    USDC Balance
+                  </div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#10B981' }}>
+                    {parseFloat(usdcBalance).toLocaleString()} USDC
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

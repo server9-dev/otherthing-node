@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, HardDrive, Cpu, Save, FolderOpen, Check } from 'lucide-react';
+import { Settings as SettingsIcon, HardDrive, Cpu, Save, FolderOpen, Check, User } from 'lucide-react';
 import { CyberButton } from '../components';
 
 export function Settings() {
   const [ollamaPath, setOllamaPath] = useState('');
   const [storagePath, setStoragePath] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     const loadSettings = async () => {
+      // Load display name from localStorage
+      const savedName = localStorage.getItem('ott-display-name');
+      if (savedName) setDisplayName(savedName);
+
       if (!window.electronAPI) return;
 
       try {
@@ -33,12 +38,21 @@ export function Settings() {
     setSaved(false);
 
     try {
-      if (storagePath) {
-        await window.electronAPI.setStoragePath(storagePath);
+      // Save display name to localStorage (works with or without electronAPI)
+      if (displayName.trim()) {
+        localStorage.setItem('ott-display-name', displayName.trim());
+      } else {
+        localStorage.removeItem('ott-display-name');
       }
 
-      if (ollamaPath) {
-        await window.electronAPI.setOllamaPath(ollamaPath);
+      if (window.electronAPI) {
+        if (storagePath) {
+          await window.electronAPI.setStoragePath(storagePath);
+        }
+
+        if (ollamaPath) {
+          await window.electronAPI.setOllamaPath(ollamaPath);
+        }
       }
 
       setSaved(true);
@@ -88,6 +102,32 @@ export function Settings() {
         <p style={{ color: 'var(--text-muted)', marginTop: 'var(--gap-sm)' }}>
           Configure your node preferences
         </p>
+      </div>
+
+      {/* Profile Settings */}
+      <div className="cyber-card" style={{ marginBottom: 'var(--gap-lg)' }}>
+        <div className="cyber-card-header">
+          <span className="cyber-card-title">
+            <User size={14} style={{ marginRight: '0.5rem' }} />
+            PROFILE
+          </span>
+        </div>
+        <div className="cyber-card-body">
+          <div className="settings-group">
+            <label className="settings-label">Display Name</label>
+            <input
+              type="text"
+              className="settings-input"
+              placeholder="Enter a display name for workspace chat"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              maxLength={32}
+            />
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 'var(--gap-xs)' }}>
+              Shown in workspace chat instead of your wallet address
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Storage Settings */}

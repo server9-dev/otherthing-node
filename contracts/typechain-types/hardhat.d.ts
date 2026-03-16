@@ -58,6 +58,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IERC165__factory>;
     getContractFactory(
+      name: "Pausable",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.Pausable__factory>;
+    getContractFactory(
       name: "ReentrancyGuard",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ReentrancyGuard__factory>;
@@ -78,6 +82,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.INodeRegistry__factory>;
     getContractFactory(
+      name: "IOTT",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IOTT__factory>;
+    getContractFactory(
       name: "IWorkspaceRegistry",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IWorkspaceRegistry__factory>;
@@ -90,6 +98,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.MilestoneEscrow__factory>;
     getContractFactory(
+      name: "MockUSDC",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockUSDC__factory>;
+    getContractFactory(
       name: "NodeRegistry",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.NodeRegistry__factory>;
@@ -97,6 +109,10 @@ declare module "hardhat/types/runtime" {
       name: "OTT",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.OTT__factory>;
+    getContractFactory(
+      name: "OTTTreasury",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.OTTTreasury__factory>;
     getContractFactory(
       name: "TaskEscrow",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -162,6 +178,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.IERC165>;
     getContractAt(
+      name: "Pausable",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.Pausable>;
+    getContractAt(
       name: "ReentrancyGuard",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -187,6 +208,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.INodeRegistry>;
     getContractAt(
+      name: "IOTT",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IOTT>;
+    getContractAt(
       name: "IWorkspaceRegistry",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -202,6 +228,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.MilestoneEscrow>;
     getContractAt(
+      name: "MockUSDC",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockUSDC>;
+    getContractAt(
       name: "NodeRegistry",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -211,6 +242,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.OTT>;
+    getContractAt(
+      name: "OTTTreasury",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.OTTTreasury>;
     getContractAt(
       name: "TaskEscrow",
       address: string | ethers.Addressable,
@@ -267,6 +303,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IERC165>;
     deployContract(
+      name: "Pausable",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.Pausable>;
+    deployContract(
       name: "ReentrancyGuard",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ReentrancyGuard>;
@@ -287,6 +327,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.INodeRegistry>;
     deployContract(
+      name: "IOTT",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IOTT>;
+    deployContract(
       name: "IWorkspaceRegistry",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IWorkspaceRegistry>;
@@ -299,6 +343,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MilestoneEscrow>;
     deployContract(
+      name: "MockUSDC",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockUSDC>;
+    deployContract(
       name: "NodeRegistry",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.NodeRegistry>;
@@ -306,6 +354,10 @@ declare module "hardhat/types/runtime" {
       name: "OTT",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.OTT>;
+    deployContract(
+      name: "OTTTreasury",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.OTTTreasury>;
     deployContract(
       name: "TaskEscrow",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -371,6 +423,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IERC165>;
     deployContract(
+      name: "Pausable",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.Pausable>;
+    deployContract(
       name: "ReentrancyGuard",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -396,6 +453,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.INodeRegistry>;
     deployContract(
+      name: "IOTT",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IOTT>;
+    deployContract(
       name: "IWorkspaceRegistry",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -411,6 +473,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MilestoneEscrow>;
     deployContract(
+      name: "MockUSDC",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockUSDC>;
+    deployContract(
       name: "NodeRegistry",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -420,6 +487,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.OTT>;
+    deployContract(
+      name: "OTTTreasury",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.OTTTreasury>;
     deployContract(
       name: "TaskEscrow",
       args: any[],

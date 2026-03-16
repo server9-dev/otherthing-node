@@ -17,6 +17,8 @@ export const CONTRACT_ADDRESSES: Record<string, Record<string, string>> = {
     AgreementRegistry: '0xf5AfcA509Ed426d336d9676746cF6EdE3A2e7367',
     IPRegistry: '0xBCDD635bE62Bd83Cb99fc331818828cF685e1450',
     MilestoneEscrow: '0xBD29Ed6B5C2cC8e7dfefD31D2aCf39b1C760b015',
+    OTTTreasury: '', // Set after deploy-treasury.ts
+    USDC: '', // Set after deploy-treasury.ts (MockUSDC address)
   },
   localhost: {
     OTT: '',
@@ -26,6 +28,8 @@ export const CONTRACT_ADDRESSES: Record<string, Record<string, string>> = {
     AgreementRegistry: '',
     IPRegistry: '',
     MilestoneEscrow: '',
+    OTTTreasury: '',
+    USDC: '',
   },
 };
 
@@ -192,6 +196,32 @@ export const MILESTONE_ESCROW_ABI = [
   'event MilestonePaymentReleased(bytes32 indexed taskId, uint256 milestoneIndex, address indexed worker, uint256 amount)',
   'event MilestoneDisputed(bytes32 indexed taskId, uint256 milestoneIndex)',
   'event TaskCancelled(bytes32 indexed taskId)',
+];
+
+export const TREASURY_ABI = [
+  'function buyOTT(uint256 usdcAmount)',
+  'function redeemOTT(uint256 ottAmount)',
+  'function depositFees(uint256 usdcAmount)',
+  'function getBackingPerOTT() view returns (uint256)',
+  'function getRedeemAmount(uint256 ottAmount) view returns (uint256)',
+  'function circulatingTreasuryOTT() view returns (uint256)',
+  'function redemptionFeeBps() view returns (uint256)',
+  'function setRedemptionFee(uint256 bps)',
+  'function pause()',
+  'function unpause()',
+  'event OTTBought(address indexed buyer, uint256 usdcAmount, uint256 ottAmount)',
+  'event OTTRedeemed(address indexed redeemer, uint256 ottAmount, uint256 usdcAmount)',
+  'event FeesDeposited(address indexed depositor, uint256 usdcAmount)',
+];
+
+export const USDC_ABI = [
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+  'function decimals() view returns (uint8)',
+  'function balanceOf(address) view returns (uint256)',
+  'function approve(address spender, uint256 amount) returns (bool)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function transfer(address to, uint256 amount) returns (bool)',
 ];
 
 // Milestone status enum

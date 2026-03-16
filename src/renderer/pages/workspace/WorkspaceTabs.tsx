@@ -135,7 +135,12 @@ export function WorkspaceTabs() {
       </div>
 
       {/* Tab Content */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div style={{
+        flex: 1, minHeight: 0,
+        overflow: (activeTab === 'whiteboard' || activeTab === 'code') ? 'hidden' : 'auto',
+        display: (activeTab === 'whiteboard' || activeTab === 'code') ? 'flex' : undefined,
+        flexDirection: (activeTab === 'whiteboard' || activeTab === 'code') ? 'column' : undefined,
+      }}>
         {activeTab === 'overview' && (
           <OverviewTab
             workspace={workspace} workspaceId={workspaceId!}

@@ -188,12 +188,19 @@ export class ApiServer {
 
       this.wss = new WebSocketServer({ server: this.server, path: '/ws/agents' });
 
+      // Track call participants: workspaceId -> Set<{ ws, peerId, displayName }>
+      const callParticipants: Map<string, Set<{ ws: WebSocket; peerId: string; displayName: string }>> = new Map();
+
       this.wss.on('connection', (ws) => {
         console.log('[ApiServer] WebSocket client connected');
+        let wsPeerId: string | null = null;
+        let wsWorkspaceId: string | null = null;
 
         ws.on('message', (data) => {
           try {
             const msg = JSON.parse(data.toString());
+
+            // Existing: workspace subscription
             if (msg.type === 'subscribe' && msg.workspaceId) {
               if (!this.agentsWsClients.has(msg.workspaceId)) {
                 this.agentsWsClients.set(msg.workspaceId, new Set());
@@ -201,14 +208,80 @@ export class ApiServer {
               this.agentsWsClients.get(msg.workspaceId)!.add(ws);
               console.log(`[ApiServer] Client subscribed to workspace ${msg.workspaceId}`);
             }
+
+            // Voice/Video signaling: join call
+            if (msg.type === 'call-join' && msg.workspaceId && msg.peerId) {
+              wsWorkspaceId = msg.workspaceId;
+              wsPeerId = msg.peerId;
+              if (!callParticipants.has(msg.workspaceId)) {
+                callParticipants.set(msg.workspaceId, new Set());
+              }
+              const participants = callParticipants.get(msg.workspaceId)!;
+              // Send existing participants to the new joiner
+              const existing = Array.from(participants).map(p => ({ peerId: p.peerId, displayName: p.displayName }));
+              ws.send(JSON.stringify({ type: 'call-peers', peers: existing }));
+              // Notify existing participants about the new joiner
+              for (const p of participants) {
+                if (p.ws.readyState === WebSocket.OPEN) {
+                  p.ws.send(JSON.stringify({ type: 'call-peer-joined', peerId: msg.peerId, displayName: msg.displayName || 'Unknown' }));
+                }
+              }
+              participants.add({ ws, peerId: msg.peerId, displayName: msg.displayName || 'Unknown' });
+              console.log(`[ApiServer] ${msg.displayName || msg.peerId} joined call in workspace ${msg.workspaceId} (${participants.size} participants)`);
+            }
+
+            // Voice/Video signaling: leave call
+            if (msg.type === 'call-leave' && msg.workspaceId && msg.peerId) {
+              const participants = callParticipants.get(msg.workspaceId);
+              if (participants) {
+                for (const p of participants) {
+                  if (p.peerId === msg.peerId) { participants.delete(p); break; }
+                }
+                for (const p of participants) {
+                  if (p.ws.readyState === WebSocket.OPEN) {
+                    p.ws.send(JSON.stringify({ type: 'call-peer-left', peerId: msg.peerId }));
+                  }
+                }
+                if (participants.size === 0) callParticipants.delete(msg.workspaceId);
+              }
+            }
+
+            // WebRTC signaling: relay SDP offer/answer and ICE candidates to target peer
+            if ((msg.type === 'sdp-offer' || msg.type === 'sdp-answer' || msg.type === 'ice-candidate') && msg.workspaceId && msg.targetPeerId) {
+              const participants = callParticipants.get(msg.workspaceId);
+              if (participants) {
+                for (const p of participants) {
+                  if (p.peerId === msg.targetPeerId && p.ws.readyState === WebSocket.OPEN) {
+                    p.ws.send(JSON.stringify({ ...msg, fromPeerId: msg.peerId }));
+                    break;
+                  }
+                }
+              }
+            }
           } catch (err) {
             console.error('[ApiServer] Invalid WebSocket message:', err);
           }
         });
 
         ws.on('close', () => {
+          // Clean up agent subscriptions
           for (const clients of this.agentsWsClients.values()) {
             clients.delete(ws);
+          }
+          // Clean up call participant
+          if (wsWorkspaceId && wsPeerId) {
+            const participants = callParticipants.get(wsWorkspaceId);
+            if (participants) {
+              for (const p of participants) {
+                if (p.peerId === wsPeerId) { participants.delete(p); break; }
+              }
+              for (const p of participants) {
+                if (p.ws.readyState === WebSocket.OPEN) {
+                  p.ws.send(JSON.stringify({ type: 'call-peer-left', peerId: wsPeerId }));
+                }
+              }
+              if (participants.size === 0) callParticipants.delete(wsWorkspaceId);
+            }
           }
         });
       });

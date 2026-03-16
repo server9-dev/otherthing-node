@@ -13,6 +13,8 @@ const CONTRACT_ADDRESSES: Record<string, Record<string, string>> = {
     TaskEscrow: '0x246127F9743AC938baB7fc221546a785C880ad86',
     WorkspaceRegistry: '0x8433285448DB684b9a37b4bc97DBDcd72e148DCa',
     MilestoneEscrow: '0xBD29Ed6B5C2cC8e7dfefD31D2aCf39b1C760b015',
+    OTTTreasury: '', // Set after deploy-treasury.ts
+    USDC: '', // Set after deploy-treasury.ts
   },
   localhost: {
     OTT: '',
@@ -20,6 +22,8 @@ const CONTRACT_ADDRESSES: Record<string, Record<string, string>> = {
     TaskEscrow: '',
     WorkspaceRegistry: '',
     MilestoneEscrow: '',
+    OTTTreasury: '',
+    USDC: '',
   },
 };
 
@@ -74,6 +78,25 @@ const MILESTONE_ESCROW_ABI = [
   'function platformFeePercent() view returns (uint256)',
   'event TaskCreated(bytes32 indexed taskId, address indexed creator, bytes32 indexed workspaceId, uint256 totalAmount)',
   'event WorkerAssigned(bytes32 indexed taskId, address indexed worker)',
+];
+
+const TREASURY_ABI = [
+  'function buyOTT(uint256 usdcAmount)',
+  'function redeemOTT(uint256 ottAmount)',
+  'function depositFees(uint256 usdcAmount)',
+  'function getBackingPerOTT() view returns (uint256)',
+  'function getRedeemAmount(uint256 ottAmount) view returns (uint256)',
+  'function circulatingTreasuryOTT() view returns (uint256)',
+  'function redemptionFeeBps() view returns (uint256)',
+  'event OTTBought(address indexed buyer, uint256 usdcAmount, uint256 ottAmount)',
+  'event OTTRedeemed(address indexed redeemer, uint256 ottAmount, uint256 usdcAmount)',
+];
+
+const USDC_ABI = [
+  'function balanceOf(address) view returns (uint256)',
+  'function approve(address spender, uint256 amount) returns (bool)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function decimals() view returns (uint8)',
 ];
 
 // Workspace member roles
@@ -197,6 +220,17 @@ interface Web3ContextType {
   setWorkspaceInviteCode: (workspaceId: string, inviteCode: string) => Promise<void>;
   fetchPublicWorkspaces: () => Promise<void>;
 
+  // Treasury state
+  usdcBalance: string | null;
+  backingPerOTT: string | null;
+  treasuryContract: ethers.Contract | null;
+  usdcContract: ethers.Contract | null;
+
+  // Treasury actions
+  buyOTT: (usdcAmount: string) => Promise<void>;
+  redeemOTT: (ottAmount: string) => Promise<void>;
+  refreshTreasuryInfo: () => Promise<void>;
+
   // Errors
   error: string | null;
   clearError: () => void;
@@ -233,6 +267,10 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const [myWorkspaces, setMyWorkspaces] = useState<OnChainWorkspace[]>([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
   const [publicWorkspaces, setPublicWorkspaces] = useState<OnChainWorkspace[]>([]);
+  const [treasuryContract, setTreasuryContract] = useState<ethers.Contract | null>(null);
+  const [usdcContract, setUsdcContract] = useState<ethers.Contract | null>(null);
+  const [usdcBalance, setUsdcBalance] = useState<string | null>(null);
+  const [backingPerOTT, setBackingPerOTT] = useState<string | null>(null);
 
   const getNetworkKey = (chainId: number): string => {
     if (chainId === 11155111) return 'sepolia';
@@ -288,6 +326,20 @@ export function Web3Provider({ children }: { children: ReactNode }) {
 
       if (addresses.MilestoneEscrow) {
         setMilestoneEscrowContract(new ethers.Contract(addresses.MilestoneEscrow, MILESTONE_ESCROW_ABI, jsonRpcSigner));
+      }
+
+      if (addresses.OTTTreasury) {
+        setTreasuryContract(new ethers.Contract(addresses.OTTTreasury, TREASURY_ABI, jsonRpcSigner));
+      }
+      if (addresses.USDC) {
+        const usdc = new ethers.Contract(addresses.USDC, USDC_ABI, jsonRpcSigner);
+        setUsdcContract(usdc);
+        try {
+          const usdcBal = await usdc.balanceOf(addr);
+          setUsdcBalance(ethers.formatUnits(usdcBal, 6));
+        } catch (err) {
+          console.error('Failed to load USDC balance:', err);
+        }
       }
 
       // Get ETH balance
@@ -397,6 +449,10 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     setNodeRegistryContract(null);
     setWorkspaceRegistryContract(null);
     setMilestoneEscrowContract(null);
+    setTreasuryContract(null);
+    setUsdcContract(null);
+    setUsdcBalance(null);
+    setBackingPerOTT(null);
     setMyNodes([]);
     setMyWorkspaces([]);
     setPublicWorkspaces([]);
@@ -466,6 +522,19 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       }
       if (addresses.MilestoneEscrow) {
         setMilestoneEscrowContract(new ethers.Contract(addresses.MilestoneEscrow, MILESTONE_ESCROW_ABI, connectedWallet));
+      }
+      if (addresses.OTTTreasury) {
+        setTreasuryContract(new ethers.Contract(addresses.OTTTreasury, TREASURY_ABI, connectedWallet));
+      }
+      if (addresses.USDC) {
+        const usdc = new ethers.Contract(addresses.USDC, USDC_ABI, connectedWallet);
+        setUsdcContract(usdc);
+        try {
+          const usdcBal = await usdc.balanceOf(addr);
+          setUsdcBalance(ethers.formatUnits(usdcBal, 6));
+        } catch (err) {
+          console.error('Failed to load USDC balance:', err);
+        }
       }
 
       // Get ETH balance (will be 0 for new wallet)
@@ -538,6 +607,19 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       if (addresses.MilestoneEscrow) {
         setMilestoneEscrowContract(new ethers.Contract(addresses.MilestoneEscrow, MILESTONE_ESCROW_ABI, wallet));
       }
+      if (addresses.OTTTreasury) {
+        setTreasuryContract(new ethers.Contract(addresses.OTTTreasury, TREASURY_ABI, wallet));
+      }
+      if (addresses.USDC) {
+        const usdc = new ethers.Contract(addresses.USDC, USDC_ABI, wallet);
+        setUsdcContract(usdc);
+        try {
+          const usdcBal = await usdc.balanceOf(addr);
+          setUsdcBalance(ethers.formatUnits(usdcBal, 6));
+        } catch (err) {
+          console.error('Failed to load USDC balance:', err);
+        }
+      }
 
       // Get ETH balance
       const ethBalance = await rpcProvider.getBalance(addr);
@@ -579,6 +661,15 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       if (ottContract) {
         const ott = await ottContract.balanceOf(address);
         setOttBalance(formatOtt(ott));
+      }
+
+      if (usdcContract) {
+        try {
+          const usdcBal = await usdcContract.balanceOf(address);
+          setUsdcBalance(ethers.formatUnits(usdcBal, 6));
+        } catch (err) {
+          console.error('Failed to load USDC balance:', err);
+        }
       }
     } catch (err) {
       console.error('Failed to refresh balances:', err);
@@ -769,6 +860,61 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     await tx.wait();
   };
 
+  // ============ Treasury Functions ============
+
+  const refreshTreasuryInfo = async () => {
+    if (!treasuryContract) return;
+    try {
+      const circulating = await treasuryContract.circulatingTreasuryOTT();
+      if (circulating > 0n) {
+        const backing = await treasuryContract.getBackingPerOTT();
+        setBackingPerOTT(ethers.formatEther(backing));
+      } else {
+        setBackingPerOTT('0');
+      }
+    } catch (err) {
+      console.error('Failed to refresh treasury info:', err);
+    }
+  };
+
+  const buyOTT = async (usdcAmount: string): Promise<void> => {
+    if (!treasuryContract || !usdcContract) throw new Error('Treasury contracts not initialized');
+
+    const networkKey = getNetworkKey(chainId || 0);
+    const addresses = CONTRACT_ADDRESSES[networkKey];
+    const usdcWei = ethers.parseUnits(usdcAmount, 6);
+
+    // Approve USDC spend
+    const approveTx = await usdcContract.approve(addresses.OTTTreasury, usdcWei);
+    await approveTx.wait();
+
+    // Buy OTT
+    const tx = await treasuryContract.buyOTT(usdcWei);
+    await tx.wait();
+
+    await refreshBalances();
+    await refreshTreasuryInfo();
+  };
+
+  const redeemOTT = async (ottAmount: string): Promise<void> => {
+    if (!treasuryContract || !ottContract) throw new Error('Treasury contracts not initialized');
+
+    const networkKey = getNetworkKey(chainId || 0);
+    const addresses = CONTRACT_ADDRESSES[networkKey];
+    const ottWei = parseOtt(ottAmount);
+
+    // Approve OTT for burning
+    const approveTx = await ottContract.approve(addresses.OTTTreasury, ottWei);
+    await approveTx.wait();
+
+    // Redeem
+    const tx = await treasuryContract.redeemOTT(ottWei);
+    await tx.wait();
+
+    await refreshBalances();
+    await refreshTreasuryInfo();
+  };
+
   // ============ Workspace Functions ============
 
   // Refresh user's workspaces from chain
@@ -916,8 +1062,11 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       if (workspaceRegistryContract) {
         refreshWorkspaces();
       }
+      if (treasuryContract) {
+        refreshTreasuryInfo();
+      }
     }
-  }, [connected, address, contractsReady, workspaceRegistryContract]);
+  }, [connected, address, contractsReady, workspaceRegistryContract, treasuryContract]);
 
   // Try to set contract addresses from API on mount
   useEffect(() => {
@@ -984,6 +1133,14 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       getWorkspaceMembers,
       setWorkspaceInviteCode,
       fetchPublicWorkspaces,
+      // Treasury
+      usdcBalance,
+      backingPerOTT,
+      treasuryContract,
+      usdcContract,
+      buyOTT,
+      redeemOTT,
+      refreshTreasuryInfo,
       error,
       clearError,
       isConnecting,

@@ -4,4 +4,5 @@
 export { IAgreementRegistry__factory } from "./IAgreementRegistry__factory";
 export { IIPRegistry__factory } from "./IIPRegistry__factory";
 export { INodeRegistry__factory } from "./INodeRegistry__factory";
+export { IOTT__factory } from "./IOTT__factory";
 export { IWorkspaceRegistry__factory } from "./IWorkspaceRegistry__factory";
