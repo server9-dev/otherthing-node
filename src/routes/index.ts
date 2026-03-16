@@ -25,6 +25,13 @@ import { registerAgreementRoutes } from './agreements';
 import { registerMilestoneRoutes } from './milestones';
 import { registerIPRoutes } from './ip';
 import { registerTreasuryRoutes } from './treasury';
+import { registerExportRoutes } from './exports';
+import { registerSchedulerRoutes } from './scheduler';
+import { registerTranscriptionRoutes } from './transcription';
+import { registerDigestRoutes } from './digest';
+import { registerDisputeRoutes } from './disputes';
+import { registerHealthReportRoutes } from './health-reports';
+import { registerSandboxPreviewRoutes } from './sandbox-preview';
 
 export function registerAllRoutes(deps: RouteDependencies): void {
   // Health Check (stays in api-server.ts or here)
@@ -53,6 +60,13 @@ export function registerAllRoutes(deps: RouteDependencies): void {
   registerMilestoneRoutes(deps);
   registerIPRoutes(deps);
   registerTreasuryRoutes(deps);
+  registerExportRoutes(deps);
+  registerSchedulerRoutes(deps);
+  registerTranscriptionRoutes(deps);
+  registerDigestRoutes(deps);
+  registerDisputeRoutes(deps);
+  registerHealthReportRoutes(deps);
+  registerSandboxPreviewRoutes(deps);
 }
 
 export type { RouteDependencies } from './types';

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle, Clock, Coins, FileText, Shield,
   Upload, AlertCircle, UserCheck, XCircle, Scale, Award,
-  ChevronDown, ChevronUp, ExternalLink
+  ChevronDown, ChevronUp, ExternalLink, Bot, Loader
 } from 'lucide-react';
 import { CyberButton } from '../components';
 import { useWeb3 } from '../context/Web3Context';
@@ -72,6 +72,8 @@ export function TaskDetailPage() {
   const [licenseCid, setLicenseCid] = useState('');
   const [licenseType, setLicenseType] = useState(0);
   const [hasIP, setHasIP] = useState(false);
+  const [disputeAnalyses, setDisputeAnalyses] = useState<Map<number, any>>(new Map());
+  const [analyzingMilestone, setAnalyzingMilestone] = useState<number | null>(null);
 
   const loadTask = useCallback(async () => {
     if (!taskId) return;
@@ -122,6 +124,31 @@ export function TaskDetailPage() {
   }, [taskId]);
 
   useEffect(() => { loadTask(); }, [loadTask]);
+
+  const analyzeDispute = async (milestoneIndex: number) => {
+    if (!task) return;
+    setAnalyzingMilestone(milestoneIndex);
+    try {
+      const m = milestones[milestoneIndex];
+      const res = await fetch(`${API_BASE}/milestone-tasks/${taskId}/milestones/${milestoneIndex}/analyze-dispute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer local-token' },
+        body: JSON.stringify({
+          workspaceId: task.workspaceId,
+          milestoneDescription: m.description,
+          milestoneAmount: m.amount,
+          workCid: m.workCid,
+          taskDescription: task.descriptionCid,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDisputeAnalyses(prev => new Map(prev).set(milestoneIndex, data.analysis));
+      }
+    } catch {} finally {
+      setAnalyzingMilestone(null);
+    }
+  };
 
   // Load agreements for the workspace
   useEffect(() => {
@@ -515,8 +542,56 @@ export function TaskDetailPage() {
                   </div>
                 )}
                 {m.status === 4 && (
-                  <div style={{ fontSize: '0.8rem', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <AlertCircle size={12} /> Under dispute
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem' }}>
+                      <AlertCircle size={12} /> Under dispute
+                    </div>
+
+                    {/* AI Analysis Section */}
+                    {disputeAnalyses.has(i) ? (
+                      <div style={{
+                        background: 'var(--bg-surface)', borderRadius: 'var(--radius-md)',
+                        border: '1px solid rgba(155,89,182,0.3)', padding: '0.75rem', marginTop: '0.5rem',
+                      }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--secondary)', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <Bot size={12} /> AI Analysis
+                          <span style={{
+                            marginLeft: '0.5rem', padding: '1px 8px', borderRadius: 10, fontSize: '0.65rem',
+                            background: disputeAnalyses.get(i)?.recommendation === 'release' ? 'rgba(0,255,136,0.15)' :
+                              disputeAnalyses.get(i)?.recommendation === 'deny' ? 'rgba(255,0,128,0.15)' : 'rgba(155,89,182,0.15)',
+                            color: disputeAnalyses.get(i)?.recommendation === 'release' ? '#00FF88' :
+                              disputeAnalyses.get(i)?.recommendation === 'deny' ? 'var(--accent)' : 'var(--secondary)',
+                          }}>
+                            {disputeAnalyses.get(i)?.recommendation?.toUpperCase()}
+                          </span>
+                          <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                            Confidence: {((disputeAnalyses.get(i)?.confidence || 0) * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '0.3rem' }}>
+                          {disputeAnalyses.get(i)?.reasoning}
+                        </div>
+                        {disputeAnalyses.get(i)?.evidence?.length > 0 && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            {disputeAnalyses.get(i).evidence.map((e: string, j: number) => (
+                              <div key={j} style={{ padding: '0.1rem 0 0.1rem 0.75rem', borderLeft: '2px solid var(--border-subtle)' }}>{e}</div>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '0.4rem', fontStyle: 'italic' }}>
+                          Advisory only — does not execute on-chain actions
+                        </div>
+                      </div>
+                    ) : (
+                      <CyberButton
+                        variant="secondary" icon={analyzingMilestone === i ? Loader : Bot}
+                        onClick={() => analyzeDispute(i)}
+                        loading={analyzingMilestone === i}
+                        style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+                      >
+                        {analyzingMilestone === i ? 'Analyzing...' : 'AI Analysis'}
+                      </CyberButton>
+                    )}
                   </div>
                 )}
               </div>

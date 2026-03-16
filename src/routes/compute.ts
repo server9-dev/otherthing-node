@@ -10,6 +10,9 @@ import { cloudGPUProvider } from '../services/cloud-gpu-provider';
 import { HardwareDetector } from '../hardware';
 import { zlayerService } from '../services/zlayer-service';
 import type { RouteDependencies } from './types';
+import { ipfsExportService } from '../services/ipfs-export-service';
+import { healthReportService } from '../services/health-report-service';
+import { setWorkspaceToolRefs } from '../services/workspace-tools';
 
 export function registerComputeRoutes(deps: RouteDependencies): void {
   const { app, localAuth } = deps;
@@ -187,6 +190,11 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
 
   const chatMessages: Map<string, any[]> = new Map();
 
+  // Expose refs for workspace tools and health reports
+  // (tasksStore is in tasks.ts, so we create a shared ref here for chat)
+  setWorkspaceToolRefs(new Map(), chatMessages, deps.workspaceManager);
+  healthReportService.setStoreRefs(new Map(), chatMessages);
+
   app.get('/api/v1/workspaces/:id/chat', localAuth, (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const limit = parseInt(req.query.limit as string) || 50;
@@ -218,6 +226,15 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     }
     const msgs = chatMessages.get(workspaceId)!;
     msgs.push(msg);
+
+    // Auto-export to IPFS every 100 messages
+    if (msgs.length > 0 && msgs.length % 100 === 0) {
+      ipfsExportService.exportContent(workspaceId, 'chat', msgs.slice(-100), {
+        messageCount: 100,
+        autoExport: true,
+      }).catch(() => {});
+    }
+
     // Keep last 500 messages per workspace
     if (msgs.length > 500) msgs.splice(0, msgs.length - 500);
 
@@ -268,10 +285,15 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
       '--bind-addr', `127.0.0.1:${port}`,
       '--disable-telemetry',
       '--disable-getting-started-override',
+      '--disable-workspace-trust',
       folder,
     ], {
       stdio: 'pipe',
-      env: { ...process.env },
+      env: {
+        ...process.env,
+        // Disable built-in extensions that depend on Git Base (not bundled in code-server)
+        CS_DISABLE_GETTING_STARTED_OVERRIDE: '1',
+      },
     });
 
     proc.on('error', (err) => {

@@ -4,6 +4,7 @@
 
 import { Request, Response } from 'express';
 import type { RouteDependencies } from './types';
+import { handoffService } from '../services/handoff-service';
 
 export function registerOllamaRoutes(deps: RouteDependencies): void {
   const { app } = deps;
@@ -92,10 +93,28 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
       return;
     }
 
-    const { model, messages, temperature, max_tokens } = req.body;
+    const { model, messages, temperature, max_tokens, workspaceId } = req.body;
     if (!model || !messages) {
       res.status(400).json({ error: 'model and messages are required' });
       return;
+    }
+
+    // Inject handoff doc as context when workspace is specified
+    if (workspaceId) {
+      const handoffContent = handoffService.getHandoffContent(workspaceId);
+      if (handoffContent) {
+        const contextMsg = {
+          role: 'system',
+          content: `[Workspace Context — Living Handoff Document]\n${handoffContent}`,
+        };
+        // Insert after existing system messages
+        const firstNonSystem = messages.findIndex((m: any) => m.role !== 'system');
+        if (firstNonSystem > 0) {
+          messages.splice(firstNonSystem, 0, contextMsg);
+        } else {
+          messages.unshift(contextMsg);
+        }
+      }
     }
 
     // Ensure Ollama is running

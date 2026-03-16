@@ -20,6 +20,13 @@ import { adapterManager } from './adapters/adapter-manager';
 import { appwriteService } from './services/appwrite-service';
 import { registerAllRoutes } from './routes';
 import { chainSyncService } from './services/chain-sync';
+import { ipfsExportService } from './services/ipfs-export-service';
+import { schedulerService } from './services/scheduler-service';
+import { transcriptionService } from './services/transcription-service';
+import { digestService } from './services/digest-service';
+import { handoffService } from './services/handoff-service';
+import { disputeService } from './services/dispute-service';
+import { healthReportService } from './services/health-report-service';
 import type { AgentExecutionLocal, OnChainNodeRecord, WorkspaceNodeRecord, ManagerRefs } from './routes/types';
 
 const PORT = 8080;
@@ -75,6 +82,18 @@ export class ApiServer {
     this.managerRefs.sandboxManager = sandbox;
     this.managerRefs.ipfsManager = ipfs;
     agentService.setManagers(ollama, sandbox);
+
+    // Wire up AI services
+    ipfsExportService.setIPFSManager(ipfs);
+    transcriptionService.setOllamaManager(ollama);
+    digestService.setOllamaManager(ollama);
+    handoffService.setOllamaManager(ollama);
+    disputeService.setOllamaManager(ollama);
+    healthReportService.setOllamaManager(ollama);
+
+    // Register scheduled jobs
+    digestService.registerScheduledJob();
+    healthReportService.registerScheduledJob();
   }
 
   private setupMiddleware(): void {

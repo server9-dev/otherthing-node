@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Bot, User, Loader, ChevronDown, Sparkles, Users, MessageSquare, Phone, PhoneOff, Mic, MicOff, Video, VideoOff } from 'lucide-react';
+import { Send, Bot, User, Loader, ChevronDown, Sparkles, Users, MessageSquare, Phone, PhoneOff, Mic, MicOff, Video, VideoOff, FileText, Zap } from 'lucide-react';
 import type { OnChainWorkspace } from '../../context/Web3Context';
 import { useWeb3 } from '../../context/Web3Context';
 import { useVoiceVideo, Participant } from '../../hooks/useVoiceVideo';
+import { useTranscription } from '../../hooks/useTranscription';
 
 const API_BASE = 'http://localhost:8080/api/v1';
 
@@ -44,11 +45,22 @@ export function ChatTab({ workspace, workspaceId }: Props) {
   const [chatMode, setChatMode] = useState<ChatMode>('ai');
   const displayName = localStorage.getItem('ott-display-name') || '';
 
+  const peerId = `local-${address?.slice(0, 8) || 'anon'}`;
   const {
     inCall, participants: callParticipants, localStream,
     audioEnabled, videoEnabled,
     joinCall, leaveCall, toggleAudio, toggleVideo,
   } = useVoiceVideo({ workspaceId, displayName: displayName || address?.slice(0, 8) || 'Anonymous' });
+
+  const {
+    transcribing, segments: transcriptionSegments, start: startTranscription, stop: stopTranscription,
+  } = useTranscription({
+    workspaceId,
+    localStream,
+    localPeerId: peerId,
+    localDisplayName: displayName || 'You',
+    participants: callParticipants,
+  });
 
   // Team chat state
   const [teamMessages, setTeamMessages] = useState<TeamMessage[]>([]);
@@ -162,7 +174,7 @@ export function ChatTab({ workspace, workspaceId }: Props) {
       const response = await fetch(`${API_BASE}/ollama/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: selectedModel, messages: ollamaMessages }),
+        body: JSON.stringify({ model: selectedModel, messages: ollamaMessages, workspaceId }),
         signal: controller.signal,
       });
 
@@ -309,6 +321,14 @@ export function ChatTab({ workspace, workspaceId }: Props) {
                   }}>
                     {audioEnabled ? <Mic size={14} /> : <MicOff size={14} />}
                   </button>
+                  <button onClick={() => transcribing ? stopTranscription() : startTranscription()} title={transcribing ? 'Stop transcription' : 'Start transcription'} style={{
+                    width: 30, height: 30, borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
+                    background: transcribing ? 'rgba(0,255,136,0.2)' : 'rgba(255,255,255,0.05)',
+                    color: transcribing ? '#00FF88' : 'var(--text-muted)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <FileText size={14} />
+                  </button>
                   <button onClick={toggleVideo} title={videoEnabled ? 'Turn off camera' : 'Turn on camera'} style={{
                     width: 30, height: 30, borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
                     background: videoEnabled ? 'rgba(0,212,255,0.15)' : 'rgba(255,255,255,0.05)',
@@ -430,6 +450,23 @@ export function ChatTab({ workspace, workspaceId }: Props) {
                   ref={el => { if (el && p.stream) el.srcObject = p.stream; }}
                   style={{ display: 'none' }}
                 />
+              ))}
+            </div>
+          )}
+
+          {/* Live Transcription Segments */}
+          {transcribing && transcriptionSegments.length > 0 && (
+            <div style={{
+              padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-subtle)',
+              background: 'rgba(0,255,136,0.03)', maxHeight: 120, overflow: 'auto', flexShrink: 0,
+            }}>
+              <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#00FF88', marginBottom: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <FileText size={10} /> Live Transcription
+              </div>
+              {transcriptionSegments.slice(-5).map((seg, i) => (
+                <div key={i} style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.15rem' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{seg.speaker}:</span> {seg.text}
+                </div>
               ))}
             </div>
           )}

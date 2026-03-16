@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   LayoutDashboard, MessageSquare, CheckSquare, Code, FolderOpen,
-  Users, ArrowLeft, Globe, Lock, Wallet, PenTool
+  Users, ArrowLeft, Globe, Lock, Wallet, PenTool, FileText,
+  Activity, Monitor, Brain
 } from 'lucide-react';
 import { CyberButton } from '../../components';
 import { useWeb3, OnChainWorkspace } from '../../context/Web3Context';
@@ -13,6 +14,10 @@ import { CodeTab } from './CodeTab';
 import { FilesTab } from './FilesTab';
 import { MembersTab } from './MembersTab';
 import { WhiteboardTab } from './WhiteboardTab';
+import { DigestTab } from './DigestTab';
+import { HealthTab } from './HealthTab';
+import { SandboxPreviewTab } from './SandboxPreviewTab';
+import { OpenWebUITab } from './OpenWebUITab';
 
 const API_BASE = 'http://localhost:8080';
 
@@ -23,6 +28,10 @@ const TABS = [
   { id: 'code', label: 'Code', icon: Code },
   { id: 'files', label: 'Files', icon: FolderOpen },
   { id: 'whiteboard', label: 'Whiteboard', icon: PenTool },
+  { id: 'digest', label: 'Digest', icon: FileText },
+  { id: 'health', label: 'Health', icon: Activity },
+  { id: 'preview', label: 'Preview', icon: Monitor },
+  { id: 'openwebui', label: 'AI Studio', icon: Brain },
   { id: 'members', label: 'Members', icon: Users },
 ];
 
@@ -137,9 +146,9 @@ export function WorkspaceTabs() {
       {/* Tab Content */}
       <div style={{
         flex: 1, minHeight: 0,
-        overflow: (activeTab === 'whiteboard' || activeTab === 'code') ? 'hidden' : 'auto',
-        display: (activeTab === 'whiteboard' || activeTab === 'code') ? 'flex' : undefined,
-        flexDirection: (activeTab === 'whiteboard' || activeTab === 'code') ? 'column' : undefined,
+        overflow: (['whiteboard', 'code', 'preview', 'openwebui'].includes(activeTab)) ? 'hidden' : 'auto',
+        display: (['whiteboard', 'code', 'preview', 'openwebui'].includes(activeTab)) ? 'flex' : undefined,
+        flexDirection: (['whiteboard', 'code', 'preview', 'openwebui'].includes(activeTab)) ? 'column' : undefined,
       }}>
         {activeTab === 'overview' && (
           <OverviewTab
@@ -161,6 +170,18 @@ export function WorkspaceTabs() {
         )}
         {activeTab === 'whiteboard' && (
           <WhiteboardTab workspaceId={workspaceId!} />
+        )}
+        {activeTab === 'digest' && (
+          <DigestTab workspaceId={workspaceId!} />
+        )}
+        {activeTab === 'health' && (
+          <HealthTab workspaceId={workspaceId!} />
+        )}
+        {activeTab === 'preview' && (
+          <SandboxPreviewTab workspaceId={workspaceId!} />
+        )}
+        {activeTab === 'openwebui' && (
+          <OpenWebUITab />
         )}
         {activeTab === 'members' && (
           <MembersTab
