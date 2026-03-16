@@ -29,7 +29,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 interface Props { workspaceId: string; }
 
 export function TasksTab({ workspaceId }: Props) {
-  const { address, escrowTask, connected } = useWeb3();
+  const { address, escrowTask, assignWorkerOnChain, myNodes, connected } = useWeb3();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -65,6 +65,32 @@ export function TasksTab({ workspaceId }: Props) {
       setEscrowError(err.message || 'Escrow failed');
     } finally {
       setEscrowingId(null);
+    }
+  };
+
+  const [applyingId, setApplyingId] = useState<string | null>(null);
+
+  const handleApply = async (task: Task) => {
+    if (!address || !(task as any).onChainTaskId) return;
+    setApplyingId(task.id);
+    setEscrowError(null);
+    try {
+      // Use the worker's first registered node, or a placeholder
+      const nodeId = myNodes.length > 0 ? myNodes[0].nodeId : '0x' + '0'.repeat(64);
+
+      await assignWorkerOnChain((task as any).onChainTaskId, address, nodeId);
+
+      // Update local task
+      await fetch(`${API_BASE}/workspaces/${workspaceId}/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        body: JSON.stringify({ assignee: address, status: 'in_progress' }),
+      });
+      loadTasks();
+    } catch (err: any) {
+      setEscrowError(err.message || 'Failed to apply');
+    } finally {
+      setApplyingId(null);
     }
   };
 
@@ -274,10 +300,11 @@ export function TasksTab({ workspaceId }: Props) {
                                     <CyberButton
                                       variant="success"
                                       icon={UserCheck}
-                                      onClick={(e: any) => { e.stopPropagation(); /* TODO: apply flow */ }}
+                                      onClick={(e: any) => { e.stopPropagation(); handleApply(task); }}
+                                      loading={applyingId === task.id}
                                       style={{ width: '100%', fontSize: '0.7rem', padding: '0.3rem' }}
                                     >
-                                      Apply for this Task
+                                      Accept & Start Working
                                     </CyberButton>
                                   )}
                                   {(task as any).assignee && (
