@@ -13,6 +13,9 @@ import type { RouteDependencies } from './types';
 import { ipfsExportService } from '../services/ipfs-export-service';
 import { healthReportService } from '../services/health-report-service';
 import { setWorkspaceToolRefs } from '../services/workspace-tools';
+import { safetyService } from '../services/safety-service';
+import { auditService } from '../services/audit-service';
+import { banService } from '../services/ban-service';
 
 export function registerComputeRoutes(deps: RouteDependencies): void {
   const { app, localAuth } = deps;
@@ -212,13 +215,36 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
       return;
     }
 
+    const senderId = senderAddress || session.userId;
+
+    // Ban check
+    const banCheck = banService.isBanned(senderId, workspaceId);
+    if (banCheck.banned) {
+      res.status(403).json({ error: 'You are banned from this workspace', ban: banCheck.ban });
+      return;
+    }
+
+    // Pass 1: Instant keyword scan (<1ms)
+    const keywordResult = safetyService.scanKeywords(content.trim());
+    if (keywordResult) {
+      auditService.log({
+        workspaceId, contentType: 'chat', contentId: 'blocked-pre-save',
+        userId: senderId, action: 'blocked',
+        category: keywordResult.category, reason: keywordResult.reason, method: keywordResult.method,
+      });
+      banService.handleViolation(senderId, workspaceId, keywordResult.category || 'S4', keywordResult.reason);
+      res.status(422).json({ error: 'Content blocked', category: keywordResult.category, reason: keywordResult.reason });
+      return;
+    }
+
     const msg = {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       workspaceId,
-      sender: senderAddress || session.userId,
+      sender: senderId,
       senderName: displayName || session.username,
       content: content.trim(),
       timestamp: new Date().toISOString(),
+      moderation: null as any,
     };
 
     if (!chatMessages.has(workspaceId)) {
@@ -226,6 +252,26 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     }
     const msgs = chatMessages.get(workspaceId)!;
     msgs.push(msg);
+
+    // Pass 2: Async LlamaGuard scan (background — does not delay response)
+    safetyService.queueAsyncScan(msg.id, workspaceId, content.trim(), (result) => {
+      // Retroactively mark message as removed
+      msg.moderation = { violated: true, category: result.category, reason: result.reason };
+      msg.content = '[Content removed: policy violation]';
+      auditService.log({
+        workspaceId, contentType: 'chat', contentId: msg.id,
+        userId: senderId, action: 'removed',
+        category: result.category, reason: result.reason, method: result.method,
+      });
+      banService.handleViolation(senderId, workspaceId, result.category || 'S4', result.reason);
+    });
+
+    // Log allowed (for audit trail)
+    auditService.log({
+      workspaceId, contentType: 'chat', contentId: msg.id,
+      userId: senderId, action: 'allowed',
+      category: null, reason: '', method: 'keyword',
+    });
 
     // Auto-export to IPFS every 100 messages
     if (msgs.length > 0 && msgs.length % 100 === 0) {

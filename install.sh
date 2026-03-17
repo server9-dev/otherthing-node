@@ -143,6 +143,20 @@ ensure_ipfs() {
       info "Initializing IPFS repo..."
       ipfs init --profile=lowpower
     fi
+    # Increase file descriptor limit for IPFS (prevents crash on large uploads)
+    local current_ulimit
+    current_ulimit=$(ulimit -n 2>/dev/null || echo "0")
+    if [ "$current_ulimit" -lt 65536 ] 2>/dev/null; then
+      info "Increasing file descriptor limit for IPFS stability..."
+      local shell_rc=""
+      [ -f "$HOME/.bashrc" ] && shell_rc="$HOME/.bashrc"
+      [ -f "$HOME/.zshrc" ] && shell_rc="$HOME/.zshrc"
+      if [ -n "$shell_rc" ] && ! grep -q "ulimit -n 65536" "$shell_rc" 2>/dev/null; then
+        echo 'ulimit -n 65536 2>/dev/null' >> "$shell_rc"
+        info "Added ulimit -n 65536 to $shell_rc"
+      fi
+      ulimit -n 65536 2>/dev/null || true
+    fi
   else
     warn "IPFS install failed — install manually: https://docs.ipfs.tech/install/"
   fi
@@ -348,7 +362,8 @@ echo -e "${BOLD}${GREEN}╚═════════════════�
 echo -e "  ${BOLD}Start the app:${RESET}"
 echo -e "    cd $INSTALL_DIR && npm run dev\n"
 echo -e "  ${BOLD}Or launch from your app menu:${RESET} OtherThing Node\n"
-echo -e "  ${BOLD}Optional — pull more AI models:${RESET}"
-echo -e "    ollama pull llama3.2"
-echo -e "    ollama pull codellama\n"
+echo -e "  ${BOLD}Optional — pull AI models:${RESET}"
+echo -e "    ollama pull gemma3:4b       # fast, good for safety scanning"
+echo -e "    ollama pull qwen3:8b        # larger, better for digests/chat"
+echo -e "    ollama pull llama3.2-vision:11b  # image safety scanning\n"
 echo -e "  ${BOLD}Configure:${RESET} Edit $INSTALL_DIR/.env\n"

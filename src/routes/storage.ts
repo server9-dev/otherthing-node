@@ -5,6 +5,8 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import type { RouteDependencies } from './types';
+import { safetyService } from '../services/safety-service';
+import { auditService } from '../services/audit-service';
 
 // Storage Files storage (in-memory with content)
 const storageStore: Map<string, any[]> = new Map();
@@ -24,7 +26,7 @@ export function registerStorageRoutes(deps: RouteDependencies): void {
     res.json({ files });
   });
 
-  app.post('/api/v1/workspaces/:id/storage/upload', localAuth, (req: Request, res: Response) => {
+  app.post('/api/v1/workspaces/:id/storage/upload', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const session = (req as any).session;
     const { content, filename, mimeType } = req.body;
@@ -33,6 +35,41 @@ export function registerStorageRoutes(deps: RouteDependencies): void {
       res.status(400).json({ error: 'Content is required' });
       return;
     }
+
+    // Safety scan text-based files
+    const isText = !mimeType || mimeType.startsWith('text/') || mimeType === 'application/json';
+    if (isText && typeof content === 'string') {
+      const result = await safetyService.scanText(content);
+      if (!result.safe) {
+        auditService.log({
+          workspaceId, contentType: 'file', contentId: filename || 'upload',
+          userId: session.username, action: 'blocked',
+          category: result.category, reason: result.reason, method: result.method,
+        });
+        res.status(422).json({ error: 'File blocked: content policy violation', category: result.category, reason: result.reason });
+        return;
+      }
+    }
+
+    // Safety scan image descriptions
+    if (mimeType && mimeType.startsWith('image/')) {
+      const imageResult = await safetyService.scanImageDescription(`Uploaded image file: ${filename || 'unknown'}, type: ${mimeType}`);
+      if (!imageResult.safe) {
+        auditService.log({
+          workspaceId, contentType: 'file', contentId: filename || 'upload',
+          userId: session.username, action: 'blocked',
+          category: imageResult.category, reason: imageResult.reason, method: imageResult.method,
+        });
+        res.status(422).json({ error: 'File blocked: content policy violation', category: imageResult.category, reason: imageResult.reason });
+        return;
+      }
+    }
+
+    auditService.log({
+      workspaceId, contentType: 'file', contentId: filename || 'upload',
+      userId: session.username, action: 'allowed',
+      category: null, reason: '', method: 'scan',
+    });
 
     const cid = `Qm${uuidv4().replace(/-/g, '').slice(0, 44)}`;
     const file = {

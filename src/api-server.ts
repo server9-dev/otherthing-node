@@ -27,6 +27,7 @@ import { digestService } from './services/digest-service';
 import { handoffService } from './services/handoff-service';
 import { disputeService } from './services/dispute-service';
 import { healthReportService } from './services/health-report-service';
+import { safetyService } from './services/safety-service';
 import type { AgentExecutionLocal, OnChainNodeRecord, WorkspaceNodeRecord, ManagerRefs } from './routes/types';
 
 const PORT = 8080;
@@ -86,6 +87,7 @@ export class ApiServer {
     // Wire up AI services
     ipfsExportService.setIPFSManager(ipfs);
     transcriptionService.setOllamaManager(ollama);
+    safetyService.setOllamaManager(ollama);
     digestService.setOllamaManager(ollama);
     handoffService.setOllamaManager(ollama);
     disputeService.setOllamaManager(ollama);
