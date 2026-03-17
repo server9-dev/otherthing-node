@@ -79,7 +79,7 @@ class RemoteInferenceService {
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) return [];
-      const data = await res.json();
+      const data: any = await res.json();
       // Return a curated subset, not the full 200+ model list
       const preferred = ['google/gemma-3-4b-it:free', 'meta-llama/llama-3.1-8b-instruct:free', 'qwen/qwen3-8b:free'];
       return (data.data || [])
@@ -134,7 +134,7 @@ class RemoteInferenceService {
       throw new Error(`OpenRouter request failed (${res.status}): ${err}`);
     }
 
-    const data = await res.json();
+    const data: any = await res.json();
     const choice = data.choices?.[0];
 
     return {
