@@ -88,7 +88,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
   });
 
   // Streaming chat endpoint (SSE)
-  // Fallback chain: local Ollama → remote premium inference
+  // Local Ollama first, premium users fall back to hosted inference
   app.post('/api/v1/ollama/chat', async (req: Request, res: Response) => {
     const ollamaManager = deps.managers.ollamaManager;
     const { model, messages, temperature, max_tokens, workspaceId, wallet } = req.body;
@@ -114,42 +114,48 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
       }
     }
 
-    // Determine inference endpoint: local Ollama first, then remote premium
-    let endpoint: string | null = null;
-    let useRemote = false;
-
-    // Try local Ollama
+    // Try local Ollama first
+    let useLocal = false;
     if (ollamaManager) {
       const running = await ollamaManager.checkRunning();
-      if (running) {
-        endpoint = ollamaManager.getEndpoint();
-      }
+      if (running) useLocal = true;
     }
 
-    // Fallback to remote inference for premium users
-    if (!endpoint && remoteInferenceService.isConfigured()) {
+    // Premium fallback: hosted inference (no hardware needed)
+    if (!useLocal && remoteInferenceService.isConfigured()) {
       const isPremium = wallet ? premiumService.isPremium(wallet).active : false;
       if (isPremium) {
-        const healthy = await remoteInferenceService.checkHealth();
-        if (healthy) {
-          useRemote = true;
-          endpoint = remoteInferenceService.getEndpoint();
+        try {
+          const result = await remoteInferenceService.chat({
+            model,
+            messages,
+            temperature,
+            max_tokens,
+          });
+          // Send as single SSE event (non-streaming for remote)
+          res.setHeader('Content-Type', 'text/event-stream');
+          res.setHeader('Cache-Control', 'no-cache');
+          res.write(`data: ${JSON.stringify({ message: { content: result.content }, done: true, model: result.model })}\n\n`);
+          res.end();
+          return;
+        } catch (err: any) {
+          res.status(503).json({ error: err.message });
+          return;
         }
       }
     }
 
-    if (!endpoint) {
-      const hint = remoteInferenceService.isConfigured()
-        ? 'Ollama not running and no active premium subscription for remote inference.'
-        : 'Ollama is not running. Start Ollama or subscribe to premium for hosted AI.';
-      res.status(503).json({ error: hint });
+    if (!useLocal) {
+      res.status(503).json({ error: 'No AI available. Run Ollama locally or upgrade to Premium.' });
       return;
     }
 
-    if (!model && !useRemote) {
+    if (!model) {
       res.status(400).json({ error: 'model is required' });
       return;
     }
+
+    const endpoint = ollamaManager!.getEndpoint();
 
     // SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -159,22 +165,12 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
     const controller = new AbortController();
     req.on('close', () => controller.abort());
 
-    // Build headers — add auth for remote inference
-    const fetchHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (useRemote) {
-      const cfg = remoteInferenceService.getEndpoint();
-      // Auth header added by the fetch to the remote server
-      fetchHeaders['Authorization'] = `Bearer ${(req.body as any)._remoteKey || 'platform'}`;
-    }
-
-    const inferenceModel = model || (useRemote ? 'qwen3:8b' : 'gemma3:4b');
-
     try {
       const ollamaRes = await fetch(`${endpoint}/api/chat`, {
         method: 'POST',
-        headers: fetchHeaders,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: inferenceModel,
+          model,
           messages,
           stream: true,
           options: {

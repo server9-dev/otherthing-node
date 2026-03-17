@@ -98,14 +98,14 @@ export class ApiServer {
     digestService.registerScheduledJob();
     healthReportService.registerScheduledJob();
 
-    // Configure remote inference if env vars are set
-    if (process.env.REMOTE_INFERENCE_ENDPOINT && process.env.REMOTE_INFERENCE_KEY) {
+    // Configure remote inference via OpenRouter if API key is set
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
+    if (openRouterKey) {
       remoteInferenceService.configure({
-        endpoint: process.env.REMOTE_INFERENCE_ENDPOINT,
-        apiKey: process.env.REMOTE_INFERENCE_KEY,
-        model: process.env.REMOTE_INFERENCE_MODEL || 'qwen3:8b',
+        apiKey: openRouterKey,
+        model: process.env.OPENROUTER_MODEL || 'google/gemma-3-4b-it:free',
+        dailyLimit: parseInt(process.env.OPENROUTER_DAILY_LIMIT || '100'),
       });
-      console.log('[ApiServer] Remote inference configured');
     }
   }
 

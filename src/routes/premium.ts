@@ -62,14 +62,14 @@ export function registerPremiumRoutes(deps: RouteDependencies): void {
     });
   });
 
-  // Configure remote inference endpoint (admin/setup)
+  // Configure remote inference (admin/setup)
   app.post('/api/v1/inference/remote/configure', localAuth, (req: Request, res: Response) => {
-    const { endpoint, apiKey, model } = req.body;
-    if (!endpoint || !apiKey) {
-      res.status(400).json({ error: 'endpoint and apiKey required' });
+    const { apiKey, model, dailyLimit } = req.body;
+    if (!apiKey) {
+      res.status(400).json({ error: 'apiKey required' });
       return;
     }
-    remoteInferenceService.configure({ endpoint, apiKey, model });
-    res.json({ success: true, endpoint });
+    remoteInferenceService.configure({ apiKey, model, dailyLimit });
+    res.json({ success: true });
   });
 }

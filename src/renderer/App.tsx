@@ -11,6 +11,7 @@ import { Marketplace } from './pages/Marketplace';
 import { TasksPage } from './pages/Tasks';
 import { TaskDetailPage } from './pages/TaskDetail';
 import { Treasury } from './pages/Treasury';
+import { PlansPage } from './pages/PlansPage';
 import { ModuleProvider } from './context/ModuleContext';
 import { CredentialProvider } from './context/CredentialContext';
 import { Web3Provider } from './context/Web3Context';
@@ -127,6 +128,10 @@ function App() {
                   <Coins size={16} />
                   <span>Treasury</span>
                 </NavLink>
+                <NavLink to="/plans" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <CircleDollarSign size={16} />
+                  <span>Plans</span>
+                </NavLink>
                 <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                   <SettingsIcon size={16} />
                   <span>Settings</span>
@@ -176,6 +181,7 @@ function App() {
                 <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
                 <Route path="/marketplace" element={<Marketplace />} />
                 <Route path="/treasury" element={<Treasury />} />
+                <Route path="/plans" element={<PlansPage />} />
                 <Route path="/settings" element={<Settings />} />
               </Routes>
             </main>
