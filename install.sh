@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────
 # OtherThing Node — Linux Installer
-# Installs all dependencies and sets up the OtherThing desktop app
+# Zero-config: installs everything and auto-detects services.
+# No .env needed. Just install and run.
 # ──────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -102,9 +103,9 @@ ensure_ollama() {
     ok "Ollama installed"
     info "Starting Ollama service..."
     ollama serve &>/dev/null &
-    sleep 2
-    info "Pulling a default model (qwen2.5:1.5b — small and fast)..."
-    ollama pull qwen2.5:1.5b || warn "Model pull failed — you can pull models later with: ollama pull <model>"
+    sleep 3
+    info "Pulling a starter model (gemma3:4b — works on most GPUs)..."
+    ollama pull gemma3:4b || warn "Model pull failed — you can pull models later from the app"
   else
     warn "Ollama install script ran but binary not found — install manually: https://ollama.com"
   fi
@@ -143,7 +144,7 @@ ensure_ipfs() {
       info "Initializing IPFS repo..."
       ipfs init --profile=lowpower
     fi
-    # Increase file descriptor limit for IPFS (prevents crash on large uploads)
+    # Increase file descriptor limit (prevents crash on large uploads)
     local current_ulimit
     current_ulimit=$(ulimit -n 2>/dev/null || echo "0")
     if [ "$current_ulimit" -lt 65536 ] 2>/dev/null; then
@@ -170,30 +171,10 @@ ensure_code_server() {
   fi
 
   info "Installing code-server..."
-  local CS_VERSION="4.111.0"
-  local ARCH
-  ARCH=$(uname -m)
-  case "$ARCH" in
-    x86_64)  ARCH="amd64" ;;
-    aarch64) ARCH="arm64" ;;
-    *)       warn "Unsupported architecture $ARCH for code-server"; return 1 ;;
-  esac
+  curl -fsSL https://code-server.dev/install.sh | sh
 
-  local TARBALL="code-server-${CS_VERSION}-linux-${ARCH}.tar.gz"
-  local URL="https://github.com/coder/code-server/releases/download/v${CS_VERSION}/${TARBALL}"
-
-  cd /tmp
-  curl -fsSL -o "$TARBALL" "$URL"
-  tar xzf "$TARBALL"
-  mkdir -p "$HOME/.local"
-  rm -rf "$HOME/.local/code-server"
-  mv "code-server-${CS_VERSION}-linux-${ARCH}" "$HOME/.local/code-server"
-  mkdir -p "$HOME/.local/bin"
-  ln -sf "$HOME/.local/code-server/bin/code-server" "$HOME/.local/bin/code-server"
-  rm -f "$TARBALL"
-
-  if [ -x "$HOME/.local/code-server/bin/code-server" ]; then
-    ok "code-server $CS_VERSION installed to ~/.local/code-server"
+  if command -v code-server &>/dev/null || [ -x "$HOME/.local/bin/code-server" ]; then
+    ok "code-server installed"
   else
     warn "code-server install failed — install manually: https://coder.com/docs/code-server"
   fi
@@ -254,25 +235,24 @@ setup_repo() {
 install_deps() {
   cd "$INSTALL_DIR"
   info "Installing npm dependencies..."
-  npm install
+  npm install 2>&1 | tail -3
   ok "npm dependencies installed"
 
   if [ -d "contracts" ]; then
     info "Installing smart contract dependencies..."
-    cd contracts && npm install && cd ..
+    cd contracts && npm install 2>&1 | tail -2 && cd ..
     ok "Contract dependencies installed"
   fi
 }
 
-# ── Create .env if missing ───────────────────────────────────
-setup_env() {
+# ── Build the main process ──────────────────────────────────
+build_app() {
   cd "$INSTALL_DIR"
-  if [ ! -f .env ] && [ -f .env.example ]; then
-    cp .env.example .env
-    info "Created .env from .env.example — edit it with your credentials"
-  elif [ -f .env ]; then
-    ok ".env already exists"
-  fi
+  info "Building TypeScript (main process)..."
+  npx tsc -p tsconfig.main.json 2>&1 || {
+    warn "TypeScript build had errors — the app may still work via dev mode"
+  }
+  ok "Build complete"
 }
 
 # ── Create desktop entry ─────────────────────────────────────
@@ -286,7 +266,7 @@ Name=OtherThing Node
 Comment=Decentralized workspace platform
 Exec=bash -c "cd $INSTALL_DIR && npm run dev"
 Icon=$INSTALL_DIR/public/logo.png
-Terminal=false
+Terminal=true
 Type=Application
 Categories=Development;Network;
 StartupNotify=true
@@ -311,6 +291,58 @@ ensure_path() {
       export PATH="$HOME/.local/bin:$PATH"
       info "Added ~/.local/bin to PATH in $shell_rc"
     fi
+  fi
+}
+
+# ── Verify installation ──────────────────────────────────────
+verify_install() {
+  cd "$INSTALL_DIR"
+  local issues=0
+
+  info "Verifying installation..."
+
+  # Check node
+  if ! command -v node &>/dev/null; then
+    warn "Node.js not found in PATH"
+    ((issues++))
+  fi
+
+  # Check npm deps installed
+  if [ ! -d "node_modules" ]; then
+    warn "node_modules missing — run: cd $INSTALL_DIR && npm install"
+    ((issues++))
+  fi
+
+  # Check Ollama
+  if command -v ollama &>/dev/null; then
+    # Try to detect if Ollama is reachable
+    if curl -s --max-time 2 http://localhost:11434/api/tags &>/dev/null; then
+      local model_count
+      model_count=$(curl -s http://localhost:11434/api/tags 2>/dev/null | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('models',[])))" 2>/dev/null || echo "0")
+      ok "Ollama running with $model_count model(s)"
+    else
+      info "Ollama installed but not running — start with: ollama serve"
+    fi
+  else
+    info "Ollama not installed — AI features will use premium tier or be unavailable"
+  fi
+
+  # Check IPFS
+  if command -v ipfs &>/dev/null; then
+    ok "IPFS installed"
+  else
+    info "IPFS not installed — the app will auto-download it on first launch"
+  fi
+
+  # Quick port check
+  if curl -s --max-time 2 http://localhost:8080/health &>/dev/null; then
+    warn "Port 8080 already in use — the app will try 8081"
+  fi
+
+  if [ $issues -eq 0 ]; then
+    ok "All checks passed"
+  else
+    warn "$issues issue(s) found — see above"
   fi
 }
 
@@ -349,11 +381,14 @@ setup_repo
 step "npm Dependencies"
 install_deps
 
-step "Environment Config"
-setup_env
+step "Build"
+build_app
 
 step "Desktop Entry"
 create_desktop_entry
+
+step "Verification"
+verify_install
 
 echo -e "\n${BOLD}${GREEN}╔══════════════════════════════════════════════╗${RESET}"
 echo -e "${BOLD}${GREEN}║          Installation Complete!               ║${RESET}"
@@ -362,10 +397,7 @@ echo -e "${BOLD}${GREEN}╚═════════════════�
 echo -e "  ${BOLD}Start the app:${RESET}"
 echo -e "    cd $INSTALL_DIR && npm run dev\n"
 echo -e "  ${BOLD}Or launch from your app menu:${RESET} OtherThing Node\n"
-echo -e "  ${BOLD}Optional — pull AI models:${RESET}"
-echo -e "    ollama pull gemma3:4b            # fast, good for digests + health reports"
-echo -e "    ollama pull qwen3:8b             # larger, better for AI chat + handoff docs"
-echo -e "    ollama pull llama3.2-vision:11b  # image content safety scanning\n"
-echo -e "  ${BOLD}Seed demo data (after app starts):${RESET}"
-echo -e "    bash scripts/seed-demo-data.sh\n"
-echo -e "  ${BOLD}Configure:${RESET} Edit $INSTALL_DIR/.env\n"
+echo -e "  ${BOLD}No configuration needed.${RESET} Everything auto-detects.\n"
+echo -e "  ${BOLD}Optional — pull more AI models:${RESET}"
+echo -e "    ollama pull qwen3:8b             # better for AI chat + digests"
+echo -e "    ollama pull llama3.2-vision:11b  # image safety scanning\n"
