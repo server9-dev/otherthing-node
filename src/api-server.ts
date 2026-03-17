@@ -29,6 +29,7 @@ import { disputeService } from './services/dispute-service';
 import { healthReportService } from './services/health-report-service';
 import { safetyService } from './services/safety-service';
 import { remoteInferenceService } from './services/remote-inference';
+import { PLATFORM } from './platform-config';
 import type { AgentExecutionLocal, OnChainNodeRecord, WorkspaceNodeRecord, ManagerRefs } from './routes/types';
 
 const PORT = 8080;
@@ -98,15 +99,12 @@ export class ApiServer {
     digestService.registerScheduledJob();
     healthReportService.registerScheduledJob();
 
-    // Configure remote inference via OpenRouter if API key is set
-    const openRouterKey = process.env.OPENROUTER_API_KEY;
-    if (openRouterKey) {
-      remoteInferenceService.configure({
-        apiKey: openRouterKey,
-        model: process.env.OPENROUTER_MODEL || 'google/gemma-3-4b-it:free',
-        dailyLimit: parseInt(process.env.OPENROUTER_DAILY_LIMIT || '100'),
-      });
-    }
+    // Configure remote inference for premium tier
+    remoteInferenceService.configure({
+      apiKey: PLATFORM.inference.apiKey,
+      model: PLATFORM.inference.model,
+      dailyLimit: PLATFORM.inference.dailyLimit,
+    });
   }
 
   private setupMiddleware(): void {
@@ -185,19 +183,17 @@ export class ApiServer {
   start(): Promise<void> {
     return new Promise(async (resolve, reject) => {
       // Initialize Appwrite
-      if (process.env.APPWRITE_PROJECT_ID && process.env.APPWRITE_API_KEY) {
+      {
         try {
           appwriteService.init({
-            endpoint: process.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1',
-            projectId: process.env.APPWRITE_PROJECT_ID,
-            apiKey: process.env.APPWRITE_API_KEY,
+            endpoint: PLATFORM.appwrite.endpoint,
+            projectId: PLATFORM.appwrite.projectId,
+            apiKey: PLATFORM.appwrite.apiKey,
           });
           console.log('[ApiServer] Appwrite initialized');
         } catch (err) {
           console.error('[ApiServer] Failed to initialize Appwrite:', err);
         }
-      } else {
-        console.log('[ApiServer] Appwrite not configured (missing env vars)');
       }
 
       // Initialize MCP adapters
@@ -210,7 +206,7 @@ export class ApiServer {
 
       // Start chain sync (Phase 6)
       try {
-        await chainSyncService.start('https://ethereum-sepolia-rpc.publicnode.com', 'sepolia');
+        await chainSyncService.start(PLATFORM.chain.rpcUrl, PLATFORM.chain.network);
         console.log('[ApiServer] Chain sync started');
       } catch (err) {
         console.warn('[ApiServer] Chain sync failed to start:', err);

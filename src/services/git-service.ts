@@ -12,13 +12,11 @@ import { homedir } from 'os';
 import path from 'path';
 import { randomBytes, createHash } from 'crypto';
 
-// GitHub OAuth configuration
-// To enable GitHub OAuth:
-// 1. Create a GitHub OAuth App at https://github.com/settings/developers
-// 2. Set callback URL to: http://localhost:8080/auth/github/callback
-// 3. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables
-const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID || '';
-const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || '';
+import { PLATFORM } from '../platform-config';
+
+// GitHub OAuth — hardcoded platform credentials
+const GITHUB_CLIENT_ID = PLATFORM.github.clientId;
+const GITHUB_CLIENT_SECRET = PLATFORM.github.clientSecret;
 const GITHUB_REDIRECT_URI = 'http://localhost:8080/auth/github/callback';
 
 // Check if OAuth is configured

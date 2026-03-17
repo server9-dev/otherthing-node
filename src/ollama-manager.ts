@@ -128,21 +128,37 @@ export class OllamaManager extends EventEmitter {
   }
 
   /**
-   * Check if Ollama server is running
+   * Check if Ollama server is running.
+   * Auto-detects endpoint: checks OLLAMA_HOST env, then probes common
+   * hosts and ports so users don't need to configure anything.
    */
   async checkRunning(): Promise<boolean> {
-    // Try multiple endpoints (localhost, and common WSL2/Docker hosts)
-    const endpoints = [
-      'http://127.0.0.1:11434',
-      'http://localhost:11434',
-      'http://host.docker.internal:11434',
-    ];
+    const hosts = ['127.0.0.1', 'localhost', 'host.docker.internal'];
+    const ports = [11434, 11435, 11436]; // default + common alternates
 
-    for (const endpoint of endpoints) {
+    // If OLLAMA_HOST is set (by Ollama itself or user), try that first
+    const ollamaHost = process.env.OLLAMA_HOST;
+    const endpoints: string[] = [];
+
+    if (ollamaHost) {
+      endpoints.push(ollamaHost.replace(/\/$/, ''));
+    }
+
+    // Probe all host:port combos
+    for (const host of hosts) {
+      for (const port of ports) {
+        endpoints.push(`http://${host}:${port}`);
+      }
+    }
+
+    // Deduplicate
+    const unique = [...new Set(endpoints)];
+
+    for (const endpoint of unique) {
       try {
         const response = await fetch(`${endpoint}/api/tags`, {
           method: 'GET',
-          signal: AbortSignal.timeout(2000),
+          signal: AbortSignal.timeout(1500),
         });
         if (response.ok) {
           this.isRunning = true;
@@ -150,7 +166,7 @@ export class OllamaManager extends EventEmitter {
           return true;
         }
       } catch {
-        // Try next endpoint
+        // Try next
       }
     }
 
