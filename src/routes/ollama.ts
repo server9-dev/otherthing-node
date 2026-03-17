@@ -167,7 +167,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
       fetchHeaders['Authorization'] = `Bearer ${(req.body as any)._remoteKey || 'platform'}`;
     }
 
-    const inferenceModel = model || 'gemma3:4b';
+    const inferenceModel = model || (useRemote ? 'qwen3:8b' : 'gemma3:4b');
 
     try {
       const ollamaRes = await fetch(`${endpoint}/api/chat`, {

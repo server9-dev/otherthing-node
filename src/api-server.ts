@@ -103,7 +103,7 @@ export class ApiServer {
       remoteInferenceService.configure({
         endpoint: process.env.REMOTE_INFERENCE_ENDPOINT,
         apiKey: process.env.REMOTE_INFERENCE_KEY,
-        model: process.env.REMOTE_INFERENCE_MODEL || 'gemma3:4b',
+        model: process.env.REMOTE_INFERENCE_MODEL || 'qwen3:8b',
       });
       console.log('[ApiServer] Remote inference configured');
     }

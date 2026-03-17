@@ -80,7 +80,7 @@ class RemoteInferenceService {
   }> {
     if (!this.config) throw new Error('Remote inference not configured');
 
-    const model = request.model || this.config.model || 'gemma3:4b';
+    const model = request.model || this.config.model || 'qwen3:8b';
 
     const res = await fetch(`${this.config.endpoint}/api/chat`, {
       method: 'POST',
@@ -127,7 +127,7 @@ class RemoteInferenceService {
   }): Promise<Response> {
     if (!this.config) throw new Error('Remote inference not configured');
 
-    const model = request.model || this.config.model || 'gemma3:4b';
+    const model = request.model || this.config.model || 'qwen3:8b';
 
     return fetch(`${this.config.endpoint}/api/chat`, {
       method: 'POST',
