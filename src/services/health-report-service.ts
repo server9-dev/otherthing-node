@@ -1,10 +1,23 @@
 /**
  * Health Report Service — 48h team health & project velocity reports
+ * Includes per-individual metrics, warnings, and recommendations.
  */
 
 import type { OllamaManager } from '../ollama-manager';
 import { ipfsExportService } from './ipfs-export-service';
 import { schedulerService } from './scheduler-service';
+
+export interface IndividualMetrics {
+  userId: string;
+  displayName: string;
+  messageCount: number;
+  tasksAssigned: number;
+  tasksCompleted: number;
+  tasksBlocked: number;
+  lastActive: string | null;
+  warnings: string[];
+  recommendations: string[];
+}
 
 export interface HealthReport {
   workspaceId: string;
@@ -19,6 +32,7 @@ export interface HealthReport {
     inProgress: number;
     blocked: number;
   };
+  individuals: IndividualMetrics[];
   predictions: string[];
   recommendations: string[];
   generatedAt: string;
@@ -65,41 +79,122 @@ class HealthReportService {
     const tasks = this.taskStoreRef?.get(workspaceId) || [];
     const messages = this.chatStoreRef?.get(workspaceId) || [];
 
-    // Calculate metrics
-    const recentMessages = messages.filter(m => new Date(m.timestamp) >= since);
+    // All messages (not filtered by time for individual metrics — we want the full picture)
+    const recentMessages = messages;
     const uniqueSpeakers = new Set(recentMessages.map(m => m.sender)).size;
 
     const taskMetrics = {
-      created: tasks.filter(t => new Date(t.createdAt) >= since).length,
+      created: tasks.length,
       completed: tasks.filter(t => t.status === 'done').length,
       inProgress: tasks.filter(t => t.status === 'in-progress').length,
       blocked: tasks.filter(t => t.status === 'blocked').length,
     };
 
-    const prompt = `Analyze team health for the last 48 hours:
+    // ── Per-individual metrics ──
+    const userMap = new Map<string, { name: string; msgs: number; lastActive: string | null }>();
+    for (const m of recentMessages) {
+      const key = m.sender || m.senderName;
+      const existing = userMap.get(key);
+      if (existing) {
+        existing.msgs++;
+        if (!existing.lastActive || m.timestamp > existing.lastActive) existing.lastActive = m.timestamp;
+        if (m.senderName && m.senderName !== 'local') existing.name = m.senderName;
+      } else {
+        userMap.set(key, { name: m.senderName || key, msgs: 1, lastActive: m.timestamp });
+      }
+    }
 
-Participation:
-- ${uniqueSpeakers} active speakers
-- ${recentMessages.length} messages sent
-- ${artifacts.length} artifacts exported
+    // Build a name-to-address lookup from chat messages for task matching
+    const nameToIds = new Map<string, Set<string>>();
+    for (const m of recentMessages) {
+      const name = m.senderName || m.sender;
+      const sender = m.sender || m.senderName;
+      if (!nameToIds.has(name)) nameToIds.set(name, new Set());
+      nameToIds.get(name)!.add(sender);
+      if (m.senderName) nameToIds.get(name)!.add(m.senderName);
+    }
 
-Task velocity:
-- ${taskMetrics.created} tasks created
-- ${taskMetrics.completed} completed
-- ${taskMetrics.inProgress} in progress
-- ${taskMetrics.blocked} blocked
+    const individuals: IndividualMetrics[] = [];
+    for (const [userId, info] of userMap) {
+      // Match tasks by assignee — check userId, displayName, and any associated addresses
+      const matchIds = new Set<string>([userId, info.name]);
+      const extraIds = nameToIds.get(info.name);
+      if (extraIds) extraIds.forEach(id => matchIds.add(id));
 
-Provide predictions about potential issues and recommendations. Respond in JSON:
+      const assigned = tasks.filter(t => t.assignee && matchIds.has(t.assignee));
+      const completed = assigned.filter(t => t.status === 'done').length;
+      const blocked = assigned.filter(t => t.status === 'blocked').length;
+      const inProgress = assigned.filter(t => t.status === 'in-progress').length;
+
+      const warnings: string[] = [];
+      const recs: string[] = [];
+
+      // Generate individual warnings/recommendations
+      if (info.msgs < 3 && recentMessages.length > 10) {
+        warnings.push('Low participation — fewer than 3 messages in this period');
+        recs.push('Check in with this team member to ensure they are not blocked or disengaged');
+      }
+      if (blocked > 0) {
+        warnings.push(`${blocked} blocked task${blocked > 1 ? 's' : ''} assigned to this member`);
+        recs.push('Review blocked tasks and help unblock — may need a different approach or resource');
+      }
+      if (assigned.length > 0 && completed === 0 && inProgress > 0) {
+        recs.push('Has in-progress tasks but no completions — check if scope is too large or needs splitting');
+      }
+      if (assigned.length === 0) {
+        recs.push('No tasks assigned — consider assigning work to increase engagement');
+      }
+      if (info.msgs > recentMessages.length * 0.4) {
+        warnings.push('Dominating conversation (>40% of all messages) — may be blocking others from speaking up');
+      }
+      if (completed >= 2) {
+        recs.push('Strong performer this sprint — consider assigning stretch goals or mentoring responsibilities');
+      }
+
+      individuals.push({
+        userId,
+        displayName: info.name,
+        messageCount: info.msgs,
+        tasksAssigned: assigned.length,
+        tasksCompleted: completed,
+        tasksBlocked: blocked,
+        lastActive: info.lastActive,
+        warnings,
+        recommendations: recs,
+      });
+    }
+
+    // Sort by message count descending
+    individuals.sort((a, b) => b.messageCount - a.messageCount);
+
+    // ── Build AI prompt with individual context ──
+    const individualSummary = individuals.map(ind =>
+      `${ind.displayName}: ${ind.messageCount} msgs, ${ind.tasksAssigned} tasks (${ind.tasksCompleted} done, ${ind.tasksBlocked} blocked)${ind.warnings.length > 0 ? ' [WARNINGS: ' + ind.warnings.join('; ') + ']' : ''}`
+    ).join('\n');
+
+    const prompt = `Analyze team health for a developer workspace:
+
+TEAM METRICS:
+- ${uniqueSpeakers} active speakers, ${recentMessages.length} total messages
+- ${artifacts.length} artifacts exported to IPFS
+- Tasks: ${taskMetrics.created} total, ${taskMetrics.completed} completed, ${taskMetrics.inProgress} in progress, ${taskMetrics.blocked} blocked
+
+INDIVIDUAL BREAKDOWN:
+${individualSummary}
+
+Provide team-level predictions and recommendations. Consider workload balance, blocked items, participation gaps, and collaboration patterns.
+
+Respond in JSON:
 {
-  "predictions": ["Prediction 1"],
-  "recommendations": ["Recommendation 1"]
+  "predictions": ["Prediction about team trajectory"],
+  "recommendations": ["Actionable team-level recommendation"]
 }`;
 
     try {
       const result = await this.ollamaManager.chat({
         model: await this.selectModel(),
         messages: [
-          { role: 'system', content: 'You are an AI team health analyst. Respond only with valid JSON.' },
+          { role: 'system', content: 'You are an AI team health analyst for a developer workspace. Respond only with valid JSON. Be specific and actionable.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
@@ -121,6 +216,7 @@ Provide predictions about potential issues and recommendations. Respond in JSON:
           artifactCount: artifacts.length,
         },
         taskVelocity: taskMetrics,
+        individuals,
         predictions: parsed.predictions || [],
         recommendations: parsed.recommendations || [],
         generatedAt: new Date().toISOString(),

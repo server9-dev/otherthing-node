@@ -253,20 +253,10 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     const msgs = chatMessages.get(workspaceId)!;
     msgs.push(msg);
 
-    // Pass 2: Async LlamaGuard scan (background — does not delay response)
-    safetyService.queueAsyncScan(msg.id, workspaceId, content.trim(), (result) => {
-      // Retroactively mark message as removed
-      msg.moderation = { violated: true, category: result.category, reason: result.reason };
-      msg.content = '[Content removed: policy violation]';
-      auditService.log({
-        workspaceId, contentType: 'chat', contentId: msg.id,
-        userId: senderId, action: 'removed',
-        category: result.category, reason: result.reason, method: result.method,
-      });
-      banService.handleViolation(senderId, workspaceId, result.category || 'S4', result.reason);
-    });
-
-    // Log allowed (for audit trail)
+    // Keyword scan is the primary gate for chat (instant, no false positives).
+    // LlamaGuard async scan disabled for chat — too many false positives on
+    // technical dev discussions (security, pentesting, vulnerability talk).
+    // LlamaGuard is still used for file uploads where blocking is acceptable.
     auditService.log({
       workspaceId, contentType: 'chat', contentId: msg.id,
       userId: senderId, action: 'allowed',

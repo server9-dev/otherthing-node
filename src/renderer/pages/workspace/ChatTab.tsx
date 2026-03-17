@@ -79,12 +79,26 @@ export function ChatTab({ workspace, workspaceId }: Props) {
     return () => clearInterval(interval);
   }, [chatMode, workspaceId]);
 
+  const teamScrollRef = useRef<HTMLDivElement>(null);
+  const userScrolledUp = useRef(false);
+
+  // Only auto-scroll if user is near bottom (not reading history)
   useEffect(() => {
-    teamEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!userScrolledUp.current) {
+      teamEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [teamMessages]);
+
+  const handleTeamScroll = () => {
+    const el = teamScrollRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    userScrolledUp.current = distFromBottom > 100;
+  };
 
   const sendTeamMessage = async () => {
     if (!teamInput.trim()) return;
+    userScrolledUp.current = false; // scroll to own message
     try {
       await fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, {
         method: 'POST',
@@ -471,7 +485,7 @@ export function ChatTab({ workspace, workspaceId }: Props) {
             </div>
           )}
 
-          <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
+          <div ref={teamScrollRef} onScroll={handleTeamScroll} style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
             {teamMessages.length === 0 && (
               <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
                 <Users size={48} style={{ color: 'var(--text-muted)', opacity: 0.3, marginBottom: '1rem' }} />
