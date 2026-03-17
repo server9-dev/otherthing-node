@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import {
   LayoutDashboard, MessageSquare, CheckSquare, Code, FolderOpen,
   Users, ArrowLeft, Globe, Lock, Wallet, PenTool, FileText,
-  Activity, Monitor, Workflow
+  Activity, Monitor, Workflow, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { CyberButton } from '../../components';
 import { useWeb3, OnChainWorkspace } from '../../context/Web3Context';
@@ -19,8 +19,6 @@ import { HealthTab } from './HealthTab';
 import { SandboxPreviewTab } from './SandboxPreviewTab';
 import { WorkflowTab } from './WorkflowTab';
 
-const API_BASE = 'http://localhost:8080';
-
 const TABS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'chat', label: 'Chat', icon: MessageSquare },
@@ -28,17 +26,20 @@ const TABS = [
   { id: 'code', label: 'Code', icon: Code },
   { id: 'files', label: 'Files', icon: FolderOpen },
   { id: 'whiteboard', label: 'Whiteboard', icon: PenTool },
+  { id: 'workflows', label: 'Workflows', icon: Workflow },
   { id: 'digest', label: 'Digest', icon: FileText },
   { id: 'health', label: 'Health', icon: Activity },
-  { id: 'workflows', label: 'Workflows', icon: Workflow },
   { id: 'preview', label: 'Preview', icon: Monitor },
   { id: 'members', label: 'Members', icon: Users },
 ];
+
+const FULL_BLEED_TABS = ['whiteboard', 'code', 'preview', 'workflows'];
 
 export function WorkspaceTabs() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'overview';
+  const [collapsed, setCollapsed] = useState(false);
 
   const {
     connected, address, myWorkspaces, refreshWorkspaces,
@@ -49,10 +50,8 @@ export function WorkspaceTabs() {
   const [members, setMembers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Load workspace
   useEffect(() => {
     if (!connected || !workspaceId) { setLoading(false); return; }
-
     const found = myWorkspaces.find(ws => ws.id === workspaceId);
     if (found) {
       setWorkspace(found);
@@ -92,33 +91,52 @@ export function WorkspaceTabs() {
     );
   }
 
+  const sidebarWidth = collapsed ? 48 : 180;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Workspace Header */}
+    <div style={{ display: 'flex', height: '100%' }}>
+      {/* Sidebar */}
       <div style={{
-        padding: '1rem 1.5rem', borderBottom: '1px solid var(--border-subtle)',
-        background: 'var(--bg-secondary)', flexShrink: 0,
+        width: sidebarWidth, flexShrink: 0, transition: 'width 0.2s ease',
+        background: 'var(--bg-secondary)', borderRight: '1px solid var(--border-subtle)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+        {/* Workspace header */}
+        <div style={{
+          padding: collapsed ? '0.75rem 0.5rem' : '0.75rem 0.85rem',
+          borderBottom: '1px solid var(--border-subtle)',
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+        }}>
           <button
             onClick={() => window.history.back()}
-            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+            title="Back"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={16} />
           </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {workspace.isPublic ? <Globe size={16} style={{ color: 'var(--primary)' }} /> : <Lock size={16} style={{ color: 'var(--accent)' }} />}
-            <h1 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              {workspace.name}
-            </h1>
-          </div>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            {Number(workspace.memberCount)} members
-          </span>
+          {!collapsed && (
+            <div style={{ overflow: 'hidden', minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                {workspace.isPublic
+                  ? <Globe size={12} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                  : <Lock size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
+                <span style={{
+                  fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>
+                  {workspace.name}
+                </span>
+              </div>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                {Number(workspace.memberCount)} members
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Tab Bar */}
-        <div style={{ display: 'flex', gap: '0.25rem' }}>
+        {/* Navigation items */}
+        <nav style={{ flex: 1, overflow: 'auto', padding: '0.35rem' }}>
           {TABS.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -126,30 +144,54 @@ export function WorkspaceTabs() {
               <button
                 key={tab.id}
                 onClick={() => setTab(tab.id)}
+                title={collapsed ? tab.label : undefined}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '0.4rem',
-                  padding: '0.5rem 0.85rem', background: 'transparent', border: 'none',
-                  borderBottom: isActive ? '2px solid var(--primary)' : '2px solid transparent',
+                  display: 'flex', alignItems: 'center',
+                  gap: '0.55rem',
+                  width: '100%',
+                  padding: collapsed ? '0.5rem 0' : '0.45rem 0.65rem',
+                  justifyContent: collapsed ? 'center' : 'flex-start',
+                  background: isActive ? 'rgba(0,212,255,0.08)' : 'transparent',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm, 4px)',
+                  borderLeft: isActive ? '2px solid var(--primary)' : '2px solid transparent',
                   color: isActive ? 'var(--primary)' : 'var(--text-muted)',
-                  cursor: 'pointer', fontSize: '0.8rem', fontWeight: isActive ? 600 : 400,
-                  transition: 'all 0.15s',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: isActive ? 600 : 400,
+                  transition: 'all 0.12s',
+                  marginBottom: '1px',
                 }}
               >
-                <Icon size={14} />
-                {tab.label}
+                <Icon size={16} style={{ flexShrink: 0 }} />
+                {!collapsed && tab.label}
               </button>
             );
           })}
-        </div>
+        </nav>
+
+        {/* Collapse toggle */}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          style={{
+            background: 'none', border: 'none', borderTop: '1px solid var(--border-subtle)',
+            color: 'var(--text-muted)', cursor: 'pointer', padding: '0.5rem',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.7rem', gap: '0.3rem',
+          }}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <ChevronRight size={14} /> : <><ChevronLeft size={14} /> Collapse</>}
+        </button>
       </div>
 
-      {/* Tab Content */}
+      {/* Content area */}
       <div style={{
-        flex: 1, minHeight: 0,
-        overflow: (['whiteboard', 'code', 'preview', 'workflows'].includes(activeTab)) ? 'hidden' : 'auto',
-        display: (['whiteboard', 'code', 'preview', 'workflows'].includes(activeTab)) ? 'flex' : undefined,
-        flexDirection: (['whiteboard', 'code', 'preview', 'workflows'].includes(activeTab)) ? 'column' : undefined,
+        flex: 1, minWidth: 0, minHeight: 0, position: 'relative',
+        overflow: FULL_BLEED_TABS.includes(activeTab) ? 'hidden' : 'auto',
+        display: 'flex', flexDirection: 'column',
       }}>
+        {/* Normal tabs — mount/unmount on switch */}
         {activeTab === 'overview' && (
           <OverviewTab
             workspace={workspace} workspaceId={workspaceId!}
@@ -162,23 +204,14 @@ export function WorkspaceTabs() {
         {activeTab === 'tasks' && (
           <TasksTab workspaceId={workspaceId!} />
         )}
-        {activeTab === 'code' && (
-          <CodeTab workspaceId={workspaceId!} />
-        )}
         {activeTab === 'files' && (
           <FilesTab workspaceId={workspaceId!} />
-        )}
-        {activeTab === 'whiteboard' && (
-          <WhiteboardTab workspaceId={workspaceId!} />
         )}
         {activeTab === 'digest' && (
           <DigestTab workspaceId={workspaceId!} />
         )}
         {activeTab === 'health' && (
           <HealthTab workspaceId={workspaceId!} />
-        )}
-        {activeTab === 'workflows' && (
-          <WorkflowTab workspaceId={workspaceId!} />
         )}
         {activeTab === 'preview' && (
           <SandboxPreviewTab workspaceId={workspaceId!} />
@@ -189,6 +222,30 @@ export function WorkspaceTabs() {
             members={members} isOwner={!!isOwner} address={address}
           />
         )}
+
+        {/*
+          Persistent tabs — always mounted, shown/hidden via CSS.
+          This keeps code-server, whiteboard, and workflows alive
+          so they don't reload when you switch to chat and back.
+        */}
+        <div style={{
+          display: activeTab === 'code' ? 'flex' : 'none',
+          flexDirection: 'column', flex: 1, minHeight: 0,
+        }}>
+          <CodeTab workspaceId={workspaceId!} />
+        </div>
+        <div style={{
+          display: activeTab === 'whiteboard' ? 'flex' : 'none',
+          flexDirection: 'column', flex: 1, minHeight: 0,
+        }}>
+          <WhiteboardTab workspaceId={workspaceId!} />
+        </div>
+        <div style={{
+          display: activeTab === 'workflows' ? 'flex' : 'none',
+          flexDirection: 'column', flex: 1, minHeight: 0,
+        }}>
+          <WorkflowTab workspaceId={workspaceId!} />
+        </div>
       </div>
     </div>
   );
