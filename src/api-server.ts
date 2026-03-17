@@ -28,6 +28,7 @@ import { handoffService } from './services/handoff-service';
 import { disputeService } from './services/dispute-service';
 import { healthReportService } from './services/health-report-service';
 import { safetyService } from './services/safety-service';
+import { remoteInferenceService } from './services/remote-inference';
 import type { AgentExecutionLocal, OnChainNodeRecord, WorkspaceNodeRecord, ManagerRefs } from './routes/types';
 
 const PORT = 8080;
@@ -96,6 +97,16 @@ export class ApiServer {
     // Register scheduled jobs
     digestService.registerScheduledJob();
     healthReportService.registerScheduledJob();
+
+    // Configure remote inference if env vars are set
+    if (process.env.REMOTE_INFERENCE_ENDPOINT && process.env.REMOTE_INFERENCE_KEY) {
+      remoteInferenceService.configure({
+        endpoint: process.env.REMOTE_INFERENCE_ENDPOINT,
+        apiKey: process.env.REMOTE_INFERENCE_KEY,
+        model: process.env.REMOTE_INFERENCE_MODEL || 'gemma3:4b',
+      });
+      console.log('[ApiServer] Remote inference configured');
+    }
   }
 
   private setupMiddleware(): void {

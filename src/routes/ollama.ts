@@ -5,6 +5,8 @@
 import { Request, Response } from 'express';
 import type { RouteDependencies } from './types';
 import { handoffService } from '../services/handoff-service';
+import { remoteInferenceService } from '../services/remote-inference';
+import { premiumService } from '../services/premium-service';
 
 export function registerOllamaRoutes(deps: RouteDependencies): void {
   const { app } = deps;
@@ -86,16 +88,12 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
   });
 
   // Streaming chat endpoint (SSE)
+  // Fallback chain: local Ollama → remote premium inference
   app.post('/api/v1/ollama/chat', async (req: Request, res: Response) => {
     const ollamaManager = deps.managers.ollamaManager;
-    if (!ollamaManager) {
-      res.status(400).json({ error: 'Ollama not available' });
-      return;
-    }
-
-    const { model, messages, temperature, max_tokens, workspaceId } = req.body;
-    if (!model || !messages) {
-      res.status(400).json({ error: 'model and messages are required' });
+    const { model, messages, temperature, max_tokens, workspaceId, wallet } = req.body;
+    if (!messages) {
+      res.status(400).json({ error: 'messages required' });
       return;
     }
 
@@ -107,7 +105,6 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
           role: 'system',
           content: `[Workspace Context — Living Handoff Document]\n${handoffContent}`,
         };
-        // Insert after existing system messages
         const firstNonSystem = messages.findIndex((m: any) => m.role !== 'system');
         if (firstNonSystem > 0) {
           messages.splice(firstNonSystem, 0, contextMsg);
@@ -117,14 +114,42 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
       }
     }
 
-    // Ensure Ollama is running
-    const running = await ollamaManager.checkRunning();
-    if (!running) {
-      res.status(503).json({ error: 'Ollama is not running' });
+    // Determine inference endpoint: local Ollama first, then remote premium
+    let endpoint: string | null = null;
+    let useRemote = false;
+
+    // Try local Ollama
+    if (ollamaManager) {
+      const running = await ollamaManager.checkRunning();
+      if (running) {
+        endpoint = ollamaManager.getEndpoint();
+      }
+    }
+
+    // Fallback to remote inference for premium users
+    if (!endpoint && remoteInferenceService.isConfigured()) {
+      const isPremium = wallet ? premiumService.isPremium(wallet).active : false;
+      if (isPremium) {
+        const healthy = await remoteInferenceService.checkHealth();
+        if (healthy) {
+          useRemote = true;
+          endpoint = remoteInferenceService.getEndpoint();
+        }
+      }
+    }
+
+    if (!endpoint) {
+      const hint = remoteInferenceService.isConfigured()
+        ? 'Ollama not running and no active premium subscription for remote inference.'
+        : 'Ollama is not running. Start Ollama or subscribe to premium for hosted AI.';
+      res.status(503).json({ error: hint });
       return;
     }
 
-    const endpoint = ollamaManager.getEndpoint();
+    if (!model && !useRemote) {
+      res.status(400).json({ error: 'model is required' });
+      return;
+    }
 
     // SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -134,12 +159,22 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
     const controller = new AbortController();
     req.on('close', () => controller.abort());
 
+    // Build headers — add auth for remote inference
+    const fetchHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (useRemote) {
+      const cfg = remoteInferenceService.getEndpoint();
+      // Auth header added by the fetch to the remote server
+      fetchHeaders['Authorization'] = `Bearer ${(req.body as any)._remoteKey || 'platform'}`;
+    }
+
+    const inferenceModel = model || 'gemma3:4b';
+
     try {
       const ollamaRes = await fetch(`${endpoint}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: fetchHeaders,
         body: JSON.stringify({
-          model,
+          model: inferenceModel,
           messages,
           stream: true,
           options: {

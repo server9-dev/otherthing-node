@@ -33,6 +33,7 @@ import { registerDisputeRoutes } from './disputes';
 import { registerHealthReportRoutes } from './health-reports';
 import { registerSandboxPreviewRoutes } from './sandbox-preview';
 import { registerSafetyRoutes } from './safety';
+import { registerPremiumRoutes } from './premium';
 
 export function registerAllRoutes(deps: RouteDependencies): void {
   // Health Check (stays in api-server.ts or here)
@@ -69,6 +70,7 @@ export function registerAllRoutes(deps: RouteDependencies): void {
   registerHealthReportRoutes(deps);
   registerSandboxPreviewRoutes(deps);
   registerSafetyRoutes(deps);
+  registerPremiumRoutes(deps);
 }
 
 export type { RouteDependencies } from './types';
