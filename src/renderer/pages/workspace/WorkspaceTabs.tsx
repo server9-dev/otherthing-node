@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import {
   LayoutDashboard, MessageSquare, CheckSquare, Code, FolderOpen,
   Users, ArrowLeft, Globe, Lock, Wallet, PenTool, FileText,
-  Activity, Monitor, Brain
+  Activity, Monitor
 } from 'lucide-react';
 import { CyberButton } from '../../components';
 import { useWeb3, OnChainWorkspace } from '../../context/Web3Context';
@@ -17,7 +17,6 @@ import { WhiteboardTab } from './WhiteboardTab';
 import { DigestTab } from './DigestTab';
 import { HealthTab } from './HealthTab';
 import { SandboxPreviewTab } from './SandboxPreviewTab';
-import { OpenWebUITab } from './OpenWebUITab';
 
 const API_BASE = 'http://localhost:8080';
 
@@ -31,7 +30,6 @@ const TABS = [
   { id: 'digest', label: 'Digest', icon: FileText },
   { id: 'health', label: 'Health', icon: Activity },
   { id: 'preview', label: 'Preview', icon: Monitor },
-  { id: 'openwebui', label: 'AI Studio', icon: Brain },
   { id: 'members', label: 'Members', icon: Users },
 ];
 
@@ -146,9 +144,9 @@ export function WorkspaceTabs() {
       {/* Tab Content */}
       <div style={{
         flex: 1, minHeight: 0,
-        overflow: (['whiteboard', 'code', 'preview', 'openwebui'].includes(activeTab)) ? 'hidden' : 'auto',
-        display: (['whiteboard', 'code', 'preview', 'openwebui'].includes(activeTab)) ? 'flex' : undefined,
-        flexDirection: (['whiteboard', 'code', 'preview', 'openwebui'].includes(activeTab)) ? 'column' : undefined,
+        overflow: (['whiteboard', 'code', 'preview'].includes(activeTab)) ? 'hidden' : 'auto',
+        display: (['whiteboard', 'code', 'preview'].includes(activeTab)) ? 'flex' : undefined,
+        flexDirection: (['whiteboard', 'code', 'preview'].includes(activeTab)) ? 'column' : undefined,
       }}>
         {activeTab === 'overview' && (
           <OverviewTab
@@ -179,9 +177,6 @@ export function WorkspaceTabs() {
         )}
         {activeTab === 'preview' && (
           <SandboxPreviewTab workspaceId={workspaceId!} />
-        )}
-        {activeTab === 'openwebui' && (
-          <OpenWebUITab />
         )}
         {activeTab === 'members' && (
           <MembersTab
