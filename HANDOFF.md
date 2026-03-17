@@ -131,11 +131,11 @@ Electron App
 ```
 APPWRITE_ENDPOINT=https://sfo.cloud.appwrite.io/v1
 APPWRITE_PROJECT_ID=69855da10039ded42d2b
-APPWRITE_API_KEY=standard_3bd7b4...
+APPWRITE_API_KEY=<from .env>
 OLLAMA_HOST=http://localhost:11434
-FUNDER_PRIVATE_KEY=0x8ccc85bee...
-GITHUB_CLIENT_ID=Ov23lio9LlRahc5rsi79
-GITHUB_CLIENT_SECRET=432ad2e2d076...
+FUNDER_PRIVATE_KEY=<from .env>
+GITHUB_CLIENT_ID=<from .env>
+GITHUB_CLIENT_SECRET=<from .env>
 API_PORT=3001
 NODE_ENV=development
 ```
@@ -144,11 +144,11 @@ NODE_ENV=development
 
 **Funder/Owner:**
 - Address: `0x683B811965A1225309e876bf82F1c6831C2311Aa`
-- Private key: `0x8ccc85bee32302669e4fed58d038a8373634dee36de8ae168f7cf07739b21979`
+- Private key: in `.env` (`FUNDER_PRIVATE_KEY`)
 
 **Worker (member of workspace 0x7f6c...):**
 - Address: `0x3625F097F35aBC90a6E46d4e7f64855cce4d7580`
-- Private key: `0xd3320d92f3c74a8f1d2aa33f280d0db3342f81346692265936213b21d9bdebd8`
+- Private key: in `.env`
 - 500 OTT + ~0.003 ETH
 
 ### Running the App

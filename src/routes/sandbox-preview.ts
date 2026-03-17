@@ -23,12 +23,19 @@ export function registerSandboxPreviewRoutes(deps: RouteDependencies): void {
 
     const cmd = command || 'pnpm dev';
     const dir = cwd || require('os').homedir();
+
+    // Sanitize: only allow alphanumeric commands, no shell metacharacters
+    if (/[;&|`$(){}]/.test(cmd)) {
+      res.status(400).json({ error: 'Invalid command — shell metacharacters not allowed' });
+      return;
+    }
+
     const [bin, ...args] = cmd.split(' ');
 
     const proc = spawn(bin, args, {
       cwd: dir,
       stdio: 'pipe',
-      shell: true,
+      shell: false, // no shell — prevents injection
       env: { ...process.env },
     });
 

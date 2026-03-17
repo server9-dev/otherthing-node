@@ -1,22 +1,26 @@
 /**
- * Repo Routes - repo management + analysis
+ * Repo Routes - repo management + analysis + IPFS storage
+ *
+ * Repos are cloned locally, then added to IPFS so any workspace member
+ * can pull them. Changes are synced back to IPFS on push.
  */
 
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import os from 'os';
 import { existsSync, mkdirSync } from 'fs';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { analyzeRepository, RepoAnalysis } from '../services/repo-analyzer';
 import type { RouteDependencies } from './types';
 
 function getReposDir(): string {
-  const dir = path.join(require('os').homedir(), '.otherthing', 'repos');
+  const dir = path.join(os.homedir(), '.otherthing', 'repos');
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-// Repos storage (in-memory)
+// Repos storage (in-memory, keyed by workspaceId)
 const reposStore: Map<string, any[]> = new Map();
 
 // Analysis cache (keyed by repo path)
@@ -26,12 +30,17 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 export function registerRepoRoutes(deps: RouteDependencies): void {
   const { app, localAuth } = deps;
 
+  // Helper to get IPFS manager (may be null if not running)
+  const getIpfs = () => deps.managers.ipfsManager;
+
+  // ── List repos ────────────────────────────────────────────
   app.get('/api/v1/workspaces/:id/repos', localAuth, (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const repos = reposStore.get(workspaceId) || [];
     res.json({ repos });
   });
 
+  // ── Connect / clone a repo ────────────────────────────────
   app.post('/api/v1/workspaces/:id/repos', localAuth, (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const session = (req as any).session;
@@ -40,6 +49,7 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
       url: req.body.url || '',
       name: req.body.name || 'unknown',
       status: 'cloning',
+      ipfsCid: null,
       addedBy: session.username,
       addedAt: new Date().toISOString(),
     };
@@ -48,15 +58,18 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
     }
     reposStore.get(workspaceId)!.push(repo);
 
-    // Return immediately, clone + analyze in background
+    // Return immediately, clone + analyze + IPFS in background
     res.status(201).json({ repo });
 
-    // Background: clone then analyze
     const repoDir = path.join(getReposDir(), `${workspaceId}-${repo.id}`);
     (async () => {
       try {
+        // Validate URL format to prevent command injection
+        if (!/^(https?:\/\/|git@|ssh:\/\/)[\w.@:/-]+$/.test(repo.url)) {
+          throw new Error('Invalid repository URL format');
+        }
         console.log(`[Repos] Cloning ${repo.url} to ${repoDir}...`);
-        execSync(`git clone --depth 1 ${JSON.stringify(repo.url)} ${JSON.stringify(repoDir)}`, {
+        spawnSync('git', ['clone', '--depth', '1', repo.url, repoDir], {
           timeout: 120000,
           stdio: 'pipe',
         });
@@ -66,9 +79,26 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
 
         const analysis = await analyzeRepository(repoDir);
         repo.analysis = analysis;
-        repo.status = 'ready';
         repo.analyzedAt = new Date().toISOString();
         console.log(`[Repos] Analysis complete for ${repo.name}`);
+
+        // Add to IPFS for workspace sharing
+        const ipfs = getIpfs();
+        if (ipfs) {
+          try {
+            repo.status = 'syncing';
+            console.log(`[Repos] Adding ${repo.name} to IPFS...`);
+            const cid = await ipfs.add(repoDir);
+            repo.ipfsCid = cid;
+            await ipfs.pin(cid);
+            console.log(`[Repos] ${repo.name} added to IPFS: ${cid}`);
+          } catch (ipfsErr: any) {
+            console.warn(`[Repos] IPFS add failed for ${repo.name}: ${ipfsErr.message}`);
+            // Not fatal — repo still works locally
+          }
+        }
+
+        repo.status = 'ready';
       } catch (err: any) {
         console.error(`[Repos] Clone/analyze failed for ${repo.name}:`, err.message);
         repo.status = 'error';
@@ -77,6 +107,88 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
     })();
   });
 
+  // ── Sync repo to IPFS (push local changes) ────────────────
+  app.post('/api/v1/workspaces/:id/repos/:repoId/sync', localAuth, async (req: Request, res: Response) => {
+    const workspaceId = req.params.id as string;
+    const repoId = req.params.repoId as string;
+
+    const repos = reposStore.get(workspaceId) || [];
+    const repo = repos.find(r => r.id === repoId);
+    if (!repo) {
+      res.status(404).json({ error: 'Repository not found' });
+      return;
+    }
+    if (!repo.localPath || !existsSync(repo.localPath)) {
+      res.status(400).json({ error: 'Repository has no local clone' });
+      return;
+    }
+
+    const ipfs = getIpfs();
+    if (!ipfs) {
+      res.status(503).json({ error: 'IPFS is not running' });
+      return;
+    }
+
+    try {
+      const previousCid = repo.ipfsCid;
+      console.log(`[Repos] Syncing ${repo.name} to IPFS...`);
+      const cid = await ipfs.add(repo.localPath);
+      repo.ipfsCid = cid;
+      repo.lastSyncedAt = new Date().toISOString();
+      await ipfs.pin(cid);
+
+      // Unpin old version
+      if (previousCid && previousCid !== cid) {
+        try { await ipfs.unpin(previousCid); } catch {}
+      }
+
+      console.log(`[Repos] ${repo.name} synced to IPFS: ${cid}`);
+      res.json({ cid, previousCid, status: 'synced' });
+    } catch (err: any) {
+      console.error(`[Repos] Sync failed for ${repo.name}:`, err.message);
+      res.status(500).json({ error: `Sync failed: ${err.message}` });
+    }
+  });
+
+  // ── Pull repo from IPFS (for workspace members without local clone) ──
+  app.post('/api/v1/workspaces/:id/repos/:repoId/pull', localAuth, async (req: Request, res: Response) => {
+    const workspaceId = req.params.id as string;
+    const repoId = req.params.repoId as string;
+
+    const repos = reposStore.get(workspaceId) || [];
+    const repo = repos.find(r => r.id === repoId);
+    if (!repo) {
+      res.status(404).json({ error: 'Repository not found' });
+      return;
+    }
+    if (!repo.ipfsCid) {
+      res.status(400).json({ error: 'Repository has no IPFS CID — needs to be synced first' });
+      return;
+    }
+
+    const ipfs = getIpfs();
+    if (!ipfs) {
+      res.status(503).json({ error: 'IPFS is not running' });
+      return;
+    }
+
+    try {
+      const repoDir = path.join(getReposDir(), `${workspaceId}-${repo.id}`);
+
+      console.log(`[Repos] Pulling ${repo.name} from IPFS (${repo.ipfsCid})...`);
+      await ipfs.get(repo.ipfsCid, repoDir);
+      repo.localPath = repoDir;
+      repo.status = 'ready';
+
+      console.log(`[Repos] ${repo.name} pulled from IPFS to ${repoDir}`);
+      res.json({ localPath: repoDir, cid: repo.ipfsCid, status: 'pulled' });
+    } catch (err: any) {
+      console.error(`[Repos] Pull failed for ${repo.name}:`, err.message);
+      res.status(500).json({ error: `Pull failed: ${err.message}` });
+    }
+  });
+
+  // ── Analyze repo ──────────────────────────────────────────
   app.post('/api/v1/workspaces/:id/repos/:repoId/analyze', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const repoId = req.params.repoId as string;
@@ -88,9 +200,7 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
       return;
     }
 
-    // Check if we have a local clone path
     if (!repo.localPath) {
-      // Return mock analysis for repos without local path
       repo.status = 'analyzing';
       res.json({
         analysis: {
@@ -124,7 +234,8 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
     }
   });
 
-  app.delete('/api/v1/workspaces/:id/repos/:repoId', localAuth, (req: Request, res: Response) => {
+  // ── Delete repo ───────────────────────────────────────────
+  app.delete('/api/v1/workspaces/:id/repos/:repoId', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const repoId = req.params.repoId as string;
     const repos = reposStore.get(workspaceId) || [];
@@ -133,11 +244,22 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
       res.status(404).json({ error: 'Repository not found' });
       return;
     }
+
+    const repo = repos[repoIndex];
+
+    // Unpin from IPFS if it was stored there
+    if (repo.ipfsCid) {
+      const ipfs = getIpfs();
+      if (ipfs) {
+        try { await ipfs.unpin(repo.ipfsCid); } catch {}
+      }
+    }
+
     repos.splice(repoIndex, 1);
     res.json({ success: true });
   });
 
-  // ============ Repository Analysis Endpoints ============
+  // ── Standalone analysis endpoints ─────────────────────────
 
   app.post('/api/v1/repos/analyze', localAuth, async (req: Request, res: Response) => {
     const { path: repoPath } = req.body;

@@ -9,7 +9,7 @@ import { remoteInferenceService } from '../services/remote-inference';
 import { premiumService } from '../services/premium-service';
 
 export function registerOllamaRoutes(deps: RouteDependencies): void {
-  const { app } = deps;
+  const { app, localAuth } = deps;
 
   app.get('/api/v1/ollama/status', async (req: Request, res: Response) => {
     try {
@@ -26,7 +26,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
     }
   });
 
-  app.post('/api/v1/ollama/start', async (req: Request, res: Response) => {
+  app.post('/api/v1/ollama/start', localAuth, async (req: Request, res: Response) => {
     try {
       const ollamaManager = deps.managers.ollamaManager;
       if (!ollamaManager) {
@@ -40,7 +40,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
     }
   });
 
-  app.post('/api/v1/ollama/stop', async (req: Request, res: Response) => {
+  app.post('/api/v1/ollama/stop', localAuth, async (req: Request, res: Response) => {
     try {
       const ollamaManager = deps.managers.ollamaManager;
       if (!ollamaManager) {
@@ -68,7 +68,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
     }
   });
 
-  app.post('/api/v1/ollama/pull', async (req: Request, res: Response) => {
+  app.post('/api/v1/ollama/pull', localAuth, async (req: Request, res: Response) => {
     try {
       const { model } = req.body;
       if (!model) {
@@ -89,7 +89,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
 
   // Streaming chat endpoint (SSE)
   // Local Ollama first, premium users fall back to hosted inference
-  app.post('/api/v1/ollama/chat', async (req: Request, res: Response) => {
+  app.post('/api/v1/ollama/chat', localAuth, async (req: Request, res: Response) => {
     const ollamaManager = deps.managers.ollamaManager;
     const { model, messages, temperature, max_tokens, workspaceId, wallet } = req.body;
     if (!messages) {
@@ -232,7 +232,7 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
     }
   });
 
-  app.delete('/api/v1/ollama/models/:model', async (req: Request, res: Response) => {
+  app.delete('/api/v1/ollama/models/:model', localAuth, async (req: Request, res: Response) => {
     try {
       const { model } = req.params;
       const ollamaManager = deps.managers.ollamaManager;
