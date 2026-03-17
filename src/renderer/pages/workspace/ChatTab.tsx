@@ -4,6 +4,7 @@ import type { OnChainWorkspace } from '../../context/Web3Context';
 import { useWeb3 } from '../../context/Web3Context';
 import { useVoiceVideo, Participant } from '../../hooks/useVoiceVideo';
 import { useTranscription } from '../../hooks/useTranscription';
+import { useVideoSafety } from '../../hooks/useVideoSafety';
 
 const API_BASE = 'http://localhost:8080/api/v1';
 
@@ -60,6 +61,18 @@ export function ChatTab({ workspace, workspaceId }: Props) {
     localPeerId: peerId,
     localDisplayName: displayName || 'You',
     participants: callParticipants,
+  });
+
+  // Video safety — scan frames every 10s during calls
+  useVideoSafety({
+    enabled: inCall && videoEnabled,
+    localStream,
+    participants: callParticipants,
+    onViolation: (peerId, name, category, reason) => {
+      // Kill the call immediately
+      leaveCall();
+      alert(`Video call ended: content safety violation detected (${category}). ${reason}`);
+    },
   });
 
   // Team chat state
