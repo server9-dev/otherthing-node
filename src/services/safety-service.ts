@@ -165,17 +165,12 @@ Profanity and swearing are ALLOWED. Do not flag profanity.`,
   }
 
   private async llamaguardScan(text: string): Promise<ScanResult> {
-    if (!this.ollamaManager) {
+    const model = await this.selectModel();
+    if (!model || !this.ollamaManager) {
       return { safe: true, category: null, reason: '', method: 'llamaguard' };
     }
 
     try {
-      const running = await this.ollamaManager.checkRunning();
-      if (!running) {
-        return { safe: true, category: null, reason: '', method: 'llamaguard' };
-      }
-
-      const model = await this.selectModel();
       const result = await this.ollamaManager.chat({
         model,
         messages: [
@@ -238,18 +233,17 @@ UNSAFE:<category> - <reason>`,
     this.processing = false;
   }
 
-  private async selectModel(): Promise<string> {
-    if (!this.ollamaManager) return 'llama3.2';
+  private async selectModel(): Promise<string | null> {
+    if (!this.ollamaManager) return null;
     try {
+      const running = await this.ollamaManager.checkRunning();
+      if (!running) return null;
       const status = await this.ollamaManager.getStatus();
       const models = status.models || [];
-      // Prefer smaller/faster models for safety scanning
-      const preferred = models.find((m: any) =>
-        m.name.includes('gemma3') || m.name.includes('qwen3:8b') || m.name.includes('llama3.2')
-      );
-      return preferred?.name || models[0]?.name || 'llama3.2';
+      if (models.length === 0) return null;
+      return models[0].name;
     } catch {
-      return 'llama3.2';
+      return null;
     }
   }
 }

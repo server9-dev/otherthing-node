@@ -27,13 +27,6 @@ class HandoffService {
   }
 
   async updateHandoff(workspaceId: string): Promise<HandoffDoc | null> {
-    if (!this.ollamaManager) {
-      console.warn('[Handoff] Ollama not available');
-      return null;
-    }
-
-    const running = await this.ollamaManager.checkRunning();
-    if (!running) return null;
 
     // Gather context
     const latestDigest = digestService.getLatest(workspaceId);
@@ -74,25 +67,38 @@ Write a structured handoff document with sections:
 4. Current Tasks & Priorities
 5. Key Context for New Contributors`;
 
-    try {
-      const result = await this.ollamaManager.chat({
-        model: await this.selectModel(),
-        messages: [
-          { role: 'system', content: 'You are an AI project manager writing a handoff document. Be clear, structured, and comprehensive.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-      });
+    const model = await this.selectModel();
+    let content: string;
 
+    if (model && this.ollamaManager) {
+      try {
+        const result = await this.ollamaManager.chat({
+          model,
+          messages: [
+            { role: 'system', content: 'You are an AI project manager writing a handoff document. Be clear, structured, and comprehensive.' },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.3,
+        });
+        content = result.content;
+      } catch (err) {
+        console.warn('[Handoff] AI unavailable, generating raw handoff');
+        content = this.rawHandoff(latestDigest, recentArtifacts, externalContext);
+      }
+    } else {
+      content = this.rawHandoff(latestDigest, recentArtifacts, externalContext);
+    }
+
+    try {
       const artifact = await ipfsExportService.exportContent(workspaceId, 'handoff', {
-        document: result.content,
+        document: content,
         digestCid: latestDigest?.cid,
         artifactsConsidered: recentArtifacts.length,
       });
 
       const handoff: HandoffDoc = {
         workspaceId,
-        content: result.content,
+        content,
         generatedAt: new Date().toISOString(),
         cid: artifact?.cid || null,
       };
@@ -100,7 +106,7 @@ Write a structured handoff document with sections:
       this.handoffs.set(workspaceId, handoff);
       return handoff;
     } catch (err) {
-      console.error('[Handoff] Generation failed:', err);
+      console.error('[Handoff] Export failed:', err);
       return null;
     }
   }
@@ -113,17 +119,30 @@ Write a structured handoff document with sections:
     return this.handoffs.get(workspaceId) || null;
   }
 
-  private async selectModel(): Promise<string> {
-    if (!this.ollamaManager) return 'llama3.2';
+  private rawHandoff(digest: any, artifacts: any[], ctx: any): string {
+    const lines = ['# Project Handoff', '', `Generated: ${new Date().toISOString()}`, ''];
+    if (digest) {
+      lines.push('## Latest Digest', digest.summary || 'No summary', '');
+      if (digest.decisions?.length) lines.push('## Decisions', ...digest.decisions.map((d: string) => `- ${d}`), '');
+      if (digest.issues?.length) lines.push('## Issues', ...digest.issues.map((i: string) => `- ${i}`), '');
+    }
+    lines.push(`## Recent Activity`, `- ${artifacts.length} artifacts in the last 48h`, '');
+    if (ctx.tasks?.length) lines.push('## Tasks', ...ctx.tasks.slice(0, 10).map((t: any) => `- [${t.status}] ${t.title}`), '');
+    lines.push('', '*AI-enhanced handoff available with an Ollama model installed.*');
+    return lines.join('\n');
+  }
+
+  private async selectModel(): Promise<string | null> {
+    if (!this.ollamaManager) return null;
     try {
+      const running = await this.ollamaManager.checkRunning();
+      if (!running) return null;
       const status = await this.ollamaManager.getStatus();
       const models = status.models || [];
-      const preferred = models.find((m: any) =>
-        m.name.includes('qwen') || m.name.includes('llama') || m.name.includes('gemma')
-      );
-      return preferred?.name || models[0]?.name || 'llama3.2';
+      if (models.length === 0) return null;
+      return models[0].name;
     } catch {
-      return 'llama3.2';
+      return null;
     }
   }
 }

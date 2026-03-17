@@ -13,14 +13,16 @@ export function registerDigestRoutes(deps: RouteDependencies): void {
   // Generate digest on demand
   app.post('/api/v1/workspaces/:id/digest/generate', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
-    const digest = await digestService.generateDigest(workspaceId);
-
-    if (digest) {
-      // Auto-update handoff after digest
-      handoffService.updateHandoff(workspaceId).catch(() => {});
-      res.json({ digest });
-    } else {
-      res.status(503).json({ error: 'Digest generation failed — Ollama may not be running' });
+    try {
+      const digest = await digestService.generateDigest(workspaceId);
+      if (digest) {
+        handoffService.updateHandoff(workspaceId).catch(() => {});
+        res.json({ digest });
+      } else {
+        res.status(503).json({ error: 'Digest generation failed — Ollama may not be running' });
+      }
+    } catch (err: any) {
+      res.status(503).json({ error: err.message || 'Digest generation failed' });
     }
   });
 
@@ -58,12 +60,15 @@ export function registerDigestRoutes(deps: RouteDependencies): void {
   // Regenerate handoff document
   app.post('/api/v1/workspaces/:id/handoff/regenerate', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
-    const handoff = await handoffService.updateHandoff(workspaceId);
-
-    if (handoff) {
-      res.json({ handoff });
-    } else {
-      res.status(503).json({ error: 'Handoff generation failed' });
+    try {
+      const handoff = await handoffService.updateHandoff(workspaceId);
+      if (handoff) {
+        res.json({ handoff });
+      } else {
+        res.status(503).json({ error: 'Handoff generation failed — Ollama may not be running' });
+      }
+    } catch (err: any) {
+      res.status(503).json({ error: err.message || 'Handoff generation failed' });
     }
   });
 }

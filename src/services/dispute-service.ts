@@ -69,9 +69,23 @@ Analyze this dispute and provide a recommendation. Respond in JSON:
 
 Be fair and consider both sides. This is advisory only — no on-chain action will be taken automatically.`;
 
+    const model = await this.selectModel();
+    if (!model || !this.ollamaManager) {
+      // Return a basic analysis without AI
+      const analysis: DisputeAnalysis = {
+        taskId, milestoneIndex,
+        recommendation: 'partial',
+        reasoning: 'AI analysis unavailable — no Ollama model installed. Manual review recommended.',
+        evidence: [`Work CID submitted: ${context.workCid || 'none'}`, `Milestone: ${context.milestoneDescription}`],
+        confidence: 0, generatedAt: new Date().toISOString(), cid: null,
+      };
+      this.analyses.set(`${taskId}-${milestoneIndex}`, analysis);
+      return analysis;
+    }
+
     try {
       const result = await this.ollamaManager.chat({
-        model: await this.selectModel(),
+        model,
         messages: [
           { role: 'system', content: 'You are a neutral AI arbitrator. Respond only with valid JSON. Be fair and evidence-based.' },
           { role: 'user', content: prompt },
@@ -121,17 +135,17 @@ Be fair and consider both sides. This is advisory only — no on-chain action wi
     return this.analyses.get(`${taskId}-${milestoneIndex}`) || null;
   }
 
-  private async selectModel(): Promise<string> {
-    if (!this.ollamaManager) return 'llama3.2';
+  private async selectModel(): Promise<string | null> {
+    if (!this.ollamaManager) return null;
     try {
+      const running = await this.ollamaManager.checkRunning();
+      if (!running) return null;
       const status = await this.ollamaManager.getStatus();
       const models = status.models || [];
-      const preferred = models.find((m: any) =>
-        m.name.includes('qwen') || m.name.includes('llama') || m.name.includes('gemma')
-      );
-      return preferred?.name || models[0]?.name || 'llama3.2';
+      if (models.length === 0) return null;
+      return models[0].name;
     } catch {
-      return 'llama3.2';
+      return null;
     }
   }
 }

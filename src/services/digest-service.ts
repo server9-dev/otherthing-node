@@ -44,14 +44,6 @@ class DigestService {
   }
 
   async generateDigest(workspaceId: string): Promise<DigestResult | null> {
-    if (!this.ollamaManager) {
-      console.warn('[Digest] Ollama not available');
-      return null;
-    }
-
-    const running = await this.ollamaManager.checkRunning();
-    if (!running) return null;
-
     // Gather artifacts from the last 12 hours
     const since = new Date(Date.now() - 12 * 60 * 60 * 1000);
     const chatArtifacts = ipfsExportService.getArtifactsSince(workspaceId, since, 'chat');
@@ -68,84 +60,72 @@ class DigestService {
       }
     }
 
-    const prompt = `You are an AI project manager analyzing workspace activity. Generate a structured digest.
+    // Try AI, fall back to raw metrics if no model available
+    const model = await this.selectModel();
+    let parsed: any = null;
 
-Recent workspace activity (last 12h):
-- ${chatArtifacts.length} chat exports
-- ${transcriptArtifacts.length} transcription exports
-- ${whiteboardArtifacts.length} whiteboard exports
-
-${artifactContents.length > 0 ? 'Activity content:\n' + artifactContents.join('\n\n') : 'No detailed content available.'}
-
-Respond in JSON format:
-{
-  "summary": "Brief 2-3 sentence summary of activity",
-  "decisions": ["Decision 1", "Decision 2"],
-  "issues": ["Issue or blocker 1"],
-  "suggestedTasks": [{"title": "Task", "description": "Details", "priority": "high|medium|low"}]
-}`;
-
-    try {
-      const result = await this.ollamaManager.chat({
-        model: await this.selectModel(),
-        messages: [
-          { role: 'system', content: 'You are an AI project manager. Respond only with valid JSON.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-      });
-
-      let parsed: any;
+    if (model && this.ollamaManager) {
       try {
-        // Extract JSON from response (handle markdown code blocks)
-        const jsonMatch = result.content.match(/\{[\s\S]*\}/);
-        parsed = JSON.parse(jsonMatch?.[0] || result.content);
-      } catch {
-        parsed = {
-          summary: result.content.slice(0, 500),
-          decisions: [],
-          issues: [],
-          suggestedTasks: [],
-        };
-      }
-
-      // Export digest to IPFS
-      const artifact = await ipfsExportService.exportContent(workspaceId, 'digest', parsed, {
-        artifactsAnalyzed: chatArtifacts.length + transcriptArtifacts.length + whiteboardArtifacts.length,
-      });
-
-      const digest: DigestResult = {
-        workspaceId,
-        summary: parsed.summary || '',
-        decisions: parsed.decisions || [],
-        issues: parsed.issues || [],
-        suggestedTasks: parsed.suggestedTasks || [],
-        generatedAt: new Date().toISOString(),
-        cid: artifact?.cid || null,
-      };
-
-      if (!this.digests.has(workspaceId)) {
-        this.digests.set(workspaceId, []);
-      }
-      this.digests.get(workspaceId)!.push(digest);
-
-      // Auto-create suggested tasks
-      if (this.taskCreator && digest.suggestedTasks.length > 0) {
-        for (const task of digest.suggestedTasks) {
-          this.taskCreator(workspaceId, {
-            title: task.title,
-            description: task.description,
-            priority: task.priority || 'medium',
-            status: 'todo',
-          });
+        const result = await this.ollamaManager.chat({
+          model,
+          messages: [
+            { role: 'system', content: 'You are an AI project manager. Respond only with valid JSON.' },
+            { role: 'user', content: `Analyze workspace activity (last 12h): ${chatArtifacts.length} chat exports, ${transcriptArtifacts.length} transcriptions, ${whiteboardArtifacts.length} whiteboard exports.\n${artifactContents.length > 0 ? 'Content:\n' + artifactContents.join('\n\n') : ''}\nRespond as JSON: { "summary": "...", "decisions": [], "issues": [], "suggestedTasks": [{"title":"","description":"","priority":"medium"}] }` },
+          ],
+          temperature: 0.3,
+        });
+        try {
+          const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+          parsed = JSON.parse(jsonMatch?.[0] || result.content);
+        } catch {
+          parsed = { summary: result.content.slice(0, 500), decisions: [], issues: [], suggestedTasks: [] };
         }
+      } catch (err) {
+        console.warn('[Digest] AI call failed, using raw metrics:', (err as Error).message);
       }
-
-      return digest;
-    } catch (err) {
-      console.error('[Digest] Generation failed:', err);
-      return null;
     }
+
+    if (!parsed) {
+      parsed = {
+        summary: `Activity (last 12h): ${chatArtifacts.length} chat exports, ${transcriptArtifacts.length} transcriptions, ${whiteboardArtifacts.length} whiteboard exports.${!model ? ' Pull an Ollama model for AI-powered analysis.' : ''}`,
+        decisions: [], issues: [], suggestedTasks: [],
+      };
+    }
+
+    // Export digest to IPFS
+    const artifact = await ipfsExportService.exportContent(workspaceId, 'digest', parsed, {
+      artifactsAnalyzed: chatArtifacts.length + transcriptArtifacts.length + whiteboardArtifacts.length,
+      aiEnhanced: !!model,
+    });
+
+    const digest: DigestResult = {
+      workspaceId,
+      summary: parsed.summary || '',
+      decisions: parsed.decisions || [],
+      issues: parsed.issues || [],
+      suggestedTasks: parsed.suggestedTasks || [],
+      generatedAt: new Date().toISOString(),
+      cid: artifact?.cid || null,
+    };
+
+    if (!this.digests.has(workspaceId)) {
+      this.digests.set(workspaceId, []);
+    }
+    this.digests.get(workspaceId)!.push(digest);
+
+    // Auto-create suggested tasks
+    if (this.taskCreator && digest.suggestedTasks.length > 0) {
+      for (const task of digest.suggestedTasks) {
+        this.taskCreator(workspaceId, {
+          title: task.title,
+          description: task.description,
+          priority: task.priority || 'medium',
+          status: 'todo',
+        });
+      }
+    }
+
+    return digest;
   }
 
   getLatest(workspaceId: string): DigestResult | null {
@@ -157,17 +137,17 @@ Respond in JSON format:
     return this.digests.get(workspaceId) || [];
   }
 
-  private async selectModel(): Promise<string> {
-    if (!this.ollamaManager) return 'llama3.2';
+  private async selectModel(): Promise<string | null> {
+    if (!this.ollamaManager) return null;
     try {
+      const running = await this.ollamaManager.checkRunning();
+      if (!running) return null;
       const status = await this.ollamaManager.getStatus();
       const models = status.models || [];
-      const preferred = models.find((m: any) =>
-        m.name.includes('qwen') || m.name.includes('llama') || m.name.includes('gemma')
-      );
-      return preferred?.name || models[0]?.name || 'llama3.2';
+      if (models.length === 0) return null;
+      return models[0].name;
     } catch {
-      return 'llama3.2';
+      return null;
     }
   }
 }

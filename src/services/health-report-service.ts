@@ -69,10 +69,6 @@ class HealthReportService {
   }
 
   async generateReport(workspaceId: string): Promise<HealthReport | null> {
-    if (!this.ollamaManager) return null;
-
-    const running = await this.ollamaManager.checkRunning();
-    if (!running) return null;
 
     const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
     const artifacts = ipfsExportService.getArtifactsSince(workspaceId, since);
@@ -190,52 +186,60 @@ Respond in JSON:
   "recommendations": ["Actionable team-level recommendation"]
 }`;
 
-    try {
-      const result = await this.ollamaManager.chat({
-        model: await this.selectModel(),
-        messages: [
-          { role: 'system', content: 'You are an AI team health analyst for a developer workspace. Respond only with valid JSON. Be specific and actionable.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-      });
+    // AI is optional — metrics + rule-based individual analysis work without it
+    const model = await this.selectModel();
+    let aiPredictions: string[] = [];
+    let aiRecommendations: string[] = [];
 
-      let parsed: any;
+    if (model && this.ollamaManager) {
       try {
-        const jsonMatch = result.content.match(/\{[\s\S]*\}/);
-        parsed = JSON.parse(jsonMatch?.[0] || result.content);
-      } catch {
-        parsed = { predictions: [], recommendations: [] };
+        const result = await this.ollamaManager.chat({
+          model,
+          messages: [
+            { role: 'system', content: 'You are an AI team health analyst. Respond only with valid JSON. Be specific.' },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.3,
+        });
+        try {
+          const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+          const parsed = JSON.parse(jsonMatch?.[0] || result.content);
+          aiPredictions = parsed.predictions || [];
+          aiRecommendations = parsed.recommendations || [];
+        } catch {}
+      } catch (err) {
+        console.warn('[Health] AI unavailable, using rule-based analysis only');
       }
-
-      const report: HealthReport = {
-        workspaceId,
-        participationMetrics: {
-          activeSpeakers: uniqueSpeakers,
-          messageCount: recentMessages.length,
-          artifactCount: artifacts.length,
-        },
-        taskVelocity: taskMetrics,
-        individuals,
-        predictions: parsed.predictions || [],
-        recommendations: parsed.recommendations || [],
-        generatedAt: new Date().toISOString(),
-        cid: null,
-      };
-
-      const artifact = await ipfsExportService.exportContent(workspaceId, 'health-report', report);
-      report.cid = artifact?.cid || null;
-
-      if (!this.reports.has(workspaceId)) {
-        this.reports.set(workspaceId, []);
-      }
-      this.reports.get(workspaceId)!.push(report);
-
-      return report;
-    } catch (err) {
-      console.error('[Health] Report generation failed:', err);
-      return null;
     }
+
+    if (aiPredictions.length === 0 && !model) {
+      aiPredictions.push('AI predictions unavailable — install an Ollama model for enhanced analysis');
+    }
+
+    const report: HealthReport = {
+      workspaceId,
+      participationMetrics: {
+        activeSpeakers: uniqueSpeakers,
+        messageCount: recentMessages.length,
+        artifactCount: artifacts.length,
+      },
+      taskVelocity: taskMetrics,
+      individuals,
+      predictions: aiPredictions,
+      recommendations: aiRecommendations,
+      generatedAt: new Date().toISOString(),
+      cid: null,
+    };
+
+    const artifact = await ipfsExportService.exportContent(workspaceId, 'health-report', report);
+    report.cid = artifact?.cid || null;
+
+    if (!this.reports.has(workspaceId)) {
+      this.reports.set(workspaceId, []);
+    }
+    this.reports.get(workspaceId)!.push(report);
+
+    return report;
   }
 
   getLatest(workspaceId: string): HealthReport | null {
@@ -247,17 +251,17 @@ Respond in JSON:
     return this.reports.get(workspaceId) || [];
   }
 
-  private async selectModel(): Promise<string> {
-    if (!this.ollamaManager) return 'llama3.2';
+  private async selectModel(): Promise<string | null> {
+    if (!this.ollamaManager) return null;
     try {
+      const running = await this.ollamaManager.checkRunning();
+      if (!running) return null;
       const status = await this.ollamaManager.getStatus();
       const models = status.models || [];
-      const preferred = models.find((m: any) =>
-        m.name.includes('qwen') || m.name.includes('llama') || m.name.includes('gemma')
-      );
-      return preferred?.name || models[0]?.name || 'llama3.2';
+      if (models.length === 0) return null;
+      return models[0].name;
     } catch {
-      return 'llama3.2';
+      return null;
     }
   }
 }

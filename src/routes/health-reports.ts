@@ -11,12 +11,15 @@ export function registerHealthReportRoutes(deps: RouteDependencies): void {
 
   app.post('/api/v1/workspaces/:id/health-report/generate', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
-    const report = await healthReportService.generateReport(workspaceId);
-
-    if (report) {
-      res.json({ report });
-    } else {
-      res.status(503).json({ error: 'Health report generation failed' });
+    try {
+      const report = await healthReportService.generateReport(workspaceId);
+      if (report) {
+        res.json({ report });
+      } else {
+        res.status(503).json({ error: 'Health report generation failed — Ollama may not be running' });
+      }
+    } catch (err: any) {
+      res.status(503).json({ error: err.message || 'Health report generation failed' });
     }
   });
 
