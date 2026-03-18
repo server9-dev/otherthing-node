@@ -47,11 +47,38 @@ export function ChatTab({ workspace, workspaceId }: Props) {
   const displayName = localStorage.getItem('ott-display-name') || '';
 
   const peerId = `local-${address?.slice(0, 8) || 'anon'}`;
+  const callerName = displayName || address?.slice(0, 8) || 'Anonymous';
   const {
     inCall, participants: callParticipants, localStream,
     audioEnabled, videoEnabled,
-    joinCall, leaveCall, toggleAudio, toggleVideo,
-  } = useVoiceVideo({ workspaceId, displayName: displayName || address?.slice(0, 8) || 'Anonymous' });
+    joinCall: rawJoinCall, leaveCall: rawLeaveCall, toggleAudio, toggleVideo,
+  } = useVoiceVideo({ workspaceId, displayName: callerName });
+
+  // Wrap joinCall/leaveCall to post system messages in chat
+  const joinCall = async (withVideo = false) => {
+    await rawJoinCall(withVideo);
+    fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+      body: JSON.stringify({
+        content: `📞 ${callerName} started a voice call`,
+        senderAddress: address || 'system',
+        displayName: 'System',
+      }),
+    }).catch(() => {});
+  };
+  const leaveCall = () => {
+    rawLeaveCall();
+    fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+      body: JSON.stringify({
+        content: `📞 ${callerName} left the call`,
+        senderAddress: address || 'system',
+        displayName: 'System',
+      }),
+    }).catch(() => {});
+  };
 
   const {
     transcribing, segments: transcriptionSegments, start: startTranscription, stop: stopTranscription,
@@ -521,6 +548,46 @@ export function ChatTab({ workspace, workspaceId }: Props) {
             )}
             {teamMessages.map(msg => {
               const isMe = msg.sender === address || msg.senderName === 'local';
+              const isCallMsg = msg.content?.startsWith('📞');
+
+              // Call system messages — render as centered banner
+              if (isCallMsg) {
+                const isStarted = msg.content.includes('started');
+                return (
+                  <div key={msg.id} style={{
+                    display: 'flex', justifyContent: 'center', marginBottom: '0.75rem',
+                  }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '0.5rem',
+                      padding: '0.4rem 0.85rem', borderRadius: 20,
+                      background: isStarted ? 'rgba(0,212,255,0.08)' : 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${isStarted ? 'rgba(0,212,255,0.2)' : 'var(--border-subtle)'}`,
+                      fontSize: '0.75rem', color: isStarted ? 'var(--primary)' : 'var(--text-muted)',
+                    }}>
+                      <Phone size={12} />
+                      <span>{msg.content.replace('📞 ', '')}</span>
+                      {isStarted && !inCall && (
+                        <button
+                          onClick={() => joinCall(false)}
+                          style={{
+                            background: 'var(--primary)', color: 'var(--bg-primary)',
+                            border: 'none', borderRadius: 12, padding: '2px 10px',
+                            fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer',
+                            marginLeft: '0.25rem',
+                          }}
+                        >
+                          Join
+                        </button>
+                      )}
+                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                        {new Date(msg.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
+              // Regular messages
               return (
                 <div key={msg.id} style={{
                   display: 'flex', gap: '0.75rem', marginBottom: '0.75rem',
