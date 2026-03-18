@@ -35,6 +35,7 @@ export const COLLECTIONS = {
   CHAT_MESSAGES: 'chat_messages',
   WORKSPACE_TASKS: 'workspace_tasks',
   WORKSPACE_PEERS: 'workspace_peers',
+  SIGNALING: 'signaling',
 } as const;
 
 // Database ID
@@ -308,6 +309,48 @@ class AppwriteService {
       addresses: JSON.parse(d.addresses || '[]'),
     }));
     return result;
+  }
+
+  // ============ SIGNALING (WebRTC relay via Appwrite) ============
+
+  async sendSignal(data: {
+    workspaceId: string;
+    fromPeerId: string;
+    targetPeerId: string;
+    type: string; // sdp-offer, sdp-answer, ice-candidate, call-join, call-leave
+    payload: string; // JSON stringified
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID, COLLECTIONS.SIGNALING, ID.unique(),
+      { ...data, timestamp: new Date().toISOString() }
+    );
+  }
+
+  async pollSignals(workspaceId: string, forPeerId: string, since: string): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID, COLLECTIONS.SIGNALING,
+      [
+        Query.equal('workspaceId', workspaceId),
+        Query.equal('targetPeerId', forPeerId),
+        Query.greaterThan('timestamp', since),
+        Query.orderAsc('timestamp'),
+        Query.limit(50),
+      ]
+    );
+  }
+
+  async cleanupSignals(workspaceId: string): Promise<void> {
+    try {
+      // Delete signals older than 5 minutes
+      const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const old = await this.databases.listDocuments(
+        DATABASE_ID, COLLECTIONS.SIGNALING,
+        [Query.equal('workspaceId', workspaceId), Query.lessThan('timestamp', cutoff), Query.limit(100)]
+      );
+      for (const doc of old.documents) {
+        await this.databases.deleteDocument(DATABASE_ID, COLLECTIONS.SIGNALING, doc.$id).catch(() => {});
+      }
+    } catch {}
   }
 
   // Aliases for route compatibility

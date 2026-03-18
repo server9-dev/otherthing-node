@@ -349,6 +349,22 @@ const collections = [
     ],
   },
   {
+    id: 'signaling',
+    name: 'Signaling',
+    attributes: [
+      { key: 'workspaceId', type: 'string', size: 255, required: true },
+      { key: 'fromPeerId', type: 'string', size: 100, required: true },
+      { key: 'targetPeerId', type: 'string', size: 100, required: true },
+      { key: 'type', type: 'string', size: 30, required: true },
+      { key: 'payload', type: 'string', size: 100000, required: true },
+      { key: 'timestamp', type: 'datetime', required: true },
+    ],
+    indexes: [
+      { key: 'workspace_target_idx', type: 'key', attributes: ['workspaceId', 'targetPeerId'] },
+      { key: 'timestamp_idx', type: 'key', attributes: ['timestamp'] },
+    ],
+  },
+  {
     id: 'compute_jobs',
     name: 'Compute Jobs',
     attributes: [
