@@ -110,17 +110,21 @@ export function useVoiceVideo({ workspaceId, displayName }: UseVoiceVideoOptions
     const data = JSON.parse(signal.payload);
 
     if (signal.type === 'call-join') {
-      // New peer joined — add them and send an offer (skip if already connected)
+      // New peer joined — skip if already connected
       if (peersRef.current.has(signal.fromPeerId)) return;
       setParticipants(prev => {
         const next = new Map(prev);
         next.set(signal.fromPeerId, { peerId: signal.fromPeerId, displayName: data.displayName || 'Unknown' });
         return next;
       });
-      const pc = createPeerConnection(signal.fromPeerId);
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      sendSignal(signal.fromPeerId, 'sdp-offer', { sdp: offer, displayName });
+      // Only the peer with the "higher" ID sends the offer (prevents glare)
+      if (peerIdRef.current > signal.fromPeerId) {
+        const pc = createPeerConnection(signal.fromPeerId);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendSignal(signal.fromPeerId, 'sdp-offer', { sdp: offer, displayName });
+      }
+      // The other peer waits for the offer via sdp-offer handler
     }
 
     if (signal.type === 'call-leave') {
