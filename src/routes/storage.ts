@@ -103,23 +103,37 @@ export function registerStorageRoutes(deps: RouteDependencies): void {
       category: null, reason: '', method: 'scan',
     });
 
-    const cid = `Qm${uuidv4().replace(/-/g, '').slice(0, 44)}`;
+    const fname = filename || 'untitled.txt';
+    const size = Buffer.byteLength(content, 'utf8');
+
+    // Store content to IPFS if available, otherwise local cache with fake CID
+    let cid: string;
+    const ipfs = deps.managers.ipfsManager;
+    if (ipfs && ipfs.getIsRunning()) {
+      try {
+        cid = await ipfs.addContent(content, fname);
+      } catch (err) {
+        console.warn('[Storage] IPFS add failed, using local cache:', err);
+        cid = `Qm${uuidv4().replace(/-/g, '').slice(0, 44)}`;
+        storageContent.set(cid, content);
+      }
+    } else {
+      cid = `Qm${uuidv4().replace(/-/g, '').slice(0, 44)}`;
+      storageContent.set(cid, content);
+    }
+
     const file: any = {
-      id: uuidv4(),
-      cid,
-      name: filename || 'untitled.txt',
-      size: Buffer.byteLength(content, 'utf8'),
+      id: uuidv4(), cid, name: fname, size,
       mimeType: mimeType || 'text/plain',
       addedBy: session.username,
       addedAt: new Date().toISOString(),
       pinned: true,
     };
 
-    storageContent.set(cid, content);
     if (!storageStore.has(workspaceId)) storageStore.set(workspaceId, []);
     storageStore.get(workspaceId)!.push(file);
 
-    // Persist to Appwrite
+    // Persist metadata to Appwrite (shared file list)
     if (appwriteService.isInitialized()) {
       appwriteService.createStoredFile(workspaceId, {
         cid: file.cid, name: file.name, size: file.size,
@@ -133,14 +147,36 @@ export function registerStorageRoutes(deps: RouteDependencies): void {
     res.status(201).json({ file });
   });
 
-  app.get('/api/v1/workspaces/:id/storage/content/:cid', localAuth, (req: Request, res: Response) => {
+  app.get('/api/v1/workspaces/:id/storage/content/:cid', localAuth, async (req: Request, res: Response) => {
     const cid = req.params.cid as string;
-    const content = storageContent.get(cid);
-    if (!content) {
-      res.status(404).json({ error: 'Content not found' });
+
+    // Check local cache first
+    const cached = storageContent.get(cid);
+    if (cached) {
+      res.json({ content: cached });
       return;
     }
-    res.json({ content });
+
+    // Try IPFS
+    const ipfs = deps.managers.ipfsManager;
+    if (ipfs && ipfs.getIsRunning()) {
+      try {
+        const os = require('os');
+        const path = require('path');
+        const fs = require('fs');
+        const tmpPath = path.join(os.tmpdir(), `ipfs-get-${cid}-${Date.now()}`);
+        await ipfs.get(cid, tmpPath);
+        const content = fs.readFileSync(tmpPath, 'utf-8');
+        fs.unlinkSync(tmpPath);
+        storageContent.set(cid, content); // cache locally
+        res.json({ content });
+        return;
+      } catch (err) {
+        console.warn('[Storage] IPFS get failed for', cid, err);
+      }
+    }
+
+    res.status(404).json({ error: 'Content not found — IPFS may not be running' });
   });
 
   app.delete('/api/v1/workspaces/:id/storage/files/:fileId', localAuth, async (req: Request, res: Response) => {
