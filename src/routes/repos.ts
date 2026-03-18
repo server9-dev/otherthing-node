@@ -13,6 +13,25 @@ import { existsSync, mkdirSync } from 'fs';
 import { execSync, spawnSync } from 'child_process';
 import { analyzeRepository, RepoAnalysis } from '../services/repo-analyzer';
 import type { RouteDependencies } from './types';
+import { appwriteService } from '../services/appwrite-service';
+
+const loadedRepos: Set<string> = new Set();
+
+async function loadReposFromAppwrite(workspaceId: string): Promise<void> {
+  if (loadedRepos.has(workspaceId) || !appwriteService.isInitialized()) return;
+  try {
+    const result = await appwriteService.listWorkspaceRepos(workspaceId);
+    const repos = result.documents.map((d: any) => ({
+      id: d.$id, url: d.url, name: d.name, status: d.status || 'ready',
+      ipfsCid: d.ipfsCid, addedBy: d.addedBy, addedAt: d.addedAt,
+      _appwriteId: d.$id,
+    }));
+    reposStore.set(workspaceId, repos);
+    loadedRepos.add(workspaceId);
+  } catch (err) {
+    console.warn('[Repos] Appwrite load failed:', err);
+  }
+}
 
 function getReposDir(): string {
   const dir = path.join(os.homedir(), '.otherthing', 'repos');
@@ -34,8 +53,9 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
   const getIpfs = () => deps.managers.ipfsManager;
 
   // ── List repos ────────────────────────────────────────────
-  app.get('/api/v1/workspaces/:id/repos', localAuth, (req: Request, res: Response) => {
+  app.get('/api/v1/workspaces/:id/repos', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
+    await loadReposFromAppwrite(workspaceId);
     const repos = reposStore.get(workspaceId) || [];
     res.json({ repos });
   });
@@ -57,6 +77,15 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
       reposStore.set(workspaceId, []);
     }
     reposStore.get(workspaceId)!.push(repo);
+
+    // Persist to Appwrite
+    if (appwriteService.isInitialized()) {
+      appwriteService.createWorkspaceRepo(workspaceId, {
+        url: repo.url, name: repo.name, addedBy: repo.addedBy,
+      }).then(doc => {
+        repo._appwriteId = doc.$id;
+      }).catch(err => console.warn('[Repos] Appwrite write failed:', err));
+    }
 
     // Return immediately, clone + analyze + IPFS in background
     res.status(201).json({ repo });

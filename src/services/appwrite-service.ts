@@ -267,6 +267,13 @@ class AppwriteService {
     );
   }
 
+  // Aliases for route compatibility
+  async listWorkspaceFlows(workspaceId: string): Promise<any> { return this.listFlows(workspaceId); }
+  async createWorkspaceFlow(workspaceId: string, data: any): Promise<any> { return this.createFlow(workspaceId, data); }
+  async deleteWorkspaceFlow(flowId: string): Promise<void> {
+    await this.databases.deleteDocument(DATABASE_ID, COLLECTIONS.WORKSPACE_FLOWS, flowId);
+  }
+
   // ============ UAF ELEMENTS ============
 
   /**
