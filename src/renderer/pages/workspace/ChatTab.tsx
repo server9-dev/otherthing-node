@@ -80,12 +80,23 @@ export function ChatTab({ workspace, workspaceId }: Props) {
   const [teamInput, setTeamInput] = useState('');
   const teamEndRef = useRef<HTMLDivElement>(null);
 
-  // Load team messages + poll
+  // Load team messages + poll (only update state if messages changed)
+  const lastMsgCountRef = useRef(0);
+  const lastMsgIdRef = useRef('');
   useEffect(() => {
     if (chatMode !== 'team') return;
     const load = () => {
       fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, { headers: { Authorization: 'Bearer local-token' } })
-        .then(r => r.json()).then(d => setTeamMessages(d.messages || [])).catch(() => {});
+        .then(r => r.json()).then(d => {
+          const msgs = d.messages || [];
+          const lastId = msgs.length > 0 ? msgs[msgs.length - 1].id : '';
+          // Only re-render if message count or last message ID changed
+          if (msgs.length !== lastMsgCountRef.current || lastId !== lastMsgIdRef.current) {
+            lastMsgCountRef.current = msgs.length;
+            lastMsgIdRef.current = lastId;
+            setTeamMessages(msgs);
+          }
+        }).catch(() => {});
     };
     load();
     const interval = setInterval(load, 3000);
