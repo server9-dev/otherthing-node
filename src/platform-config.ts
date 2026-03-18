@@ -20,6 +20,11 @@ export const PLATFORM = {
     clientSecret: '432ad2e2d076ad0f6ff687e3e3807a4139f9f4a8',
   },
 
+  // Groq — Whisper transcription (key loaded from env to satisfy GitHub push protection)
+  groq: {
+    apiKey: process.env.GROQ_API_KEY || '',
+  },
+
   // Remote inference — premium tier hosted AI
   inference: {
     apiKey: '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',
