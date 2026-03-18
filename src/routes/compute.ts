@@ -14,6 +14,7 @@ import { healthReportService } from '../services/health-report-service';
 import { setWorkspaceToolRefs } from '../services/workspace-tools';
 import { safetyService } from '../services/safety-service';
 import { appwriteService } from '../services/appwrite-service';
+import { ipfsSyncService } from '../services/ipfs-sync-service';
 import { auditService } from '../services/audit-service';
 import { banService } from '../services/ban-service';
 
@@ -589,6 +590,15 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
+  });
+
+  // ============ IPFS Workspace Sync ============
+
+  app.post('/api/v1/workspaces/:id/sync', localAuth, async (req: Request, res: Response) => {
+    const workspaceId = req.params.id as string;
+    const session = (req as any).session;
+    const result = await ipfsSyncService.syncWorkspace(workspaceId, session.userId);
+    res.json(result);
   });
 
 }

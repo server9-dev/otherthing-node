@@ -34,6 +34,7 @@ export const COLLECTIONS = {
   IP_REGISTRATIONS: 'ip_registrations',
   CHAT_MESSAGES: 'chat_messages',
   WORKSPACE_TASKS: 'workspace_tasks',
+  WORKSPACE_PEERS: 'workspace_peers',
 } as const;
 
 // Database ID
@@ -265,6 +266,48 @@ class AppwriteService {
       flowId,
       updateData
     );
+  }
+
+  // ============ WORKSPACE PEERS (IPFS auto-sync) ============
+
+  async registerPeer(workspaceId: string, data: {
+    peerId: string;
+    addresses: string[];
+    userId: string;
+  }): Promise<any> {
+    // Upsert: delete old entry for this user in this workspace, then create new
+    try {
+      const existing = await this.databases.listDocuments(
+        DATABASE_ID, COLLECTIONS.WORKSPACE_PEERS,
+        [Query.equal('workspaceId', workspaceId), Query.equal('userId', data.userId)]
+      );
+      for (const doc of existing.documents) {
+        await this.databases.deleteDocument(DATABASE_ID, COLLECTIONS.WORKSPACE_PEERS, doc.$id);
+      }
+    } catch {}
+
+    return await this.databases.createDocument(
+      DATABASE_ID, COLLECTIONS.WORKSPACE_PEERS, ID.unique(),
+      {
+        workspaceId,
+        peerId: data.peerId,
+        addresses: JSON.stringify(data.addresses),
+        userId: data.userId,
+        lastSeen: new Date().toISOString(),
+      }
+    );
+  }
+
+  async listWorkspacePeers(workspaceId: string): Promise<any> {
+    const result = await this.databases.listDocuments(
+      DATABASE_ID, COLLECTIONS.WORKSPACE_PEERS,
+      [Query.equal('workspaceId', workspaceId)]
+    );
+    result.documents = result.documents.map((d: any) => ({
+      ...d,
+      addresses: JSON.parse(d.addresses || '[]'),
+    }));
+    return result;
   }
 
   // Aliases for route compatibility

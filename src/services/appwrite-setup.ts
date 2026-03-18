@@ -334,6 +334,21 @@ const collections = [
     ],
   },
   {
+    id: 'workspace_peers',
+    name: 'Workspace Peers',
+    attributes: [
+      { key: 'workspaceId', type: 'string', size: 255, required: true },
+      { key: 'peerId', type: 'string', size: 255, required: true },
+      { key: 'addresses', type: 'string', size: 5000, required: true },
+      { key: 'userId', type: 'string', size: 255, required: true },
+      { key: 'lastSeen', type: 'datetime', required: true },
+    ],
+    indexes: [
+      { key: 'workspaceId_idx', type: 'key', attributes: ['workspaceId'] },
+      { key: 'userId_idx', type: 'key', attributes: ['userId'] },
+    ],
+  },
+  {
     id: 'compute_jobs',
     name: 'Compute Jobs',
     attributes: [

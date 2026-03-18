@@ -57,6 +57,11 @@ export function WorkspaceTabs() {
       setWorkspace(found);
       setLoading(false);
       getWorkspaceMembers(workspaceId).then(setMembers).catch(() => {});
+      // Auto-sync IPFS peers when opening workspace
+      fetch(`http://localhost:8080/api/v1/workspaces/${workspaceId}/sync`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer local-token' },
+      }).catch(() => {});
     } else if (myWorkspaces.length === 0) {
       refreshWorkspaces();
     } else {

@@ -28,6 +28,7 @@ import { handoffService } from './services/handoff-service';
 import { disputeService } from './services/dispute-service';
 import { healthReportService } from './services/health-report-service';
 import { safetyService } from './services/safety-service';
+import { ipfsSyncService } from './services/ipfs-sync-service';
 import { remoteInferenceService } from './services/remote-inference';
 import { PLATFORM } from './platform-config';
 import type { AgentExecutionLocal, OnChainNodeRecord, WorkspaceNodeRecord, ManagerRefs } from './routes/types';
@@ -86,8 +87,9 @@ export class ApiServer {
     this.managerRefs.ipfsManager = ipfs;
     agentService.setManagers(ollama, sandbox);
 
-    // Wire up AI services
+    // Wire up services
     ipfsExportService.setIPFSManager(ipfs);
+    ipfsSyncService.setIPFSManager(ipfs);
     transcriptionService.setOllamaManager(ollama);
     safetyService.setOllamaManager(ollama);
     digestService.setOllamaManager(ollama);
