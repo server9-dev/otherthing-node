@@ -546,9 +546,12 @@ export function ChatTab({ workspace, workspaceId }: Props) {
                 </p>
               </div>
             )}
-            {teamMessages.map(msg => {
+            {teamMessages.map((msg, _idx, allMsgs) => {
               const isMe = msg.sender === address || msg.senderName === 'local';
               const isCallMsg = msg.content?.startsWith('📞');
+              // Only show Join on the most recent "started" if no "left" after it
+              const lastCallMsg = [...allMsgs].reverse().find(m => m.content?.startsWith('📞'));
+              const callIsActive = lastCallMsg?.content?.includes('started') && lastCallMsg?.id === msg.id;
 
               // Call system messages — render as centered banner
               if (isCallMsg) {
@@ -566,7 +569,7 @@ export function ChatTab({ workspace, workspaceId }: Props) {
                     }}>
                       <Phone size={12} />
                       <span>{msg.content.replace('📞 ', '')}</span>
-                      {isStarted && !inCall && (
+                      {callIsActive && !inCall && (
                         <button
                           onClick={() => joinCall(false)}
                           style={{

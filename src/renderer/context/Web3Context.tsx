@@ -554,9 +554,14 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   };
 
   // Connect with private key (for desktop use)
-  const connectWithPrivateKey = async (privateKey: string) => {
+  const connectWithPrivateKey = async (privateKey: string, persist = true) => {
     setIsConnecting(true);
     setError(null);
+
+    // Persist key locally so user doesn't have to re-enter every time
+    if (persist) {
+      localStorage.setItem('ott-wallet-key', privateKey);
+    }
 
     try {
       // Use reliable Sepolia RPC (public endpoints)
@@ -640,6 +645,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
 
   // Disconnect wallet
   const disconnectWallet = async () => {
+    localStorage.removeItem('ott-wallet-key');
     if (wcProvider) {
       try {
         await wcProvider.disconnect();
@@ -1051,6 +1057,16 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     const tx = await workspaceRegistryContract.setInviteCode(workspaceId, inviteCode);
     await tx.wait();
   };
+
+  // Auto-reconnect from persisted key on mount
+  useEffect(() => {
+    const savedKey = localStorage.getItem('ott-wallet-key');
+    if (savedKey && !connected && !isConnecting) {
+      connectWithPrivateKey(savedKey, false).catch(() => {
+        localStorage.removeItem('ott-wallet-key');
+      });
+    }
+  }, []);
 
   // Auto-refresh when connected
   useEffect(() => {

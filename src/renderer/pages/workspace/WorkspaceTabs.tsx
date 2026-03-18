@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   LayoutDashboard, MessageSquare, CheckSquare, Code, FolderOpen,
@@ -49,11 +49,16 @@ export function WorkspaceTabs() {
   const [workspace, setWorkspace] = useState<OnChainWorkspace | null>(null);
   const [members, setMembers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const initializedRef = useRef(false);
 
+  // Load workspace — only runs once per workspaceId, not on every context refresh
   useEffect(() => {
     if (!connected || !workspaceId) { setLoading(false); return; }
+    if (initializedRef.current) return;
+
     const found = myWorkspaces.find(ws => ws.id === workspaceId);
     if (found) {
+      initializedRef.current = true;
       setWorkspace(found);
       setLoading(false);
       getWorkspaceMembers(workspaceId).then(setMembers).catch(() => {});
@@ -68,6 +73,11 @@ export function WorkspaceTabs() {
       setLoading(false);
     }
   }, [connected, workspaceId, myWorkspaces.length]);
+
+  // Reset when navigating to a different workspace
+  useEffect(() => {
+    initializedRef.current = false;
+  }, [workspaceId]);
 
   const setTab = (tab: string) => setSearchParams({ tab }, { replace: true });
   const isOwner = workspace && address && workspace.owner.toLowerCase() === address.toLowerCase();

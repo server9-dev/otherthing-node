@@ -56,7 +56,33 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
   app.get('/api/v1/workspaces/:id/repos', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     await loadReposFromAppwrite(workspaceId);
-    const repos = reposStore.get(workspaceId) || [];
+    const repos = (reposStore.get(workspaceId) || []).map(r => {
+      // Reconstruct localPath — check if the cloned dir exists on this machine
+      const expectedPath = path.join(getReposDir(), `${workspaceId}-${r.id}`);
+      const hasLocal = existsSync(expectedPath);
+      const localPath = r.localPath || (hasLocal ? expectedPath : null);
+      let status = r.status;
+      if (hasLocal && status === 'pending') status = 'ready';
+
+      // If repo exists in Appwrite but not locally, auto-clone it in background
+      if (!hasLocal && r.url && status === 'ready') {
+        status = 'cloning';
+        // Validate URL format
+        if (/^(https?:\/\/|git@|ssh:\/\/)[\w.@:/-]+$/.test(r.url)) {
+          const cloneDir = expectedPath;
+          console.log(`[Repos] Auto-cloning ${r.name} for this member...`);
+          spawnSync('git', ['clone', '--depth', '1', r.url, cloneDir], {
+            timeout: 120000, stdio: 'pipe',
+          });
+          if (existsSync(cloneDir)) {
+            r.localPath = cloneDir;
+            return { ...r, localPath: cloneDir, status: 'ready' };
+          }
+        }
+      }
+
+      return { ...r, localPath, status };
+    });
     res.json({ repos });
   });
 
@@ -111,19 +137,35 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
         repo.analyzedAt = new Date().toISOString();
         console.log(`[Repos] Analysis complete for ${repo.name}`);
 
+        // Update status in Appwrite so other members see it's ready
+        if (appwriteService.isInitialized() && repo._appwriteId) {
+          appwriteService.updateWorkspaceRepo(repo._appwriteId, { status: 'ready' })
+            .catch(err => console.warn('[Repos] Appwrite status update failed:', err));
+        }
+
         // Add to IPFS for workspace sharing
         const ipfs = getIpfs();
-        if (ipfs) {
+        if (ipfs && ipfs.getIsRunning()) {
           try {
             repo.status = 'syncing';
             console.log(`[Repos] Adding ${repo.name} to IPFS...`);
-            const cid = await ipfs.add(repoDir);
+            const cid = await ipfs.addContent(
+              JSON.stringify({ name: repo.name, url: repo.url, clonedAt: new Date().toISOString() }),
+              `${repo.name}-manifest.json`
+            );
             repo.ipfsCid = cid;
             await ipfs.pin(cid);
             console.log(`[Repos] ${repo.name} added to IPFS: ${cid}`);
+
+            // Store CID in Appwrite so other members can pull
+            if (appwriteService.isInitialized() && repo._appwriteId) {
+              appwriteService.updateWorkspaceRepo(repo._appwriteId, {
+                status: 'ready',
+                data: JSON.stringify({ ipfsCid: cid, localPath: repoDir }),
+              }).catch(err => console.warn('[Repos] Appwrite CID update failed:', err));
+            }
           } catch (ipfsErr: any) {
             console.warn(`[Repos] IPFS add failed for ${repo.name}: ${ipfsErr.message}`);
-            // Not fatal — repo still works locally
           }
         }
 

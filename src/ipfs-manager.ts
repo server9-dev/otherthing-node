@@ -47,7 +47,16 @@ export class IPFSManager extends EventEmitter {
    * Check if IPFS binary exists
    */
   hasBinary(): boolean {
-    return fs.existsSync(this.ipfsBinaryPath);
+    if (fs.existsSync(this.ipfsBinaryPath)) return true;
+    // Also check system-installed IPFS (from installer or package manager)
+    const systemPaths = ['/usr/local/bin/ipfs', '/usr/bin/ipfs'];
+    for (const p of systemPaths) {
+      if (fs.existsSync(p)) {
+        this.ipfsBinaryPath = p;
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -337,6 +346,19 @@ export class IPFSManager extends EventEmitter {
     if (!this.isInitialized) {
       await this.init();
     }
+
+    // Clean up stale lock file (prevents "repo is locked" errors)
+    const lockPath = path.join(this.repoPath, 'repo.lock');
+    if (fs.existsSync(lockPath)) {
+      this.emit('log', { message: 'Removing stale IPFS lock file...', type: 'info' });
+      try { fs.unlinkSync(lockPath); } catch {}
+    }
+
+    // Kill any orphaned IPFS processes
+    try {
+      const { execSync } = require('child_process');
+      execSync('pkill -f "ipfs daemon" 2>/dev/null || true', { stdio: 'pipe', timeout: 3000 });
+    } catch {}
 
     this.emit('log', { message: 'Starting IPFS daemon...', type: 'info' });
 

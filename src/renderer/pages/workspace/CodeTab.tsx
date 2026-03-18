@@ -132,9 +132,22 @@ export function CodeTab({ workspaceId }: Props) {
   };
 
   const handleRepoConnected = () => {
-    loadRepos();
     setShowRepoPanel(false);
+    // Poll until clone finishes
+    const pollInterval = setInterval(async () => {
+      await loadRepos();
+    }, 3000);
+    // Stop polling after 2 minutes
+    setTimeout(() => clearInterval(pollInterval), 120000);
+    loadRepos();
   };
+
+  // When a repo with a localPath is selected, auto-start code-server
+  useEffect(() => {
+    if (selectedRepo?.localPath && status === 'stopped') {
+      startServer(selectedRepo.localPath);
+    }
+  }, [selectedRepo?.id]);
 
   const editorUrl = port ? `http://127.0.0.1:${port}` : null;
 
