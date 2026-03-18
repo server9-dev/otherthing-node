@@ -299,6 +299,41 @@ const collections = [
     ],
   },
   {
+    id: 'chat_messages',
+    name: 'Chat Messages',
+    attributes: [
+      { key: 'workspaceId', type: 'string', size: 255, required: true },
+      { key: 'sender', type: 'string', size: 255, required: true },
+      { key: 'senderName', type: 'string', size: 255, required: true },
+      { key: 'content', type: 'string', size: 10000, required: true },
+      { key: 'timestamp', type: 'datetime', required: true },
+    ],
+    indexes: [
+      { key: 'workspaceId_idx', type: 'key', attributes: ['workspaceId'] },
+      { key: 'timestamp_idx', type: 'key', attributes: ['timestamp'] },
+    ],
+  },
+  {
+    id: 'workspace_tasks',
+    name: 'Workspace Tasks',
+    attributes: [
+      { key: 'workspaceId', type: 'string', size: 255, required: true },
+      { key: 'title', type: 'string', size: 500, required: true },
+      { key: 'description', type: 'string', size: 5000, required: false },
+      { key: 'status', type: 'string', size: 20, required: true },
+      { key: 'priority', type: 'string', size: 20, required: true },
+      { key: 'assignee', type: 'string', size: 255, required: false },
+      { key: 'bounty', type: 'string', size: 50, required: false },
+      { key: 'deadline', type: 'string', size: 50, required: false },
+      { key: 'createdAt', type: 'datetime', required: true },
+      { key: 'updatedAt', type: 'datetime', required: true },
+    ],
+    indexes: [
+      { key: 'workspaceId_idx', type: 'key', attributes: ['workspaceId'] },
+      { key: 'status_idx', type: 'key', attributes: ['status'] },
+    ],
+  },
+  {
     id: 'compute_jobs',
     name: 'Compute Jobs',
     attributes: [
@@ -323,17 +358,11 @@ const collections = [
 ];
 
 async function setup() {
-  // Get config from environment or prompt
-  const endpoint = process.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1';
-  const projectId = process.env.APPWRITE_PROJECT_ID;
-  const apiKey = process.env.APPWRITE_API_KEY;
-
-  if (!projectId || !apiKey) {
-    console.error('Error: Missing APPWRITE_PROJECT_ID or APPWRITE_API_KEY environment variables');
-    console.log('\nUsage:');
-    console.log('  APPWRITE_PROJECT_ID=your-project-id APPWRITE_API_KEY=your-api-key npx ts-node src/services/appwrite-setup.ts');
-    process.exit(1);
-  }
+  // Use hardcoded platform config
+  const { PLATFORM } = require('../platform-config');
+  const endpoint = PLATFORM.appwrite.endpoint;
+  const projectId = PLATFORM.appwrite.projectId;
+  const apiKey = PLATFORM.appwrite.apiKey;
 
   const client = new Client()
     .setEndpoint(endpoint)
