@@ -163,6 +163,36 @@ ensure_ipfs() {
   fi
 }
 
+# ── Docker ───────────────────────────────────────────────────
+ensure_docker() {
+  if command -v docker &>/dev/null; then
+    ok "Docker already installed ($(docker --version 2>/dev/null | head -1))"
+    return 0
+  fi
+
+  info "Installing Docker..."
+  if [ "$PM" = "apt" ]; then
+    curl -fsSL https://get.docker.com | sh
+  elif [ "$PM" = "dnf" ]; then
+    sudo dnf install -y docker
+    sudo systemctl enable --now docker
+  elif [ "$PM" = "pacman" ]; then
+    $INSTALL docker
+    sudo systemctl enable --now docker
+  fi
+
+  if command -v docker &>/dev/null; then
+    ok "Docker installed"
+    # Add user to docker group so they don't need sudo
+    if ! groups | grep -q docker; then
+      sudo usermod -aG docker "$USER"
+      info "Added $USER to docker group — log out and back in for this to take effect"
+    fi
+  else
+    warn "Docker install failed — install manually: https://docs.docker.com/engine/install/"
+  fi
+}
+
 # ── code-server ──────────────────────────────────────────────
 ensure_code_server() {
   if command -v code-server &>/dev/null || [ -x "$HOME/.local/code-server/bin/code-server" ]; then
@@ -377,6 +407,9 @@ ensure_ollama
 
 step "IPFS (Distributed Storage)"
 ensure_ipfs
+
+step "Docker"
+ensure_docker
 
 step "code-server (VS Code Editor)"
 ensure_code_server
