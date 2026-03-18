@@ -327,16 +327,37 @@ class AppwriteService {
   }
 
   async pollSignals(workspaceId: string, forPeerId: string, since: string): Promise<any> {
-    return await this.databases.listDocuments(
-      DATABASE_ID, COLLECTIONS.SIGNALING,
-      [
+    // Poll for signals addressed to this peer OR broadcast to 'all'
+    const [direct, broadcast] = await Promise.all([
+      this.databases.listDocuments(DATABASE_ID, COLLECTIONS.SIGNALING, [
         Query.equal('workspaceId', workspaceId),
         Query.equal('targetPeerId', forPeerId),
         Query.greaterThan('timestamp', since),
         Query.orderAsc('timestamp'),
         Query.limit(50),
-      ]
-    );
+      ]),
+      this.databases.listDocuments(DATABASE_ID, COLLECTIONS.SIGNALING, [
+        Query.equal('workspaceId', workspaceId),
+        Query.equal('targetPeerId', 'all'),
+        Query.greaterThan('timestamp', since),
+        Query.orderAsc('timestamp'),
+        Query.limit(50),
+      ]),
+    ]);
+
+    // Merge, deduplicate, filter out own messages
+    const allDocs = [...direct.documents, ...broadcast.documents]
+      .filter(d => d.fromPeerId !== forPeerId)
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    const seen = new Set<string>();
+    const unique = allDocs.filter(d => {
+      if (seen.has(d.$id)) return false;
+      seen.add(d.$id);
+      return true;
+    });
+
+    return { documents: unique };
   }
 
   async cleanupSignals(workspaceId: string): Promise<void> {

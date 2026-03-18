@@ -53,18 +53,15 @@ export function registerSignalingRoutes(deps: RouteDependencies): void {
     }
 
     try {
-      // Get all peers in the workspace
-      const peers = await appwriteService.listWorkspacePeers(workspaceId);
-      for (const peer of peers.documents) {
-        if (peer.peerId === fromPeerId) continue; // skip self
-        await appwriteService.sendSignal({
-          workspaceId, fromPeerId,
-          targetPeerId: peer.peerId,
-          type,
-          payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
-        });
-      }
-      res.json({ success: true, peerCount: peers.documents.length - 1 });
+      // Write a single signal with targetPeerId='all' — everyone polling picks it up
+      await appwriteService.sendSignal({
+        workspaceId,
+        fromPeerId,
+        targetPeerId: 'all',
+        type,
+        payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
+      });
+      res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: 'Failed to broadcast signal' });
     }

@@ -33,6 +33,7 @@ export function useVoiceVideo({ workspaceId, displayName }: UseVoiceVideoOptions
   const inCallRef = useRef(false);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const lastPollRef = useRef<string>(new Date().toISOString());
+  const processedSignals = useRef<Set<string>>(new Set());
   const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' };
 
   useEffect(() => { inCallRef.current = inCall; }, [inCall]);
@@ -109,7 +110,8 @@ export function useVoiceVideo({ workspaceId, displayName }: UseVoiceVideoOptions
     const data = JSON.parse(signal.payload);
 
     if (signal.type === 'call-join') {
-      // New peer joined — add them and send an offer
+      // New peer joined — add them and send an offer (skip if already connected)
+      if (peersRef.current.has(signal.fromPeerId)) return;
       setParticipants(prev => {
         const next = new Map(prev);
         next.set(signal.fromPeerId, { peerId: signal.fromPeerId, displayName: data.displayName || 'Unknown' });
@@ -173,6 +175,8 @@ export function useVoiceVideo({ workspaceId, displayName }: UseVoiceVideoOptions
         const data = await res.json();
         if (data.signals?.length > 0) {
           for (const sig of data.signals) {
+            if (processedSignals.current.has(sig.id)) continue;
+            processedSignals.current.add(sig.id);
             await handleSignal(sig);
           }
           lastPollRef.current = data.signals[data.signals.length - 1].timestamp;
@@ -198,13 +202,14 @@ export function useVoiceVideo({ workspaceId, displayName }: UseVoiceVideoOptions
       setLocalStream(stream);
       setVideoEnabled(withVideo);
       setAudioEnabled(true);
-      lastPollRef.current = new Date().toISOString();
+      // Look back 30 seconds to catch peers who joined before us
+      lastPollRef.current = new Date(Date.now() - 30000).toISOString();
       setInCall(true);
 
       // Broadcast join to all workspace peers
       setTimeout(() => {
         broadcastSignal('call-join', { displayName });
-      }, 500);
+      }, 300);
     } catch (err) {
       console.error('[VoiceVideo] Failed to get media:', err);
     }
