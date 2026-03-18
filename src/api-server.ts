@@ -90,6 +90,7 @@ export class ApiServer {
     // Wire up services
     ipfsExportService.setIPFSManager(ipfs);
     ipfsSyncService.setIPFSManager(ipfs);
+    ipfsSyncService.setOllamaManager(ollama);
     safetyService.setOllamaManager(ollama);
     digestService.setOllamaManager(ollama);
     handoffService.setOllamaManager(ollama);

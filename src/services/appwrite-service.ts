@@ -275,6 +275,9 @@ class AppwriteService {
     peerId: string;
     addresses: string[];
     userId: string;
+    ollamaModels?: string[];
+    ollamaEndpoint?: string;
+    displayName?: string;
   }): Promise<any> {
     // Upsert: delete old entry for this user in this workspace, then create new
     try {
@@ -294,6 +297,8 @@ class AppwriteService {
         peerId: data.peerId,
         addresses: JSON.stringify(data.addresses),
         userId: data.userId,
+        ollamaEndpoint: data.ollamaEndpoint || null,
+        displayName: data.displayName || data.userId,
         lastSeen: new Date().toISOString(),
       }
     );
@@ -307,6 +312,7 @@ class AppwriteService {
     result.documents = result.documents.map((d: any) => ({
       ...d,
       addresses: JSON.parse(d.addresses || '[]'),
+      ollamaModels: d.ollamaModels ? JSON.parse(d.ollamaModels) : [],
     }));
     return result;
   }

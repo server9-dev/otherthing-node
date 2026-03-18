@@ -592,6 +592,62 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     }
   });
 
+  // ============ Workspace Models (aggregated from all peers) ============
+
+  app.get('/api/v1/workspaces/:id/models', localAuth, async (req: Request, res: Response) => {
+    const workspaceId = req.params.id as string;
+    const peers = ipfsSyncService.getWorkspacePeers(workspaceId);
+
+    // Local models
+    const groups: Array<{ owner: string; userId: string; endpoint: string | null; models: any[] }> = [];
+
+    const ollamaManager = deps.managers.ollamaManager;
+    if (ollamaManager) {
+      try {
+        const status = await ollamaManager.getStatus();
+        if (status.models?.length) {
+          groups.push({
+            owner: 'You (local)',
+            userId: 'local',
+            endpoint: ollamaManager.getEndpoint(),
+            models: status.models.map((m: any) => ({
+              name: m.name, size: m.size, parameterSize: m.parameterSize, family: m.family,
+            })),
+          });
+        }
+      } catch {}
+    }
+
+    // Peer models — fetch live from their Ollama endpoints
+    for (const peer of peers) {
+      if (peer.ollamaEndpoint) {
+        try {
+          const peerRes = await fetch(`${peer.ollamaEndpoint}/api/tags`, {
+            signal: AbortSignal.timeout(3000),
+          });
+          if (peerRes.ok) {
+            const peerData: any = await peerRes.json();
+            const peerModels = (peerData.models || []).map((m: any) => ({
+              name: m.name, size: m.size, parameterSize: m.details?.parameter_size || '', family: m.details?.family || '',
+            }));
+            if (peerModels.length > 0) {
+              groups.push({
+                owner: peer.displayName || peer.userId,
+                userId: peer.userId,
+                endpoint: peer.ollamaEndpoint,
+                models: peerModels,
+              });
+            }
+          }
+        } catch {
+          // Peer offline or unreachable
+        }
+      }
+    }
+
+    res.json({ groups });
+  });
+
   // ============ IPFS Workspace Sync ============
 
   app.post('/api/v1/workspaces/:id/sync', localAuth, async (req: Request, res: Response) => {

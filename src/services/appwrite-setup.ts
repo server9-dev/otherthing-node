@@ -341,6 +341,9 @@ const collections = [
       { key: 'peerId', type: 'string', size: 255, required: true },
       { key: 'addresses', type: 'string', size: 5000, required: true },
       { key: 'userId', type: 'string', size: 255, required: true },
+      { key: 'displayName', type: 'string', size: 255, required: false },
+      { key: 'ollamaEndpoint', type: 'string', size: 255, required: false },
+      { key: 'ollamaModels', type: 'string', size: 10000, required: false },
       { key: 'lastSeen', type: 'datetime', required: true },
     ],
     indexes: [

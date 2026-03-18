@@ -182,15 +182,16 @@ export function ChatTab({ workspace, workspaceId }: Props) {
     if (messages.length > 0) conversationCache.set(workspaceId, messages);
   }, [messages, workspaceId]);
 
-  // Load models
+  // Load models — local + workspace peers
+  const [modelGroups, setModelGroups] = useState<Array<{ owner: string; models: OllamaModel[] }>>([]);
   useEffect(() => {
+    // Load local models
     fetch(`${API_BASE}/ollama/models`)
       .then(r => r.json())
       .then(data => {
         const modelList = Array.isArray(data) ? data : [];
         setModels(modelList);
         if (modelList.length > 0 && !selectedModel) {
-          // Prefer smaller models for chat
           const preferred = modelList.find((m: OllamaModel) =>
             m.name.includes('qwen') || m.name.includes('gemma') || m.name.includes('llama')
           );
@@ -198,7 +199,26 @@ export function ChatTab({ workspace, workspaceId }: Props) {
         }
       })
       .catch(() => {});
-  }, []);
+
+    // Load workspace peer models
+    fetch(`${API_BASE}/workspaces/${workspaceId}/models`, { headers: { Authorization: 'Bearer local-token' } })
+      .then(r => r.json())
+      .then(data => {
+        if (data.groups) {
+          setModelGroups(data.groups);
+          // If no local models but peers have some, select first peer model
+          if (models.length === 0 && !selectedModel) {
+            for (const group of data.groups) {
+              if (group.models.length > 0) {
+                setSelectedModel(group.models[0].name);
+                break;
+              }
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, [workspaceId]);
 
   // Scroll to bottom
   useEffect(() => {
@@ -347,8 +367,19 @@ export function ChatTab({ workspace, workspaceId }: Props) {
             padding: '0.35rem 0.5rem', fontSize: '0.8rem', outline: 'none',
           }}
         >
-          {models.length === 0 && <option value="">No models available</option>}
-          {models.map(m => (
+          {modelGroups.length === 0 && models.length === 0 && (
+            <option value="">No models available</option>
+          )}
+          {modelGroups.map((group, i) => (
+            <optgroup key={i} label={`${group.owner}`}>
+              {group.models.map((m: any) => (
+                <option key={`${group.owner}-${m.name}`} value={m.name}>
+                  {m.name} {m.parameterSize ? `(${m.parameterSize})` : ''}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+          {modelGroups.length === 0 && models.map(m => (
             <option key={m.name} value={m.name}>
               {m.name} {m.parameterSize ? `(${m.parameterSize})` : ''}
             </option>
