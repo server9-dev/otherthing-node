@@ -188,22 +188,31 @@ ensure_build_tools() {
       for cmd in git curl gcc g++ make python3; do
         command -v "$cmd" &>/dev/null || pkgs+=("$cmd")
       done
-      # Electron needs these on Linux
-      for lib in libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 libatspi2.0-0 libsecret-1-0; do
+      # Electron dependencies
+      for lib in libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 libatspi2.0-0 libsecret-1-0 libgbm1 libasound2 libdrm2; do
         dpkg -s "$lib" &>/dev/null 2>&1 || pkgs+=("$lib")
       done
+      # build-essential for native npm modules
+      dpkg -s build-essential &>/dev/null 2>&1 || pkgs+=(build-essential)
       ;;
     dnf)
       for cmd in git curl gcc gcc-c++ make python3; do
         command -v "$cmd" &>/dev/null || pkgs+=("$cmd")
       done
-      pkgs+=(gtk3 libnotify nss libXScrnSaver libXtst at-spi2-atk libsecret)
+      for lib in gtk3 libnotify nss libXScrnSaver libXtst at-spi2-atk libsecret alsa-lib mesa-libGL; do
+        rpm -q "$lib" &>/dev/null 2>&1 || pkgs+=("$lib")
+      done
       ;;
     pacman)
       for cmd in git curl gcc make python3; do
         command -v "$cmd" &>/dev/null || pkgs+=("$cmd")
       done
-      pkgs+=(gtk3 libnotify nss libxss libxtst at-spi2-atk libsecret)
+      # Electron dependencies — only add if not already installed
+      for lib in gtk3 libnotify nss libxss libxtst at-spi2-core libsecret glib2 nspr alsa-lib mesa; do
+        pacman -Qi "$lib" &>/dev/null 2>&1 || pkgs+=("$lib")
+      done
+      # base-devel for native npm modules
+      pacman -Qi base-devel &>/dev/null 2>&1 || pkgs+=(base-devel)
       ;;
   esac
 
