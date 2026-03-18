@@ -271,22 +271,7 @@ export class NodeService extends EventEmitter {
       }
     }
 
-    // Auto-install ZLayer (container runtime)
-    try {
-      const { zlayerService } = require('./services/zlayer-service');
-      const info = await zlayerService.initialize();
-      if (!info.installed) {
-        this.log('Auto-installing ZLayer container runtime...', 'info');
-        const success = await zlayerService.install((percent: number, message: string) => {
-          if (percent % 25 === 0) this.log(`ZLayer install: ${percent}% - ${message}`, 'info');
-        });
-        if (success) {
-          this.log('ZLayer container runtime installed', 'success');
-        }
-      }
-    } catch (err) {
-      this.log(`ZLayer auto-install skipped: ${err}`, 'info');
-    }
+    // ZLayer removed — container orchestration not currently used
   }
 
   /**

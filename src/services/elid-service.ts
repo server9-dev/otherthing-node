@@ -9,10 +9,18 @@
  * similar IDs that can be compared or range-queried in standard databases.
  */
 
-import * as elid from 'elid-wasm/pkg/elid.js';
+// Lazy load ELID — optional dependency, may not be installed
+let elid: any = null;
+try {
+  elid = require('elid-wasm/pkg/elid.js');
+} catch {
+  console.warn('[ELID] elid-wasm not available — semantic memory will use fallback text matching');
+}
 
-// Re-export ELID types for convenience
-export { ElidProfile, ElidVectorPrecision, ElidDimensionMode } from 'elid-wasm/pkg/elid.js';
+// Re-export placeholder types when ELID is not available
+export type ElidProfile = any;
+export type ElidVectorPrecision = any;
+export type ElidDimensionMode = any;
 
 /**
  * Encoding profile for ELID
@@ -47,10 +55,16 @@ export class ElidService {
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
-
-    // ELID WASM is already loaded via the import
+    if (!elid) {
+      console.warn('[ELID] WASM module not available — service disabled');
+      return;
+    }
     this.initialized = true;
     console.log('[ELID] Service initialized');
+  }
+
+  isAvailable(): boolean {
+    return !!elid;
   }
 
   /**
@@ -64,6 +78,7 @@ export class ElidService {
     embedding: number[],
     profile: ElidEncodingProfile = 'mini128'
   ): string {
+    if (!elid) return `fallback-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const floatArray = new Float64Array(embedding);
 
     switch (profile) {

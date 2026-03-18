@@ -3,7 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getTempPath } from './electron-compat';
 import { IPFSManager } from './ipfs-manager';
-import { zlayerService, ZLayerSpec } from './services/zlayer-service';
+// ZLayer removed — stub to prevent import errors
+const zlayerService: any = { initialize: async () => ({ installed: false }), isInstalled: () => false, deploy: async () => null, execInWorkspace: async () => ({ exitCode: 1, stdout: '', stderr: 'ZLayer not available' }), remove: async () => {}, stop: async () => {}, runWasm: async () => ({ exitCode: 1, stdout: '', stderr: 'ZLayer not available' }), deployWorkspace: async () => null, getStatus: async () => null };
+type ZLayerSpec = any;
 
 // Execution backend type
 export type ExecutionBackend = 'native' | 'zlayer' | 'wasm';

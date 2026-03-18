@@ -1,8 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ExternalLink, Play, Square, Loader, Code } from 'lucide-react';
+import { ExternalLink, Play, Square, Loader, Code, FolderGit2, Upload, Download } from 'lucide-react';
 import { CyberButton } from '../../components';
+import { RepoConnectionPanel } from '../../components/RepoConnectionPanel';
 
 const API_BASE = 'http://localhost:8080/api/v1';
+
+interface WorkspaceRepo {
+  id: string;
+  name: string;
+  url: string;
+  status: string;
+  localPath?: string;
+  ipfsCid?: string;
+  lastSyncedAt?: string;
+}
 
 interface Props { workspaceId: string; }
 
@@ -10,6 +21,56 @@ export function CodeTab({ workspaceId }: Props) {
   const [port, setPort] = useState<number | null>(null);
   const [status, setStatus] = useState<'stopped' | 'starting' | 'running'>('stopped');
   const [error, setError] = useState<string | null>(null);
+  const [repos, setRepos] = useState<WorkspaceRepo[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<WorkspaceRepo | null>(null);
+  const [showRepoPanel, setShowRepoPanel] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [pulling, setPulling] = useState(false);
+
+  const syncToIpfs = useCallback(async (repoId: string) => {
+    setSyncing(true);
+    try {
+      const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/repos/${repoId}/sync`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer local-token' },
+      });
+      const data = await res.json();
+      if (data.cid) {
+        loadRepos();
+      }
+    } catch {}
+    setSyncing(false);
+  }, [workspaceId]);
+
+  const pullFromIpfs = useCallback(async (repoId: string) => {
+    setPulling(true);
+    try {
+      const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/repos/${repoId}/pull`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer local-token' },
+      });
+      const data = await res.json();
+      if (data.localPath) {
+        loadRepos();
+      }
+    } catch {}
+    setPulling(false);
+  }, [workspaceId]);
+
+  // Load connected repos
+  const loadRepos = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/repos`, {
+        headers: { Authorization: 'Bearer local-token' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRepos(data.repos || []);
+      }
+    } catch {}
+  }, [workspaceId]);
+
+  useEffect(() => { loadRepos(); }, [loadRepos]);
 
   // Check if code-server is already running for this workspace
   useEffect(() => {
@@ -26,14 +87,14 @@ export function CodeTab({ workspaceId }: Props) {
       .catch(() => {});
   }, [workspaceId]);
 
-  const startServer = useCallback(async () => {
+  const startServer = useCallback(async (folder?: string) => {
     setStatus('starting');
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/code-server`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ folder: folder || selectedRepo?.localPath }),
       });
       const data = await res.json();
       if (data.error) {
@@ -42,13 +103,12 @@ export function CodeTab({ workspaceId }: Props) {
         return;
       }
       setPort(data.port);
-      // Give code-server a moment to initialize before loading iframe
       setTimeout(() => setStatus('running'), 3000);
     } catch (err) {
       setError('Failed to start code server');
       setStatus('stopped');
     }
-  }, [workspaceId]);
+  }, [workspaceId, selectedRepo]);
 
   const stopServer = useCallback(async () => {
     try {
@@ -71,6 +131,11 @@ export function CodeTab({ workspaceId }: Props) {
     }
   };
 
+  const handleRepoConnected = () => {
+    loadRepos();
+    setShowRepoPanel(false);
+  };
+
   const editorUrl = port ? `http://127.0.0.1:${port}` : null;
 
   return (
@@ -79,13 +144,86 @@ export function CodeTab({ workspaceId }: Props) {
       <div style={{
         padding: '0.4rem 0.75rem', borderBottom: '1px solid var(--border-subtle)',
         display: 'flex', alignItems: 'center', gap: '0.5rem',
-        background: 'var(--bg-secondary)', flexShrink: 0,
+        background: 'var(--bg-secondary)', flexShrink: 0, flexWrap: 'wrap',
       }}>
+        {/* Repo selector */}
+        {status !== 'running' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <FolderGit2 size={14} style={{ color: 'var(--text-muted)' }} />
+            <select
+              value={selectedRepo?.id || ''}
+              onChange={e => {
+                const repo = repos.find(r => r.id === e.target.value);
+                setSelectedRepo(repo || null);
+              }}
+              style={{
+                background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
+                padding: '0.25rem 0.4rem', fontSize: '0.75rem', outline: 'none',
+                maxWidth: 200,
+              }}
+            >
+              <option value="">Home directory</option>
+              {repos.map(r => (
+                <option key={r.id} value={r.id} disabled={r.status !== 'ready' && r.status !== 'analyzed'}>
+                  {r.name} {r.status === 'cloning' ? '(cloning...)' : r.status === 'error' ? '(error)' : ''}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setShowRepoPanel(!showRepoPanel)}
+              title="Connect a repository"
+              style={{
+                background: 'none', border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)',
+                cursor: 'pointer', padding: '0.2rem 0.4rem', fontSize: '0.7rem',
+                display: 'flex', alignItems: 'center', gap: '0.2rem',
+              }}
+            >
+              + Repo
+            </button>
+            {selectedRepo && (
+              <>
+                <button
+                  onClick={() => syncToIpfs(selectedRepo.id)}
+                  disabled={syncing || !selectedRepo.localPath}
+                  title={selectedRepo.ipfsCid ? `Sync to IPFS (last: ${selectedRepo.lastSyncedAt ? new Date(selectedRepo.lastSyncedAt).toLocaleTimeString() : 'never'})` : 'Push to IPFS for workspace sharing'}
+                  style={{
+                    background: 'none', border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-sm)', cursor: syncing ? 'wait' : 'pointer',
+                    padding: '0.2rem 0.4rem', fontSize: '0.7rem',
+                    display: 'flex', alignItems: 'center', gap: '0.2rem',
+                    color: selectedRepo.ipfsCid ? 'var(--primary)' : 'var(--text-muted)',
+                  }}
+                >
+                  <Upload size={11} /> {syncing ? 'Syncing...' : 'Sync'}
+                </button>
+                {selectedRepo.ipfsCid && !selectedRepo.localPath && (
+                  <button
+                    onClick={() => pullFromIpfs(selectedRepo.id)}
+                    disabled={pulling}
+                    title="Pull from IPFS"
+                    style={{
+                      background: 'none', border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-sm)', cursor: pulling ? 'wait' : 'pointer',
+                      padding: '0.2rem 0.4rem', fontSize: '0.7rem',
+                      display: 'flex', alignItems: 'center', gap: '0.2rem',
+                      color: 'var(--secondary)',
+                    }}
+                  >
+                    <Download size={11} /> {pulling ? 'Pulling...' : 'Pull'}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {status === 'stopped' && (
           <CyberButton
             variant="primary"
             icon={Play}
-            onClick={startServer}
+            onClick={() => startServer()}
             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
           >
             Launch Editor
@@ -121,9 +259,32 @@ export function CodeTab({ workspaceId }: Props) {
         )}
         <div style={{ marginLeft: 'auto', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
           {status === 'running' && port && `code-server on port ${port}`}
-          {status === 'stopped' && 'VS Code editor (code-server, MIT licensed)'}
+          {status === 'stopped' && (
+            <>
+              {repos.length} repo{repos.length !== 1 ? 's' : ''} connected
+              {selectedRepo?.ipfsCid && (
+                <span style={{ marginLeft: '0.5rem', color: 'var(--primary)' }} title={selectedRepo.ipfsCid}>
+                  IPFS: {selectedRepo.ipfsCid.slice(0, 8)}...
+                </span>
+              )}
+            </>
+          )}
         </div>
       </div>
+
+      {/* Repo Connection Panel (expandable) */}
+      {showRepoPanel && status !== 'running' && (
+        <div style={{
+          borderBottom: '1px solid var(--border-subtle)',
+          maxHeight: 400, overflow: 'auto',
+          flexShrink: 0,
+        }}>
+          <RepoConnectionPanel
+            workspaceId={workspaceId}
+            onRepoConnected={handleRepoConnected}
+          />
+        </div>
+      )}
 
       {/* Editor area */}
       {status === 'running' && editorUrl ? (
@@ -162,7 +323,9 @@ export function CodeTab({ workspaceId }: Props) {
                 <Code size={48} style={{ color: 'var(--text-muted)', opacity: 0.2, marginBottom: '1rem' }} />
                 <p style={{ color: 'var(--text-primary)', marginBottom: '0.5rem', fontWeight: 600 }}>Code Editor</p>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', maxWidth: 400, margin: '0 auto 1rem' }}>
-                  Full VS Code editor powered by code-server. Click Launch to start.
+                  {repos.length > 0
+                    ? 'Select a repo from the dropdown and click Launch, or connect a new one.'
+                    : 'Connect a GitHub repo with "+ Repo" or launch the editor to start coding.'}
                 </p>
               </>
             )}

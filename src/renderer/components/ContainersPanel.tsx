@@ -16,14 +16,17 @@ import {
   Image as ImageIcon,
 } from 'lucide-react';
 import { CyberButton } from './CyberButton';
-import {
-  containerService,
-  ContainerInfo,
-  ImageInfo,
-  RuntimeInfo,
-  ContainerStatus,
-  CreateContainerRequest,
-} from '../../services/container-service';
+// Container service removed — stubs for type compatibility
+type ContainerInfo = any;
+type ImageInfo = any;
+type RuntimeInfo = { installed: boolean; runtime: string | null; version: string | null };
+type ContainerStatus = string;
+type CreateContainerRequest = any;
+const containerService: any = {
+  checkRuntime: async () => ({ installed: false, runtime: null, version: null }),
+  listContainers: async () => [],
+  listImages: async () => [],
+};
 
 interface ContainersPanelProps {
   onContainerSelect?: (containerId: string) => void;

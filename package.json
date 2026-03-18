@@ -111,7 +111,6 @@
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.2.4",
-    "elid-wasm": "github:zachhandley/ELID",
     "ethers": "^6.16.0",
     "express": "^5.2.1",
     "lucide-react": "^0.294.0",
