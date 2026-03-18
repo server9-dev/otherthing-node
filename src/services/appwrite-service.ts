@@ -32,6 +32,8 @@ export const COLLECTIONS = {
   AGREEMENT_SIGNATURES: 'agreement_signatures',
   TASKS: 'tasks',
   IP_REGISTRATIONS: 'ip_registrations',
+  CHAT_MESSAGES: 'chat_messages',
+  WORKSPACE_TASKS: 'workspace_tasks',
 } as const;
 
 // Database ID
@@ -934,6 +936,71 @@ class AppwriteService {
       COLLECTIONS.IP_REGISTRATIONS,
       [Query.equal('workspaceId', workspaceId)]
     );
+  }
+
+  // ============ CHAT MESSAGES ============
+
+  async createChatMessage(data: {
+    workspaceId: string;
+    sender: string;
+    senderName: string;
+    content: string;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.CHAT_MESSAGES,
+      ID.unique(),
+      { ...data, timestamp: new Date().toISOString() }
+    );
+  }
+
+  async listChatMessages(workspaceId: string, limit = 100): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.CHAT_MESSAGES,
+      [Query.equal('workspaceId', workspaceId), Query.orderDesc('timestamp'), Query.limit(limit)]
+    );
+  }
+
+  // ============ WORKSPACE TASKS (board tasks, not on-chain) ============
+
+  async createWorkspaceTask(data: {
+    workspaceId: string;
+    title: string;
+    description?: string;
+    status: string;
+    priority: string;
+    assignee?: string;
+    bounty?: string;
+    deadline?: string;
+  }): Promise<any> {
+    return await this.databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.WORKSPACE_TASKS,
+      ID.unique(),
+      { ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+    );
+  }
+
+  async listWorkspaceBoardTasks(workspaceId: string): Promise<any> {
+    return await this.databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.WORKSPACE_TASKS,
+      [Query.equal('workspaceId', workspaceId), Query.limit(500)]
+    );
+  }
+
+  async updateWorkspaceTask(taskId: string, data: Partial<any>): Promise<any> {
+    return await this.databases.updateDocument(
+      DATABASE_ID,
+      COLLECTIONS.WORKSPACE_TASKS,
+      taskId,
+      { ...data, updatedAt: new Date().toISOString() }
+    );
+  }
+
+  async deleteWorkspaceTask(taskId: string): Promise<void> {
+    await this.databases.deleteDocument(DATABASE_ID, COLLECTIONS.WORKSPACE_TASKS, taskId);
   }
 
   // ============ HELPERS ============

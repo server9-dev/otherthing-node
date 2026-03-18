@@ -13,6 +13,7 @@ import { ipfsExportService } from '../services/ipfs-export-service';
 import { healthReportService } from '../services/health-report-service';
 import { setWorkspaceToolRefs } from '../services/workspace-tools';
 import { safetyService } from '../services/safety-service';
+import { appwriteService } from '../services/appwrite-service';
 import { auditService } from '../services/audit-service';
 import { banService } from '../services/ban-service';
 
@@ -197,9 +198,33 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
   setWorkspaceToolRefs(new Map(), chatMessages, deps.workspaceManager);
   healthReportService.setStoreRefs(new Map(), chatMessages);
 
-  app.get('/api/v1/workspaces/:id/chat', localAuth, (req: Request, res: Response) => {
+  app.get('/api/v1/workspaces/:id/chat', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const limit = parseInt(req.query.limit as string) || 50;
+
+    // Try Appwrite first (shared across all members)
+    if (appwriteService.isInitialized()) {
+      try {
+        const result = await appwriteService.listChatMessages(workspaceId, limit);
+        const messages = result.documents.map((d: any) => ({
+          id: d.$id,
+          workspaceId: d.workspaceId,
+          sender: d.sender,
+          senderName: d.senderName,
+          content: d.content,
+          timestamp: d.timestamp,
+        })).reverse(); // Appwrite returns newest first, we want oldest first
+
+        // Update local cache
+        chatMessages.set(workspaceId, messages);
+        res.json({ messages: messages.slice(-limit) });
+        return;
+      } catch (err) {
+        console.warn('[Chat] Appwrite read failed, using local cache:', err);
+      }
+    }
+
+    // Fallback to local in-memory
     const msgs = chatMessages.get(workspaceId) || [];
     res.json({ messages: msgs.slice(-limit) });
   });
@@ -251,6 +276,16 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     }
     const msgs = chatMessages.get(workspaceId)!;
     msgs.push(msg);
+
+    // Persist to Appwrite (shared across all workspace members)
+    if (appwriteService.isInitialized()) {
+      appwriteService.createChatMessage({
+        workspaceId,
+        sender: senderId,
+        senderName: displayName || session.username,
+        content: content.trim(),
+      }).catch(err => console.warn('[Chat] Appwrite write failed:', err));
+    }
 
     // Keyword scan is the primary gate for chat (instant, no false positives).
     // LlamaGuard async scan disabled for chat — too many false positives on
