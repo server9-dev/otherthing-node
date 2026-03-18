@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { Copy, Check, Shield, Crown, User, RefreshCw, Settings, Globe, Lock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Copy, Check, Shield, Crown, User, RefreshCw, Settings, Globe, Lock, Cpu, Wifi, WifiOff } from 'lucide-react';
 import { CyberButton } from '../../components';
 import { useWeb3, type OnChainWorkspace } from '../../context/Web3Context';
+
+const API_BASE = 'http://localhost:8080/api/v1';
 
 interface Props {
   workspace: OnChainWorkspace;
@@ -16,6 +18,17 @@ export function MembersTab({ workspace, workspaceId, members, isOwner, address }
   const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [modelGroups, setModelGroups] = useState<any[]>([]);
+
+  // Load connected nodes and their models
+  useEffect(() => {
+    fetch(`${API_BASE}/workspaces/${workspaceId}/models`, {
+      headers: { Authorization: 'Bearer local-token' },
+    })
+      .then(r => r.json())
+      .then(d => setModelGroups(d.groups || []))
+      .catch(() => {});
+  }, [workspaceId]);
 
   // Get invite code from localStorage
   const stored = localStorage.getItem('workspace-invite-codes');
@@ -208,6 +221,75 @@ export function MembersTab({ workspace, workspaceId, members, isOwner, address }
               </div>
             );
           })
+        )}
+      </div>
+
+      {/* Connected Nodes */}
+      <div style={{
+        background: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)',
+        border: '1px solid var(--border-subtle)', overflow: 'hidden', marginTop: '1.5rem',
+      }}>
+        <div style={{
+          padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-subtle)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Cpu size={16} style={{ color: 'var(--primary)' }} /> Connected Nodes
+          </h3>
+          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+            {modelGroups.length} node{modelGroups.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        {modelGroups.length === 0 ? (
+          <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            No compute nodes connected. Open the workspace to auto-register your node.
+          </div>
+        ) : (
+          modelGroups.map((group: any, i: number) => (
+            <div key={i} style={{
+              padding: '0.75rem 1rem',
+              borderBottom: i < modelGroups.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: '50%',
+                  background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Wifi size={12} style={{ color: 'var(--primary)' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {group.owner}
+                  </div>
+                  {group.endpoint && (
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                      {group.endpoint}
+                    </div>
+                  )}
+                </div>
+                <span style={{
+                  marginLeft: 'auto', fontSize: '0.65rem', padding: '2px 6px', borderRadius: 8,
+                  background: 'rgba(0,255,136,0.1)', color: '#00FF88',
+                }}>
+                  online
+                </span>
+              </div>
+              {/* Models */}
+              <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginLeft: '2.25rem' }}>
+                {group.models.map((m: any, j: number) => (
+                  <span key={j} style={{
+                    fontSize: '0.7rem', padding: '2px 8px', borderRadius: 8,
+                    background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)',
+                    color: 'var(--text-secondary)',
+                  }}>
+                    {m.name} {m.parameterSize ? `(${m.parameterSize})` : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>
