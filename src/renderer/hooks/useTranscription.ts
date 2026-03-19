@@ -60,7 +60,18 @@ export function useTranscription({
 
   const startRecording = useCallback((stream: MediaStream, peerId: string, displayName: string) => {
     try {
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      // Try multiple formats — not all are supported in every Electron build
+      const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4', ''];
+      let mimeType = '';
+      for (const mt of mimeTypes) {
+        if (!mt || MediaRecorder.isTypeSupported(mt)) {
+          mimeType = mt;
+          break;
+        }
+      }
+
+      const options: MediaRecorderOptions = mimeType ? { mimeType } : {};
+      const recorder = new MediaRecorder(stream, options);
       let chunks: Blob[] = [];
 
       recorder.ondataavailable = (e) => {
@@ -69,7 +80,7 @@ export function useTranscription({
 
       recorder.onstop = () => {
         if (chunks.length > 0) {
-          const blob = new Blob(chunks, { type: 'audio/webm' });
+          const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
           sendChunk(blob, displayName, peerId);
           chunks = [];
         }
@@ -78,17 +89,18 @@ export function useTranscription({
       recorder.start();
       recordersRef.current.set(peerId, recorder);
 
-      // Stop and restart every CHUNK_INTERVAL_MS to send chunks
       const interval = setInterval(() => {
-        if (recorder.state === 'recording') {
-          recorder.stop();
-          recorder.start();
-        }
+        try {
+          if (recorder.state === 'recording') {
+            recorder.stop();
+            recorder.start();
+          }
+        } catch {}
       }, CHUNK_INTERVAL_MS);
 
       intervalsRef.current.set(peerId, interval);
     } catch (err) {
-      console.error('[useTranscription] Failed to start recording for', peerId, err);
+      console.warn('[useTranscription] MediaRecorder not supported for', peerId, '— transcription disabled');
     }
   }, [sendChunk]);
 

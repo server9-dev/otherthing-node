@@ -7,6 +7,7 @@
  * 3. Make other members' Ollama models available for inference
  */
 
+import * as os from 'os';
 import type { IPFSManager } from '../ipfs-manager';
 import type { OllamaManager } from '../ollama-manager';
 import { appwriteService } from './appwrite-service';
@@ -60,12 +61,18 @@ class WorkspaceSyncService {
       } catch {}
     }
 
-    // Ollama info
+    // Ollama info — use LAN IP so other workspace members can reach it
     if (this.ollamaManager) {
       try {
         const running = await this.ollamaManager.checkRunning();
         if (running) {
-          ollamaEndpoint = this.ollamaManager.getEndpoint();
+          // Get LAN IP for cross-machine access
+          const lanIp = this.getLanIP();
+          const localEndpoint = this.ollamaManager.getEndpoint();
+          // Replace localhost/127.0.0.1 with LAN IP
+          ollamaEndpoint = lanIp
+            ? localEndpoint.replace(/127\.0\.0\.1|localhost/, lanIp)
+            : localEndpoint;
           const status = await this.ollamaManager.getStatus();
           ollamaModels = (status.models || []).map((m: any) => m.name);
         }
@@ -139,6 +146,18 @@ class WorkspaceSyncService {
 
   isSynced(workspaceId: string): boolean {
     return this.synced.has(workspaceId);
+  }
+
+  private getLanIP(): string | null {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name] || []) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+    return null;
   }
 }
 
