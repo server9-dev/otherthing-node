@@ -28,6 +28,7 @@ import { handoffService } from './services/handoff-service';
 import { disputeService } from './services/dispute-service';
 import { healthReportService } from './services/health-report-service';
 import { safetyService } from './services/safety-service';
+import { inferenceRelay } from './services/inference-relay';
 import { ipfsSyncService } from './services/ipfs-sync-service';
 import { remoteInferenceService } from './services/remote-inference';
 import { PLATFORM } from './platform-config';
@@ -100,6 +101,12 @@ export class ApiServer {
     // Register scheduled jobs
     digestService.registerScheduledJob();
     healthReportService.registerScheduledJob();
+
+    // Start inference relay — picks up peer inference requests and runs them locally
+    if (ollama) {
+      inferenceRelay.setOllamaManager(ollama);
+      inferenceRelay.start('local-user');
+    }
 
     // Configure remote inference for premium tier
     remoteInferenceService.configure({

@@ -8,6 +8,7 @@ import { handoffService } from '../services/handoff-service';
 import { remoteInferenceService } from '../services/remote-inference';
 import { premiumService } from '../services/premium-service';
 import { ipfsSyncService } from '../services/ipfs-sync-service';
+import { appwriteService } from '../services/appwrite-service';
 
 export function registerOllamaRoutes(deps: RouteDependencies): void {
   const { app, localAuth } = deps;
@@ -143,15 +144,45 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
       }
     }
 
-    // 2. Check workspace peers — if model isn't local, find a peer that has it
-    if (model && workspaceId) {
+    // 2. Check workspace peers — relay inference through Appwrite (P2P, works over internet)
+    if (!endpoint && model && workspaceId) {
       const peers = ipfsSyncService.getWorkspacePeers(workspaceId);
-      for (const peer of peers) {
-        if (peer.ollamaEndpoint && peer.ollamaModels.includes(model)) {
-          // Found a peer with this model — use their endpoint
-          endpoint = peer.ollamaEndpoint;
-          console.log(`[Ollama] Routing "${model}" to peer ${peer.displayName} at ${peer.ollamaEndpoint}`);
-          break;
+      const peer = peers.find(p => p.ollamaModels.includes(model));
+      if (peer) {
+        console.log(`[Ollama] Relaying "${model}" to peer ${peer.displayName} via Appwrite`);
+        try {
+          // Write inference request to Appwrite signaling
+          const requestId = `infer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          await appwriteService.sendSignal({
+            workspaceId,
+            fromPeerId: 'local',
+            targetPeerId: peer.userId,
+            type: 'inference-request',
+            payload: JSON.stringify({ requestId, model, messages, temperature, max_tokens }),
+          });
+
+          // Poll for response (up to 120 seconds)
+          const startTime = Date.now();
+          const pollSince = new Date(startTime - 1000).toISOString();
+          while (Date.now() - startTime < 120000) {
+            await new Promise(r => setTimeout(r, 1000));
+            const signals = await appwriteService.pollSignals(workspaceId, 'local', pollSince);
+            const response = signals.documents.find((s: any) =>
+              s.type === 'inference-response' && s.payload.includes(requestId)
+            );
+            if (response) {
+              const data = JSON.parse(response.payload);
+              res.setHeader('Content-Type', 'text/event-stream');
+              res.setHeader('Cache-Control', 'no-cache');
+              res.write(`data: ${JSON.stringify({ message: { content: data.content }, done: true, model })}\n\n`);
+              res.end();
+              return;
+            }
+          }
+          res.status(504).json({ error: `Peer ${peer.displayName} did not respond in time` });
+          return;
+        } catch (err) {
+          console.error('[Ollama] Peer relay failed:', err);
         }
       }
     }
