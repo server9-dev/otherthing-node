@@ -7,6 +7,7 @@ import type { RouteDependencies } from './types';
 import { handoffService } from '../services/handoff-service';
 import { remoteInferenceService } from '../services/remote-inference';
 import { premiumService } from '../services/premium-service';
+import { ipfsSyncService } from '../services/ipfs-sync-service';
 
 export function registerOllamaRoutes(deps: RouteDependencies): void {
   const { app, localAuth } = deps;
@@ -114,25 +115,53 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
       }
     }
 
-    // Try local Ollama first
-    let useLocal = false;
+    // Determine which endpoint has the requested model:
+    // 1. Local Ollama
+    // 2. Workspace peer's Ollama (relay through their endpoint)
+    // 3. Premium hosted inference (OpenRouter)
+    let endpoint: string | null = null;
+
+    // 1. Check local
     if (ollamaManager) {
       const running = await ollamaManager.checkRunning();
-      if (running) useLocal = true;
+      if (running) {
+        if (!model) {
+          // No model specified — use local
+          endpoint = ollamaManager.getEndpoint();
+        } else {
+          // Check if model exists locally
+          try {
+            const status = await ollamaManager.getStatus();
+            const localModels = (status.models || []).map((m: any) => m.name);
+            if (localModels.includes(model)) {
+              endpoint = ollamaManager.getEndpoint();
+            }
+          } catch {}
+          // Even if model not found locally, use local as fallback (Ollama will error with a clear message)
+          if (!endpoint) endpoint = ollamaManager.getEndpoint();
+        }
+      }
     }
 
-    // Premium fallback: hosted inference (no hardware needed)
-    if (!useLocal && remoteInferenceService.isConfigured()) {
-      const isPremium = wallet ? premiumService.isPremium(wallet).active : false;
+    // 2. Check workspace peers — if model isn't local, find a peer that has it
+    if (model && workspaceId) {
+      const peers = ipfsSyncService.getWorkspacePeers(workspaceId);
+      for (const peer of peers) {
+        if (peer.ollamaEndpoint && peer.ollamaModels.includes(model)) {
+          // Found a peer with this model — use their endpoint
+          endpoint = peer.ollamaEndpoint;
+          console.log(`[Ollama] Routing "${model}" to peer ${peer.displayName} at ${peer.ollamaEndpoint}`);
+          break;
+        }
+      }
+    }
+
+    // 3. Premium fallback
+    if (!endpoint && remoteInferenceService.isConfigured()) {
+      const isPremium = wallet ? premiumService.isPremium(wallet).active : true; // owner bypasses
       if (isPremium) {
         try {
-          const result = await remoteInferenceService.chat({
-            model,
-            messages,
-            temperature,
-            max_tokens,
-          });
-          // Send as single SSE event (non-streaming for remote)
+          const result = await remoteInferenceService.chat({ model, messages, temperature, max_tokens });
           res.setHeader('Content-Type', 'text/event-stream');
           res.setHeader('Cache-Control', 'no-cache');
           res.write(`data: ${JSON.stringify({ message: { content: result.content }, done: true, model: result.model })}\n\n`);
@@ -145,8 +174,8 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
       }
     }
 
-    if (!useLocal) {
-      res.status(503).json({ error: 'No AI available. Run Ollama locally or upgrade to Premium.' });
+    if (!endpoint) {
+      res.status(503).json({ error: 'No AI available. No local Ollama, no workspace peers with this model, and no premium tier.' });
       return;
     }
 
@@ -154,8 +183,6 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
       res.status(400).json({ error: 'model is required' });
       return;
     }
-
-    const endpoint = ollamaManager!.getEndpoint();
 
     // SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
