@@ -2,12 +2,15 @@
  * Inference Relay — background worker that picks up inference requests
  * from workspace peers via Appwrite and runs them on local Ollama.
  *
- * This enables P2P compute sharing over the internet without direct
- * network access between nodes.
+ * P2P compute sharing over the internet — no direct connection needed.
  */
 
+import os from 'os';
 import type { OllamaManager } from '../ollama-manager';
 import { appwriteService } from './appwrite-service';
+
+/** Stable per-machine fallback ID — used whenever no wallet address is available. */
+const MACHINE_NODE_ID = `node-${os.hostname()}`;
 
 class InferenceRelay {
   private ollamaManager: OllamaManager | null = null;
@@ -15,19 +18,30 @@ class InferenceRelay {
   private interval: NodeJS.Timeout | null = null;
   private lastPoll: string = new Date().toISOString();
   private processedRequests: Set<string> = new Set();
+  private nodeIds: Set<string> = new Set(); // all IDs this node is known by
 
   setOllamaManager(ollama: OllamaManager | null): void {
     this.ollamaManager = ollama;
   }
 
-  /**
-   * Start polling for inference requests addressed to this node.
-   * Called with the local userId so we know which signals are for us.
-   */
-  start(userId: string): void {
+  /** The ID peers can always reach this machine by, with or without a wallet. */
+  get machineNodeId(): string {
+    return MACHINE_NODE_ID;
+  }
+
+  /** Register an ID that this node should respond to */
+  registerNodeId(id: string): void {
+    this.nodeIds.add(id);
+  }
+
+  start(): void {
     if (this.polling) return;
     this.polling = true;
     this.lastPoll = new Date().toISOString();
+
+    // Always respond to these
+    this.nodeIds.add('local-user');
+    this.nodeIds.add(MACHINE_NODE_ID);
 
     console.log('[InferenceRelay] Started — listening for peer inference requests');
 
@@ -38,44 +52,38 @@ class InferenceRelay {
         const running = await this.ollamaManager.checkRunning();
         if (!running) return;
 
-        // Check all workspaces we know about for inference requests
-        // Use a broad poll — check signals addressed to our userId
-        // We need to know which workspaces to poll. Use the sync service cache.
         const { ipfsSyncService } = require('./ipfs-sync-service');
-
-        // For each synced workspace, poll for inference requests
-        // This is a simple approach — in production you'd use a single subscription
         const workspaceIds = Array.from(
           (ipfsSyncService as any).synced || new Set()
         ) as string[];
 
         for (const wsId of workspaceIds) {
-          try {
-            const signals = await appwriteService.pollSignals(wsId, userId, this.lastPoll);
-            const requests = signals.documents.filter((s: any) =>
-              s.type === 'inference-request' && !this.processedRequests.has(s.$id)
-            );
-
-            for (const req of requests) {
-              this.processedRequests.add(req.$id);
-              this.handleRequest(wsId, req).catch(err =>
-                console.error('[InferenceRelay] Request handling failed:', err)
+          // Poll for requests addressed to any of our known IDs
+          for (const nodeId of this.nodeIds) {
+            try {
+              const signals = await appwriteService.pollSignals(wsId, nodeId, this.lastPoll);
+              const requests = signals.documents.filter((s: any) =>
+                s.type === 'inference-request' && !this.processedRequests.has(s.$id)
               );
-            }
-          } catch {}
+
+              for (const req of requests) {
+                this.processedRequests.add(req.$id);
+                this.handleRequest(wsId, req).catch(err =>
+                  console.error('[InferenceRelay] Failed:', err)
+                );
+              }
+            } catch {}
+          }
         }
 
         this.lastPoll = new Date().toISOString();
 
-        // Cleanup old processed IDs (prevent memory leak)
         if (this.processedRequests.size > 1000) {
           const arr = Array.from(this.processedRequests);
           this.processedRequests = new Set(arr.slice(-500));
         }
-      } catch (err) {
-        // Silent — don't spam logs
-      }
-    }, 2000); // Poll every 2 seconds
+      } catch {}
+    }, 2000);
   }
 
   private async handleRequest(workspaceId: string, signal: any): Promise<void> {
@@ -84,17 +92,11 @@ class InferenceRelay {
     const data = JSON.parse(signal.payload);
     const { requestId, model, messages, temperature, max_tokens } = data;
 
-    console.log(`[InferenceRelay] Processing inference request ${requestId} for model ${model}`);
+    console.log(`[InferenceRelay] Running "${model}" for peer ${signal.fromPeerId} (${requestId})`);
 
     try {
-      const result = await this.ollamaManager.chat({
-        model,
-        messages,
-        temperature,
-        max_tokens,
-      });
+      const result = await this.ollamaManager.chat({ model, messages, temperature, max_tokens });
 
-      // Send response back through Appwrite
       await appwriteService.sendSignal({
         workspaceId,
         fromPeerId: 'relay',
@@ -108,32 +110,23 @@ class InferenceRelay {
         }),
       });
 
-      console.log(`[InferenceRelay] Completed inference request ${requestId} (${result.content.length} chars)`);
+      console.log(`[InferenceRelay] Done (${result.content.length} chars)`);
     } catch (err) {
-      console.error(`[InferenceRelay] Inference failed for ${requestId}:`, err);
-
-      // Send error response
+      console.error(`[InferenceRelay] Inference failed:`, err);
       await appwriteService.sendSignal({
         workspaceId,
         fromPeerId: 'relay',
         targetPeerId: signal.fromPeerId,
         type: 'inference-response',
-        payload: JSON.stringify({
-          requestId,
-          content: `Error: inference failed on peer node`,
-          error: true,
-        }),
+        payload: JSON.stringify({ requestId, content: 'Error: inference failed on peer node', error: true }),
       }).catch(() => {});
     }
   }
 
   stop(): void {
-    if (this.interval) {
-      clearInterval(this.interval);
-      this.interval = null;
-    }
+    if (this.interval) clearInterval(this.interval);
+    this.interval = null;
     this.polling = false;
-    console.log('[InferenceRelay] Stopped');
   }
 }
 

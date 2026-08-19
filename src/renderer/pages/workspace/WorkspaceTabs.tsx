@@ -62,10 +62,12 @@ export function WorkspaceTabs() {
       setWorkspace(found);
       setLoading(false);
       getWorkspaceMembers(workspaceId).then(setMembers).catch(() => {});
-      // Auto-sync IPFS peers when opening workspace
+      // Auto-sync — register this node with wallet address as unique ID
+      const savedName = localStorage.getItem('ott-display-name') || '';
       fetch(`http://localhost:8080/api/v1/workspaces/${workspaceId}/sync`, {
         method: 'POST',
-        headers: { Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        body: JSON.stringify({ wallet: address, displayName: savedName || address?.slice(0, 10) || 'Unknown' }),
       }).catch(() => {});
     } else if (myWorkspaces.length === 0) {
       refreshWorkspaces();

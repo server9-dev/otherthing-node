@@ -36,7 +36,7 @@ class WorkspaceSyncService {
     this.ollamaManager = ollama;
   }
 
-  async syncWorkspace(workspaceId: string, userId: string): Promise<{
+  async syncWorkspace(workspaceId: string, userId: string, displayNameOverride?: string): Promise<{
     registered: boolean;
     peersFound: number;
     peersConnected: number;
@@ -50,7 +50,7 @@ class WorkspaceSyncService {
     let addresses: string[] = [];
     let ollamaEndpoint: string | null = null;
     let ollamaModels: string[] = [];
-    const displayName = userId;
+    const displayName = displayNameOverride || userId;
 
     // IPFS info (optional — might not be running)
     if (this.ipfsManager && this.ipfsManager.getIsRunning()) {

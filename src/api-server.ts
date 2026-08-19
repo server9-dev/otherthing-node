@@ -105,7 +105,7 @@ export class ApiServer {
     // Start inference relay — picks up peer inference requests and runs them locally
     if (ollama) {
       inferenceRelay.setOllamaManager(ollama);
-      inferenceRelay.start('local-user');
+      inferenceRelay.start();
     }
 
     // Configure remote inference for premium tier
@@ -123,7 +123,7 @@ export class ApiServer {
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
     }));
-    this.app.use(express.json());
+    this.app.use(express.json({ limit: '50mb' }));
   }
 
   private setupRoutes(): void {

@@ -15,6 +15,7 @@ import { setWorkspaceToolRefs } from '../services/workspace-tools';
 import { safetyService } from '../services/safety-service';
 import { appwriteService } from '../services/appwrite-service';
 import { ipfsSyncService } from '../services/ipfs-sync-service';
+import { inferenceRelay } from '../services/inference-relay';
 import { auditService } from '../services/audit-service';
 import { banService } from '../services/ban-service';
 
@@ -652,8 +653,13 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
 
   app.post('/api/v1/workspaces/:id/sync', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
-    const session = (req as any).session;
-    const result = await ipfsSyncService.syncWorkspace(workspaceId, session.userId);
+    // Use wallet address or machine hostname as unique node ID (not "local-user" which is same for everyone).
+    // The fallback must stay stable across syncs — the relay only answers IDs it is registered under.
+    const nodeId = req.body?.wallet || req.body?.nodeId || inferenceRelay.machineNodeId;
+    const displayName = req.body?.displayName || os.hostname();
+    // Register this node ID with the inference relay so it responds to requests
+    inferenceRelay.registerNodeId(nodeId);
+    const result = await ipfsSyncService.syncWorkspace(workspaceId, nodeId, displayName);
     res.json(result);
   });
 
