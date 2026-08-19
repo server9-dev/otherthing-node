@@ -5,7 +5,7 @@ import { Dashboard } from './pages/Dashboard';
 import { NodeControl } from './pages/NodeControl';
 import { Settings } from './pages/Settings';
 import { WorkspacePage } from './pages/Workspace';
-import { WorkspaceTabs } from './pages/workspace';
+import { WorkspaceTabs } from './pages/workspace-tabs';
 import { AgentsPage } from './pages/Agents';
 import { Marketplace } from './pages/Marketplace';
 import { TasksPage } from './pages/Tasks';
