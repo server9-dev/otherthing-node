@@ -24,8 +24,11 @@ export function OverviewTab({ workspace, workspaceId, members, isOwner, onSwitch
     // Load stats
     fetch(`${API_BASE}/api/v1/workspaces/${workspaceId}/tasks`)
       .then(r => r.json()).then(d => setTaskCount(d.tasks?.length || 0)).catch(() => {});
-    fetch(`${API_BASE}/api/v1/ollama/models`)
-      .then(r => r.json()).then(d => setModelCount(Array.isArray(d) ? d.length : 0)).catch(() => {});
+    // Every model available to the workspace (this node and its peers)
+    fetch(`${API_BASE}/api/v1/workspaces/${workspaceId}/models`)
+      .then(r => r.json())
+      .then(d => setModelCount(new Set((d.groups || []).flatMap((g: any) => g.models.map((m: any) => m.name))).size))
+      .catch(() => {});
     fetch(`${API_BASE}/api/v1/workspaces/${workspaceId}/nodes`)
       .then(r => r.json()).then(d => setNodeCount(d.nodes?.length || 0)).catch(() => {});
   }, [workspaceId]);
