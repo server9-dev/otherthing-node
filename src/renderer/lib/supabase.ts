@@ -18,8 +18,24 @@ import {
   type SupabaseClient,
 } from '@supabase/supabase-js';
 
-export const LOCAL_API_ORIGIN = 'http://localhost:8080';
-const LOCAL_ORIGINS = [LOCAL_API_ORIGIN, 'http://127.0.0.1:8080'];
+/**
+ * Web build (VITE_WEB=1, served by a node at e.g. app.otherthing.ai): the API is
+ * same-origin. Call sites still use http://localhost:8080 URLs; the fetch
+ * wrapper rewrites them to this origin.
+ */
+export const IS_WEB = import.meta.env.VITE_WEB === '1';
+const DESKTOP_ORIGINS = ['http://localhost:8080', 'http://127.0.0.1:8080'];
+export const LOCAL_API_ORIGIN = IS_WEB ? window.location.origin : DESKTOP_ORIGINS[0];
+const LOCAL_ORIGINS = IS_WEB ? [...DESKTOP_ORIGINS, LOCAL_API_ORIGIN] : DESKTOP_ORIGINS;
+
+/** In the web build, point desktop-style localhost:8080 URLs at this origin. */
+export function toApiUrl(url: string): string {
+  if (!IS_WEB) return url;
+  for (const origin of DESKTOP_ORIGINS) {
+    if (url === origin || url.startsWith(`${origin}/`)) return LOCAL_API_ORIGIN + url.slice(origin.length);
+  }
+  return url;
+}
 
 // Captured before installAuthFetch replaces window.fetch.
 const nativeFetch: typeof fetch = window.fetch.bind(window);
@@ -121,7 +137,8 @@ function localAuthFetch(path: string, init: RequestInit = {}, token = getAccessT
 
 /** Give the node its own session for the same user (needs the password). */
 async function linkNode(email: string, password: string): Promise<void> {
-  if (!config) return;
+  // A web node is shared and keeps its own service identity.
+  if (!config || IS_WEB) return;
   const nodeClient = createClient(config.url, config.publishableKey, {
     auth: {
       persistSession: false,
@@ -170,10 +187,12 @@ export async function signUp(email: string, password: string, displayName: strin
 
 export async function signOut(): Promise<void> {
   const sb = await getSupabase();
-  try {
-    await localAuthFetch('/api/v1/auth/signout', { method: 'POST' });
-  } catch (err) {
-    console.warn('[Auth] Node sign-out failed:', err);
+  if (!IS_WEB) {
+    try {
+      await localAuthFetch('/api/v1/auth/signout', { method: 'POST' });
+    } catch (err) {
+      console.warn('[Auth] Node sign-out failed:', err);
+    }
   }
   await sb.auth.signOut({ scope: 'local' });
 }
@@ -268,7 +287,9 @@ export function installAuthFetch(): void {
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
     if (token) headers.set('Authorization', `Bearer ${token}`);
     else headers.delete('Authorization');
-    const target = input instanceof Request ? input.clone() : input;
+    const target = input instanceof Request
+      ? new Request(toApiUrl(input.url), input.clone())
+      : toApiUrl(input instanceof URL ? input.href : input);
     return nativeFetch(target, { ...init, headers });
   };
 

@@ -60,6 +60,13 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   }
 
+  // Links that open a new window (target=_blank, window.open — including from
+  // embedded pages like the workspace AI tab) go to the system browser.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
   mainWindow.on('close', (event) => {
     if (nodeService?.isRunning()) {
       event.preventDefault();

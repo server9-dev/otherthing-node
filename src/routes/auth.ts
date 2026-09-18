@@ -21,7 +21,9 @@ export function registerAuthRoutes(deps: RouteDependencies): void {
   // Public: the publishable key is safe to expose by design.
   app.get('/api/v1/auth/config', (_req: Request, res: Response) => {
     const { url, publishableKey } = getSupabaseConfig();
-    res.json({ url, publishableKey });
+    // The node may reach Supabase on a private address (SUPABASE_URL); browsers
+    // of a web-mode node need the public one.
+    res.json({ url: process.env.SUPABASE_PUBLIC_URL || url, publishableKey });
   });
 
   // Hand the signed-in renderer session to the node's background workers.

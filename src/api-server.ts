@@ -9,6 +9,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import http from 'http';
+import * as path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import { WorkspaceManager } from './services/workspace-manager';
@@ -17,7 +18,7 @@ import { OllamaManager } from './ollama-manager';
 import { SandboxManager } from './sandbox-manager';
 import { IPFSManager } from './ipfs-manager';
 import { adapterManager } from './adapters/adapter-manager';
-import { requireUser, nodeSession, isSupabaseConfigured, verifyAccessToken } from './services/supabase-client';
+import { requireUser, nodeSession, isSupabaseConfigured, verifyAccessToken, db } from './services/supabase-client';
 import { registerAllRoutes } from './routes';
 import { chainSyncService } from './services/chain-sync';
 import { ipfsExportService } from './services/ipfs-export-service';
@@ -39,6 +40,26 @@ const PORT = 8080;
 // Every API route requires a signed-in Supabase user (see services/supabase-client.ts).
 // Kept under the old name because all route modules receive it as `localAuth`.
 const localAuth = requireUser;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * OTHERTHING_WEB_MODE=1: this node serves the web app (e.g. app.otherthing.ai)
+ * to many users. Only collaboration and inference routes are exposed — nothing
+ * that runs commands, touches the disk, spends money or changes the node's
+ * identity (agents, sandboxes, git/repos, storage, IPFS, model pulls, GPU
+ * rental, wallet/treasury, settings, node session handoff).
+ */
+const WEB_MODE = process.env.OTHERTHING_WEB_MODE === '1';
+const WEB_ALLOWED_ROUTES: RegExp[] = [
+  /^\/api\/v1\/auth\/(config|me)$/,
+  /^\/api\/v1\/workspaces(\/join)?$/,
+  /^\/api\/v1\/workspaces\/[^/]+(\/(leave|invite-code))?$/,
+  /^\/api\/v1\/workspaces\/[^/]+\/(chat|tasks|flows|uaf|agreements|milestone-tasks|ip|signal|digest|handoff|models|usage|compute)(\/.*)?$/,
+  /^\/api\/v1\/(agreements|milestone-tasks|ip|profile)(\/.*)?$/,
+  /^\/api\/v1\/ollama\/(status|models|chat)$/,
+  /^\/api\/v1\/models$/,
+];
 
 export class ApiServer {
   private app: express.Application;
@@ -118,10 +139,38 @@ export class ApiServer {
     this.app.use(cors({
       origin: true,
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
     }));
     this.app.use(express.json({ limit: '50mb' }));
+
+    if (WEB_MODE) {
+      this.app.use('/api', (req, res, next) => {
+        const path = '/api' + req.path;
+        if (WEB_ALLOWED_ROUTES.some(re => re.test(path))) return next();
+        res.status(404).json({ error: 'Not available in the web app — use the desktop app' });
+      });
+      console.log('[ApiServer] Web mode: only collaboration and inference routes are served');
+    }
+
+    // Workspace sub-resources are cached in memory per workspace, so check
+    // membership here instead of relying on each route's database query.
+    const memberCache = new Map<string, number>(); // `${userId}:${ws}` -> expiry
+    this.app.use('/api/v1/workspaces/:id/', (req, res, next) => {
+      const ws = req.params.id as string;
+      if (!UUID_RE.test(ws)) return next(); // join, chain (bytes32) ids, ...
+      requireUser(req, res, async () => {
+        const key = `${(req as any).session.userId}:${ws}`;
+        if ((memberCache.get(key) || 0) > Date.now()) return next();
+        const { data, error } = await db().rpc('is_member', { ws });
+        if (error || !data) {
+          res.status(403).json({ error: 'Not a member of this workspace' });
+          return;
+        }
+        memberCache.set(key, Date.now() + 60_000);
+        next();
+      });
+    });
   }
 
   private setupRoutes(): void {
@@ -137,6 +186,13 @@ export class ApiServer {
       agentsWsClients: this.agentsWsClients,
       broadcastAgentProgress: this.broadcastAgentProgress.bind(this),
     });
+
+    // Web mode: serve the web build of the renderer (VITE_WEB=1) from this origin
+    if (WEB_MODE) {
+      const webRoot = process.env.OTHERTHING_WEB_ROOT || path.join(__dirname, 'renderer');
+      this.app.use(express.static(webRoot, { index: 'index.html', maxAge: '1h' }));
+      this.app.get(/^(?!\/api\/|\/ws\/).*/, (req, res) => res.sendFile(path.join(webRoot, 'index.html')));
+    }
   }
 
   private broadcastAgentProgress(execution: AgentExecutionLocal): void {

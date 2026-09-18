@@ -1,4 +1,5 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
+import { IS_WEB } from './lib/supabase';
 import { useState, useEffect } from 'react';
 import { LayoutDashboard, Server, Settings as SettingsIcon, Wifi, WifiOff, Users, Bot, Store, Maximize2, Minimize2, Briefcase, Coins, CircleDollarSign, LogOut } from 'lucide-react';
 import { Dashboard } from './pages/Dashboard';
@@ -115,38 +116,50 @@ function MainApp() {
               </div>
 
               <nav className="header-nav">
-                <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                  <LayoutDashboard size={16} />
-                  <span>Dashboard</span>
-                </NavLink>
+                {!IS_WEB && (
+                  <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                    <LayoutDashboard size={16} />
+                    <span>Dashboard</span>
+                  </NavLink>
+                )}
                 <NavLink to="/workspaces" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                   <Users size={16} />
                   <span>Workspaces</span>
                 </NavLink>
-                <NavLink to="/agents" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                  <Bot size={16} />
-                  <span>Agents</span>
-                </NavLink>
-                <NavLink to="/node" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                  <Server size={16} />
-                  <span>Node</span>
-                </NavLink>
+                {!IS_WEB && (
+                  <NavLink to="/agents" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                    <Bot size={16} />
+                    <span>Agents</span>
+                  </NavLink>
+                )}
+                {!IS_WEB && (
+                  <NavLink to="/node" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                    <Server size={16} />
+                    <span>Node</span>
+                  </NavLink>
+                )}
                 <NavLink to="/tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                   <Briefcase size={16} />
                   <span>Tasks</span>
                 </NavLink>
-                <NavLink to="/marketplace" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                  <Store size={16} />
-                  <span>Marketplace</span>
-                </NavLink>
-                <NavLink to="/treasury" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                  <Coins size={16} />
-                  <span>Treasury</span>
-                </NavLink>
-                <NavLink to="/plans" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                  <CircleDollarSign size={16} />
-                  <span>Plans</span>
-                </NavLink>
+                {!IS_WEB && (
+                  <NavLink to="/marketplace" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                    <Store size={16} />
+                    <span>Marketplace</span>
+                  </NavLink>
+                )}
+                {!IS_WEB && (
+                  <NavLink to="/treasury" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                    <Coins size={16} />
+                    <span>Treasury</span>
+                  </NavLink>
+                )}
+                {!IS_WEB && (
+                  <NavLink to="/plans" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                    <CircleDollarSign size={16} />
+                    <span>Plans</span>
+                  </NavLink>
+                )}
                 <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                   <SettingsIcon size={16} />
                   <span>Settings</span>
@@ -189,7 +202,7 @@ function MainApp() {
             {/* Main Content */}
             <main className="app-main">
               <Routes>
-                <Route path="/" element={<Dashboard />} />
+                <Route path="/" element={IS_WEB ? <WorkspacePage /> : <Dashboard />} />
                 <Route path="/workspaces" element={<WorkspacePage />} />
                 <Route path="/workspace/:workspaceId" element={<WorkspaceTabs />} />
                 <Route path="/agents" element={<AgentsPage />} />
