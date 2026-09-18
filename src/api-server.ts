@@ -19,6 +19,7 @@ import { SandboxManager } from './sandbox-manager';
 import { IPFSManager } from './ipfs-manager';
 import { adapterManager } from './adapters/adapter-manager';
 import { requireUser, nodeSession, isSupabaseConfigured, verifyAccessToken, db } from './services/supabase-client';
+import { resolveChainWorkspace, isChainWorkspaceId, BridgeError } from './services/chain-bridge';
 import { registerAllRoutes } from './routes';
 import { chainSyncService } from './services/chain-sync';
 import { ipfsExportService } from './services/ipfs-export-service';
@@ -41,6 +42,9 @@ const PORT = 8080;
 // Kept under the old name because all route modules receive it as `localAuth`.
 const localAuth = requireUser;
 
+const CHAIN_WS_PATH_RE = /^\/api\/v1\/workspaces\/(0x[0-9a-fA-F]{64})(\/[^?]*)?/;
+const CHAIN_NATIVE_SUBPATH_RE = /^\/(agreements|milestone-tasks|ip|bans|flags)(\/|$)/;
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -59,6 +63,9 @@ const WEB_ALLOWED_ROUTES: RegExp[] = [
   /^\/api\/v1\/(agreements|milestone-tasks|ip|profile)(\/.*)?$/,
   /^\/api\/v1\/ollama\/(status|models|chat)$/,
   /^\/api\/v1\/models$/,
+];
+const WEB_READ_ONLY_ROUTES: RegExp[] = [
+  /^\/api\/v1\/workspaces\/[^/]+\/nodes$/,
 ];
 
 export class ApiServer {
@@ -148,10 +155,35 @@ export class ApiServer {
       this.app.use('/api', (req, res, next) => {
         const path = '/api' + req.path;
         if (WEB_ALLOWED_ROUTES.some(re => re.test(path))) return next();
+        if (req.method === 'GET' && WEB_READ_ONLY_ROUTES.some(re => re.test(path))) return next();
         res.status(404).json({ error: 'Not available in the web app — use the desktop app' });
       });
       console.log('[ApiServer] Web mode: only collaboration and inference routes are served');
     }
+
+    // The UI addresses workspaces by their on-chain id (bytes32). Everything
+    // stored in Postgres is keyed by the linked workspace's uuid, so rewrite
+    // those requests. Chain-native sub-resources keep the bytes32 id.
+    this.app.use((req, res, next) => {
+      const m = req.url.match(CHAIN_WS_PATH_RE);
+      const chainInPath = m && m[2] && !CHAIN_NATIVE_SUBPATH_RE.test(m[2]) ? m[1] : null;
+      const chainInBody = req.path === '/api/v1/ollama/chat' && isChainWorkspaceId(req.body?.workspaceId)
+        ? req.body.workspaceId as string : null;
+      const chainId = chainInPath || chainInBody;
+      if (!chainId) return next();
+
+      requireUser(req, res, async () => {
+        try {
+          const workspaceId = await resolveChainWorkspace(chainId);
+          if (chainInPath) req.url = req.url.replace(chainId, workspaceId);
+          if (chainInBody) req.body.workspaceId = workspaceId;
+          next();
+        } catch (err) {
+          const status = err instanceof BridgeError ? err.status : 502;
+          res.status(status).json({ error: (err as Error).message });
+        }
+      });
+    });
 
     // Workspace sub-resources are cached in memory per workspace, so check
     // membership here instead of relying on each route's database query.

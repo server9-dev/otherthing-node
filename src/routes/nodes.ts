@@ -7,13 +7,35 @@ import { v4 as uuidv4 } from 'uuid';
 import os from 'os';
 import { adapterManager } from '../adapters/adapter-manager';
 import type { RouteDependencies, WorkspaceNodeRecord } from './types';
+import { supabaseService } from '../services/supabase-service';
+import { inferenceRelay } from '../services/inference-relay';
+import { isPeerOnline } from './compute';
 
 export function registerNodeRoutes(deps: RouteDependencies): void {
   const { app, localAuth, workspaceManager, workspaceNodes, localNodeShareKey } = deps;
 
   app.get('/api/v1/workspaces/:id/nodes', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
-    const nodes = workspaceNodes.get(workspaceId) || [];
+    const nodes: Array<WorkspaceNodeRecord & { models?: string[] }> = [...(workspaceNodes.get(workspaceId) || [])];
+
+    // Nodes that joined the workspace (from Supabase), including this one
+    try {
+      const peers = await supabaseService.listWorkspacePeers(workspaceId);
+      for (const p of peers.documents as any[]) {
+        if (nodes.some(n => n.id === p.nodeId)) continue;
+        nodes.push({
+          id: p.nodeId,
+          shareKey: '',
+          name: p.displayName || p.nodeId,
+          status: isPeerOnline(p.lastSeen) ? 'online' : 'offline',
+          addedAt: p.lastSeen,
+          isLocal: p.nodeId === inferenceRelay.machineNodeId,
+          models: Array.isArray(p.ollamaModels) ? p.ollamaModels : [],
+        });
+      }
+    } catch {
+      // Not signed in / Supabase unreachable: local nodes only
+    }
     res.json({ nodes });
   });
 

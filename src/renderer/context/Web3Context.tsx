@@ -180,6 +180,7 @@ interface Web3ContextType {
   connectWithPrivateKey: (privateKey: string) => Promise<void>;
   createNewWallet: () => Promise<void>;
   disconnectWallet: () => void;
+  signMessage: (message: string) => Promise<string>;
   refreshBalances: () => Promise<void>;
   refreshNodes: () => Promise<void>;
 
@@ -644,6 +645,11 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   };
 
   // Disconnect wallet
+  const signMessage = async (message: string): Promise<string> => {
+    if (!signer) throw new Error('Connect a wallet first');
+    return signer.signMessage(message);
+  };
+
   const disconnectWallet = async () => {
     localStorage.removeItem('ott-wallet-key');
     if (wcProvider) {
@@ -1124,6 +1130,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       connectWithPrivateKey,
       createNewWallet,
       disconnectWallet,
+      signMessage,
       refreshBalances,
       refreshNodes,
       registerNode,

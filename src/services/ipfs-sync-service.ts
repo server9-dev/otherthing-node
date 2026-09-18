@@ -104,22 +104,8 @@ class WorkspaceSyncService {
     let peersFound = 0;
     let peersConnected = 0;
     try {
-      const result = await supabaseService.listWorkspacePeers(workspaceId);
-      const peers: WorkspacePeer[] = result.documents
-        .filter((p: any) => p.nodeId !== nodeId)
-        .map((p: any) => ({
-          nodeId: p.nodeId,
-          userId: p.userId,
-          displayName: p.displayName || p.nodeId,
-          peerId: p.peerId || '',
-          addresses: Array.isArray(p.addresses) ? p.addresses : [],
-          ollamaEndpoint: p.ollamaEndpoint || null,
-          ollamaModels: Array.isArray(p.ollamaModels) ? p.ollamaModels : [],
-          lastSeen: p.lastSeen,
-        }));
-
+      const peers = await this.refreshPeers(workspaceId, nodeId);
       peersFound = peers.length;
-      this.peerCache.set(workspaceId, peers);
 
       // Connect IPFS nodes
       if (this.ipfsManager && this.ipfsManager.getIsRunning()) {
@@ -141,6 +127,27 @@ class WorkspaceSyncService {
 
     this.synced.add(workspaceId);
     return { registered, peersFound, peersConnected };
+  }
+
+  /**
+   * Reload a workspace's peers (other nodes, not `selfNodeId`) from Supabase.
+   */
+  async refreshPeers(workspaceId: string, selfNodeId: string): Promise<WorkspacePeer[]> {
+    const result = await supabaseService.listWorkspacePeers(workspaceId);
+    const peers: WorkspacePeer[] = result.documents
+      .filter((p: any) => p.nodeId !== selfNodeId)
+      .map((p: any) => ({
+        nodeId: p.nodeId,
+        userId: p.userId,
+        displayName: p.displayName || p.nodeId,
+        peerId: p.peerId || '',
+        addresses: Array.isArray(p.addresses) ? p.addresses : [],
+        ollamaEndpoint: p.ollamaEndpoint || null,
+        ollamaModels: Array.isArray(p.ollamaModels) ? p.ollamaModels : [],
+        lastSeen: p.lastSeen,
+      }));
+    this.peerCache.set(workspaceId, peers);
+    return peers;
   }
 
   /**

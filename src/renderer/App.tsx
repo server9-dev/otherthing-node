@@ -1,5 +1,6 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
 import { IS_WEB } from './lib/supabase';
+import { WalletLinkBanner } from './components/WalletLinkBanner';
 import { useState, useEffect } from 'react';
 import { LayoutDashboard, Server, Settings as SettingsIcon, Wifi, WifiOff, Users, Bot, Store, Maximize2, Minimize2, Briefcase, Coins, CircleDollarSign, LogOut } from 'lucide-react';
 import { Dashboard } from './pages/Dashboard';
@@ -201,6 +202,7 @@ function MainApp() {
 
             {/* Main Content */}
             <main className="app-main">
+              <WalletLinkBanner />
               <Routes>
                 <Route path="/" element={IS_WEB ? <WorkspacePage /> : <Dashboard />} />
                 <Route path="/workspaces" element={<WorkspacePage />} />
