@@ -35,10 +35,9 @@ export function HealthTab({ workspaceId }: Props) {
   const [report, setReport] = useState<HealthReport | null>(null);
   const [generating, setGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
-  const headers = { Authorization: 'Bearer local-token' };
 
   useEffect(() => {
-    fetch(`${API_BASE}/workspaces/${workspaceId}/health-report/latest`, { headers })
+    fetch(`${API_BASE}/workspaces/${workspaceId}/health-report/latest`)
       .then(r => r.json())
       .then(d => setReport(d.report))
       .catch(() => {})
@@ -49,7 +48,7 @@ export function HealthTab({ workspaceId }: Props) {
     setGenerating(true);
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/health-report/generate`, {
-        method: 'POST', headers,
+        method: 'POST',
       });
       if (res.ok) {
         const data = await res.json();

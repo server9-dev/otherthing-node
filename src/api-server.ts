@@ -17,7 +17,7 @@ import { OllamaManager } from './ollama-manager';
 import { SandboxManager } from './sandbox-manager';
 import { IPFSManager } from './ipfs-manager';
 import { adapterManager } from './adapters/adapter-manager';
-import { appwriteService } from './services/appwrite-service';
+import { requireUser, nodeSession, isSupabaseConfigured, verifyAccessToken } from './services/supabase-client';
 import { registerAllRoutes } from './routes';
 import { chainSyncService } from './services/chain-sync';
 import { ipfsExportService } from './services/ipfs-export-service';
@@ -36,15 +36,9 @@ import type { AgentExecutionLocal, OnChainNodeRecord, WorkspaceNodeRecord, Manag
 
 const PORT = 8080;
 
-// Local mode - bypass auth for desktop app
-const localAuth = (req: Request, res: Response, next: express.NextFunction) => {
-  (req as any).session = {
-    userId: 'local-user',
-    username: 'local',
-    token: 'local-token',
-  };
-  next();
-};
+// Every API route requires a signed-in Supabase user (see services/supabase-client.ts).
+// Kept under the old name because all route modules receive it as `localAuth`.
+const localAuth = requireUser;
 
 export class ApiServer {
   private app: express.Application;
@@ -76,6 +70,10 @@ export class ApiServer {
       key += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return key;
+  }
+
+  getWorkspaceManager(): WorkspaceManager {
+    return this.workspaceManager;
   }
 
   setManagers(
@@ -191,18 +189,19 @@ export class ApiServer {
 
   start(): Promise<void> {
     return new Promise(async (resolve, reject) => {
-      // Initialize Appwrite
-      {
+      // Restore the node's Supabase session (saved sign-in, or
+      // OTHERTHING_NODE_EMAIL/PASSWORD on headless nodes)
+      if (isSupabaseConfigured()) {
         try {
-          appwriteService.init({
-            endpoint: PLATFORM.appwrite.endpoint,
-            projectId: PLATFORM.appwrite.projectId,
-            apiKey: PLATFORM.appwrite.apiKey,
-          });
-          console.log('[ApiServer] Appwrite initialized');
+          const user = await nodeSession.restore();
+          console.log(user
+            ? `[ApiServer] Supabase: signed in as ${user.email || user.id}`
+            : '[ApiServer] Supabase: not signed in — waiting for sign-in');
         } catch (err) {
-          console.error('[ApiServer] Failed to initialize Appwrite:', err);
+          console.error('[ApiServer] Failed to restore Supabase session:', err);
         }
+      } else {
+        console.warn('[ApiServer] Supabase not configured (SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY) — workspace sync disabled');
       }
 
       // Initialize MCP adapters
@@ -223,7 +222,18 @@ export class ApiServer {
 
       this.server = http.createServer(this.app);
 
-      this.wss = new WebSocketServer({ server: this.server, path: '/ws/agents' });
+      // Browsers can't set headers on a WebSocket, so the access token rides in ?token=
+      this.wss = new WebSocketServer({
+        server: this.server,
+        path: '/ws/agents',
+        verifyClient: (info, done) => {
+          const token = new URL(info.req.url || '', 'http://localhost').searchParams.get('token');
+          if (!token) return done(false, 401, 'Sign in required');
+          verifyAccessToken(token)
+            .then(user => done(!!user, 401, 'Session expired — sign in again'))
+            .catch(() => done(false, 401, 'Session expired — sign in again'));
+        },
+      });
 
       // Track call participants: workspaceId -> Set<{ ws, peerId, displayName }>
       const callParticipants: Map<string, Set<{ ws: WebSocket; peerId: string; displayName: string }>> = new Map();

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { CyberButton } from '../../components';
 import { useWeb3, OnChainWorkspace } from '../../context/Web3Context';
+import { useAuth } from '../../context/AuthContext';
 import { OverviewTab } from './OverviewTab';
 import { ChatTab } from './ChatTab';
 import { TasksTab } from './TasksTab';
@@ -45,6 +46,7 @@ export function WorkspaceTabs() {
     connected, address, myWorkspaces, refreshWorkspaces,
     getWorkspaceMembers, setShowQRModal,
   } = useWeb3();
+  const { user } = useAuth();
 
   const [workspace, setWorkspace] = useState<OnChainWorkspace | null>(null);
   const [members, setMembers] = useState<string[]>([]);
@@ -63,10 +65,10 @@ export function WorkspaceTabs() {
       setLoading(false);
       getWorkspaceMembers(workspaceId).then(setMembers).catch(() => {});
       // Auto-sync — register this node with wallet address as unique ID
-      const savedName = localStorage.getItem('ott-display-name') || '';
+      const savedName = user?.displayName || '';
       fetch(`http://localhost:8080/api/v1/workspaces/${workspaceId}/sync`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ wallet: address, displayName: savedName || address?.slice(0, 10) || 'Unknown' }),
       }).catch(() => {});
     } else if (myWorkspaces.length === 0) {

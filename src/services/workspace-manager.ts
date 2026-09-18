@@ -333,6 +333,60 @@ export class WorkspaceManager {
   }
 
   /**
+   * Upsert a local copy of a workspace whose source of truth is Supabase.
+   * Metadata, membership and the swarm key come from the remote row; local-only
+   * data (flows, keys, repos, whiteboards, ...) is kept.
+   */
+  mirrorRemote(remote: {
+    id: string;
+    name: string;
+    description: string;
+    isPrivate: boolean;
+    inviteCode: string;
+    ownerId: string;
+    ipfsSwarmKey: string;
+    createdAt: string;
+    members: WorkspaceMember[];
+  }): Workspace {
+    let workspace = this.workspaces.get(remote.id);
+    if (workspace) {
+      this.inviteCodes.delete(workspace.inviteCode);
+      Object.assign(workspace, remote);
+    } else {
+      workspace = {
+        ...remote,
+        apiKeys: [],
+        flows: [],
+        repos: [],
+        files: [],
+        whiteboards: [],
+        resourceUsage: {
+          totalCostCents: 0,
+          totalTokens: 0,
+          totalComputeSeconds: 0,
+          entries: [],
+          lastUpdated: new Date().toISOString(),
+        },
+      };
+      this.workspaces.set(remote.id, workspace);
+    }
+    this.inviteCodes.set(remote.inviteCode, remote.id);
+    this.saveToDisk();
+    return workspace;
+  }
+
+  /**
+   * Drop the local copy of a workspace (deleted remotely, or the user left).
+   */
+  removeLocal(workspaceId: string): void {
+    const workspace = this.workspaces.get(workspaceId);
+    if (!workspace) return;
+    this.inviteCodes.delete(workspace.inviteCode);
+    this.workspaces.delete(workspaceId);
+    this.saveToDisk();
+  }
+
+  /**
    * Leave a workspace
    */
   leaveWorkspace(

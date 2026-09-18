@@ -23,7 +23,6 @@ export function MembersTab({ workspace, workspaceId, members, isOwner, address }
   // Load connected nodes and their models
   useEffect(() => {
     fetch(`${API_BASE}/workspaces/${workspaceId}/models`, {
-      headers: { Authorization: 'Bearer local-token' },
     })
       .then(r => r.json())
       .then(d => setModelGroups(d.groups || []))

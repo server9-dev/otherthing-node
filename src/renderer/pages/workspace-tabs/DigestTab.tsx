@@ -37,13 +37,12 @@ export function DigestTab({ workspaceId }: Props) {
   const [showHandoff, setShowHandoff] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const headers = { Authorization: 'Bearer local-token' };
 
   useEffect(() => {
     Promise.all([
-      fetch(`${API_BASE}/workspaces/${workspaceId}/digest/latest`, { headers }).then(r => r.json()),
-      fetch(`${API_BASE}/workspaces/${workspaceId}/digest/history`, { headers }).then(r => r.json()),
-      fetch(`${API_BASE}/workspaces/${workspaceId}/handoff`, { headers }).then(r => r.json()),
+      fetch(`${API_BASE}/workspaces/${workspaceId}/digest/latest`).then(r => r.json()),
+      fetch(`${API_BASE}/workspaces/${workspaceId}/digest/history`).then(r => r.json()),
+      fetch(`${API_BASE}/workspaces/${workspaceId}/handoff`).then(r => r.json()),
     ]).then(([d, h, ho]) => {
       setDigest(d.digest);
       setHistory(h.digests || []);
@@ -55,7 +54,7 @@ export function DigestTab({ workspaceId }: Props) {
     setGenerating(true);
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/digest/generate`, {
-        method: 'POST', headers,
+        method: 'POST',
       });
       if (res.ok) {
         const data = await res.json();
@@ -68,7 +67,7 @@ export function DigestTab({ workspaceId }: Props) {
   const regenerateHandoff = async () => {
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/handoff/regenerate`, {
-        method: 'POST', headers,
+        method: 'POST',
       });
       if (res.ok) {
         const data = await res.json();

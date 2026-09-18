@@ -15,12 +15,11 @@ export function SandboxPreviewTab({ workspaceId }: Props) {
   const [cwd, setCwd] = useState('');
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
-  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' };
+  const headers = { 'Content-Type': 'application/json' };
 
   const checkStatus = async () => {
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/sandbox/preview/status`, {
-        headers: { Authorization: 'Bearer local-token' },
       });
       const data = await res.json();
       setStatus(data.status);
@@ -58,7 +57,7 @@ export function SandboxPreviewTab({ workspaceId }: Props) {
     if (pollRef.current) clearInterval(pollRef.current);
     try {
       await fetch(`${API_BASE}/workspaces/${workspaceId}/sandbox/preview/stop`, {
-        method: 'POST', headers: { Authorization: 'Bearer local-token' },
+        method: 'POST',
       });
       setStatus('stopped');
       setPort(null);

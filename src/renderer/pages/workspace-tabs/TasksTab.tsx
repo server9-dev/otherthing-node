@@ -57,7 +57,7 @@ export function TasksTab({ workspaceId }: Props) {
       // Save the on-chain task ID back to the task
       await fetch(`${API_BASE}/workspaces/${workspaceId}/tasks/${task.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ onChainTaskId, escrowed: true }),
       });
       loadTasks();
@@ -83,7 +83,7 @@ export function TasksTab({ workspaceId }: Props) {
       // Update local task
       await fetch(`${API_BASE}/workspaces/${workspaceId}/tasks/${task.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assignee: address, status: 'in_progress' }),
       });
       loadTasks();
@@ -103,7 +103,6 @@ export function TasksTab({ workspaceId }: Props) {
   const loadTasks = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/tasks`, {
-        headers: { Authorization: 'Bearer local-token' },
       });
       if (res.ok) {
         const data = await res.json();
@@ -119,7 +118,7 @@ export function TasksTab({ workspaceId }: Props) {
     try {
       await fetch(`${API_BASE}/workspaces/${workspaceId}/tasks`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newTitle, description: newDesc, priority: newPriority, status: newStatus }),
       });
       setNewTitle(''); setNewDesc(''); setNewPriority('medium'); setNewStatus('todo');
@@ -132,7 +131,7 @@ export function TasksTab({ workspaceId }: Props) {
     try {
       await fetch(`${API_BASE}/workspaces/${workspaceId}/tasks/${taskId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
       loadTasks();
@@ -142,7 +141,7 @@ export function TasksTab({ workspaceId }: Props) {
   const deleteTask = async (taskId: string) => {
     try {
       await fetch(`${API_BASE}/workspaces/${workspaceId}/tasks/${taskId}`, {
-        method: 'DELETE', headers: { Authorization: 'Bearer local-token' },
+        method: 'DELETE',
       });
       loadTasks();
     } catch {}

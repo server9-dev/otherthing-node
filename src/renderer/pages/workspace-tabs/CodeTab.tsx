@@ -32,7 +32,6 @@ export function CodeTab({ workspaceId }: Props) {
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/repos/${repoId}/sync`, {
         method: 'POST',
-        headers: { Authorization: 'Bearer local-token' },
       });
       const data = await res.json();
       if (data.cid) {
@@ -47,7 +46,6 @@ export function CodeTab({ workspaceId }: Props) {
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/repos/${repoId}/pull`, {
         method: 'POST',
-        headers: { Authorization: 'Bearer local-token' },
       });
       const data = await res.json();
       if (data.localPath) {
@@ -61,7 +59,6 @@ export function CodeTab({ workspaceId }: Props) {
   const loadRepos = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/repos`, {
-        headers: { Authorization: 'Bearer local-token' },
       });
       if (res.ok) {
         const data = await res.json();
@@ -75,7 +72,6 @@ export function CodeTab({ workspaceId }: Props) {
   // Check if code-server is already running for this workspace
   useEffect(() => {
     fetch(`${API_BASE}/workspaces/${workspaceId}/code-server`, {
-      headers: { Authorization: 'Bearer local-token' },
     })
       .then(r => r.json())
       .then(data => {
@@ -93,7 +89,7 @@ export function CodeTab({ workspaceId }: Props) {
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/code-server`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folder: folder || selectedRepo?.localPath }),
       });
       const data = await res.json();
@@ -114,7 +110,6 @@ export function CodeTab({ workspaceId }: Props) {
     try {
       await fetch(`${API_BASE}/workspaces/${workspaceId}/code-server`, {
         method: 'DELETE',
-        headers: { Authorization: 'Bearer local-token' },
       });
     } catch {}
     setPort(null);

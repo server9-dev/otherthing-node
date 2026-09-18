@@ -104,7 +104,7 @@ export function useVideoSafety({
       // Send to safety scan endpoint
       const res = await fetch(`${API_BASE}/safety/scan-image`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           description: `Live video frame from participant "${displayName}" in a workspace video call. Frame captured as JPEG for content safety review.`,
         }),

@@ -1,56 +1,75 @@
 /**
- * Auth Routes - signup, login, logout, me
+ * Auth Routes - Supabase session handoff between the renderer and the node.
+ *
+ * The renderer signs in directly against Supabase Auth (email + password).
+ * These routes let it bootstrap its client, hand its session to the node's
+ * background workers, and sign the node out again.
  */
 
 import { Request, Response } from 'express';
 import {
-  signup,
-  loginWithPassword,
-  logout,
-} from '../middleware/auth';
+  requireUser,
+  nodeSession,
+  getSupabaseConfig,
+  verifyAccessToken,
+} from '../services/supabase-client';
 import type { RouteDependencies } from './types';
 
 export function registerAuthRoutes(deps: RouteDependencies): void {
-  const { app, localAuth } = deps;
+  const { app } = deps;
 
-  app.post('/api/v1/auth/signup', async (req: Request, res: Response) => {
-    const { username, password } = req.body;
-    if (!username || !password) {
-      res.status(400).json({ error: 'Username and password required' });
-      return;
-    }
-    const result = await signup(username, password);
-    if (!result.success) {
-      res.status(400).json({ error: result.error });
-      return;
-    }
-    res.status(201).json({ token: result.token, user: result.user });
+  // Public: the publishable key is safe to expose by design.
+  app.get('/api/v1/auth/config', (_req: Request, res: Response) => {
+    const { url, publishableKey } = getSupabaseConfig();
+    res.json({ url, publishableKey });
   });
 
-  app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
-    const { username, password } = req.body;
-    if (!username || !password) {
-      res.status(400).json({ error: 'Username and password required' });
+  // Hand the signed-in renderer session to the node's background workers.
+  app.post('/api/v1/auth/session', requireUser, async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { access_token, refresh_token } = req.body || {};
+    if (typeof access_token !== 'string' || typeof refresh_token !== 'string' || !access_token || !refresh_token) {
+      res.status(400).json({ error: 'access_token and refresh_token required' });
       return;
     }
-    const result = await loginWithPassword(username, password);
-    if (!result.success) {
-      res.status(401).json({ error: result.error });
-      return;
+
+    // The session being handed over must belong to the caller.
+    if (access_token !== session.token) {
+      const owner = await verifyAccessToken(access_token).catch(() => null);
+      if (!owner || owner.id !== session.userId) {
+        res.status(403).json({ error: 'Session does not belong to the signed-in user' });
+        return;
+      }
     }
-    res.json({ token: result.token, user: result.user });
+
+    try {
+      const user = await nodeSession.setSession(access_token, refresh_token);
+      if (user.id !== session.userId) {
+        await nodeSession.signOut();
+        res.status(403).json({ error: 'Session does not belong to the signed-in user' });
+        return;
+      }
+      res.json({ success: true, userId: user.id });
+    } catch (err: any) {
+      console.error('[Auth] Failed to adopt node session:', err?.message || err);
+      res.status(401).json({ error: 'Could not adopt session' });
+    }
   });
 
-  app.post('/api/v1/auth/logout', (req: Request, res: Response) => {
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      logout(authHeader.slice(7));
-    }
+  app.post('/api/v1/auth/signout', requireUser, async (_req: Request, res: Response) => {
+    await nodeSession.signOut();
     res.json({ success: true });
   });
 
-  app.get('/api/v1/auth/me', localAuth, (req: Request, res: Response) => {
+  app.get('/api/v1/auth/me', requireUser, (req: Request, res: Response) => {
     const session = (req as any).session;
-    res.json({ authenticated: true, userId: session.userId, username: session.username });
+    const node = nodeSession.current;
+    res.json({
+      userId: session.userId,
+      username: session.username,
+      email: session.email ?? null,
+      // Whether the node's background workers are running as this same user.
+      nodeSignedIn: !!node && node.user.id === session.userId,
+    });
   });
 }

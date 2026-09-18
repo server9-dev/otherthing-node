@@ -1,10 +1,10 @@
 /**
  * UAF Service - Core CRUD and operations for UAF architecture elements
- * Uses Appwrite for persistent storage
+ * Uses Supabase for persistent storage (local cache first)
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { appwriteService, COLLECTIONS, DATABASE_ID } from './appwrite-service';
+import { supabaseService } from './supabase-service';
 import {
   UAFElement,
   UAFRelationship,
@@ -62,16 +62,16 @@ class UAFService {
       },
     };
 
-    // Store in Appwrite if available
-    if (appwriteService.isInitialized()) {
-      await appwriteService.createUAFElement(workspaceId, {
+    // Store in Supabase if available, under the same id
+    if (supabaseService.isInitialized()) {
+      await supabaseService.createUAFElement(workspaceId, {
+        id: element.id,
         name: element.name,
         description: element.description,
         viewpoint: element.viewpoint,
         modelKind: element.modelKind,
         elementType: element.elementType,
         properties: element.properties,
-        createdBy: userId,
       });
     }
 
@@ -89,10 +89,10 @@ class UAFService {
     const local = this.getLocalElement(workspaceId, elementId);
     if (local) return local;
 
-    // Try Appwrite
-    if (appwriteService.isInitialized()) {
+    // Try Supabase
+    if (supabaseService.isInitialized()) {
       try {
-        const result = await appwriteService.queryUAFElements(workspaceId, {});
+        const result = await supabaseService.queryUAFElements(workspaceId, {});
         const found = result.documents.find((d: any) => d.$id === elementId);
         if (found) {
           return this.documentToElement(found);
@@ -223,15 +223,14 @@ class UAFService {
       },
     };
 
-    // Store in Appwrite if available
-    if (appwriteService.isInitialized()) {
-      await appwriteService.createUAFRelationship({
+    // Store in Supabase if available
+    if (supabaseService.isInitialized()) {
+      await supabaseService.createUAFRelationship({
         workspaceId,
         sourceId: relationship.sourceId,
         targetId: relationship.targetId,
         relationshipType: relationship.relationshipType,
         properties: relationship.properties,
-        createdBy: userId,
       });
     }
 
@@ -430,7 +429,7 @@ class UAFService {
     return { elementsImported, relationshipsImported };
   }
 
-  // ============ LOCAL STORAGE (fallback when Appwrite unavailable) ============
+  // ============ LOCAL STORAGE (fallback when Supabase unavailable) ============
 
   private localElements: Map<string, UAFElement[]> = new Map();
   private localRelationships: Map<string, UAFRelationship[]> = new Map();

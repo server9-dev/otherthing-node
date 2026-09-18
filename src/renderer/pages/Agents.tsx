@@ -6,6 +6,7 @@ import {
   Loader2, Send, Trash2
 } from 'lucide-react';
 import { CyberButton } from '../components';
+import { getAccessToken } from '../lib/supabase';
 
 const API_BASE = 'http://localhost:8080';
 
@@ -92,7 +93,7 @@ export function AgentsPage() {
 
   // Connect to WebSocket for real-time updates
   useEffect(() => {
-    const ws = new WebSocket(`ws://localhost:8080/ws/agents?workspace=${workspaceId}`);
+    const ws = new WebSocket(`ws://localhost:8080/ws/agents?workspace=${workspaceId}&token=${encodeURIComponent(getAccessToken() || '')}`);
     wsRef.current = ws;
 
     ws.onmessage = (event) => {

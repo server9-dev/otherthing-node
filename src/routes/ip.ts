@@ -4,7 +4,7 @@
 
 import { Request, Response } from 'express';
 import { web3Service, LicenseType } from '../services/web3-service';
-import { appwriteService } from '../services/appwrite-service';
+import { supabaseService } from '../services/supabase-service';
 import type { RouteDependencies } from './types';
 
 const LICENSE_TYPES = [
@@ -41,11 +41,11 @@ export function registerIPRoutes(deps: RouteDependencies): void {
         licenseCid || ''
       );
 
-      // Mirror to Appwrite
-      if (appwriteService.isInitialized()) {
+      // Mirror to Supabase (upsert on task_id; chain-sync may write it too)
+      if (supabaseService.isInitialized()) {
         try {
           const licenseTypeName = LICENSE_TYPES.find(l => l.value === licenseType)?.name || 'Custom';
-          await appwriteService.registerIP({
+          await supabaseService.registerIP({
             workspaceId,
             taskId,
             creatorAddress: web3Service.address || '',
@@ -53,7 +53,7 @@ export function registerIPRoutes(deps: RouteDependencies): void {
             licenseCid,
           });
         } catch (err) {
-          console.warn('[IP] Appwrite mirror failed:', err);
+          console.warn('[IP] DB mirror failed:', err);
         }
       }
 
@@ -68,9 +68,9 @@ export function registerIPRoutes(deps: RouteDependencies): void {
     const taskId = req.params.taskId as string;
 
     try {
-      // Try Appwrite first
-      if (appwriteService.isInitialized()) {
-        const ip = await appwriteService.getIPForTask(taskId);
+      // Try Supabase first
+      if (supabaseService.isInitialized()) {
+        const ip = await supabaseService.getIPForTask(taskId);
         if (ip) {
           res.json({ ip });
           return;
@@ -102,8 +102,8 @@ export function registerIPRoutes(deps: RouteDependencies): void {
     const workspaceId = req.params.id as string;
 
     try {
-      if (appwriteService.isInitialized()) {
-        const result = await appwriteService.listWorkspaceIP(workspaceId);
+      if (supabaseService.isInitialized()) {
+        const result = await supabaseService.listWorkspaceIP(workspaceId);
         res.json({ registrations: result.documents });
         return;
       }

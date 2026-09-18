@@ -2,8 +2,10 @@ import { LucideIcon } from 'lucide-react';
 
 interface CyberButtonProps {
   children: React.ReactNode;
-  onClick?: () => void;
-  variant?: 'default' | 'primary' | 'danger' | 'success';
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  variant?: 'default' | 'primary' | 'secondary' | 'danger' | 'success';
+  type?: 'button' | 'submit' | 'reset';
+  title?: string;
   icon?: LucideIcon;
   disabled?: boolean;
   loading?: boolean;
@@ -20,11 +22,15 @@ export function CyberButton({
   loading,
   className = '',
   style,
+  type,
+  title,
 }: CyberButtonProps) {
   return (
     <button
       className={`cyber-btn ${variant} ${className}`}
       onClick={onClick}
+      type={type}
+      title={title}
       disabled={disabled || loading}
       style={{ opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer', ...style }}
     >

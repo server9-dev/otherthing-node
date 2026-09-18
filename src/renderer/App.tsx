@@ -1,6 +1,6 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, Server, Settings as SettingsIcon, Wifi, WifiOff, HardDrive, Users, Bot, Store, Maximize2, Minimize2, Briefcase, Coins, CircleDollarSign } from 'lucide-react';
+import { LayoutDashboard, Server, Settings as SettingsIcon, Wifi, WifiOff, Users, Bot, Store, Maximize2, Minimize2, Briefcase, Coins, CircleDollarSign, LogOut } from 'lucide-react';
 import { Dashboard } from './pages/Dashboard';
 import { NodeControl } from './pages/NodeControl';
 import { Settings } from './pages/Settings';
@@ -12,6 +12,8 @@ import { TasksPage } from './pages/Tasks';
 import { TaskDetailPage } from './pages/TaskDetail';
 import { Treasury } from './pages/Treasury';
 import { PlansPage } from './pages/PlansPage';
+import { SignIn } from './pages/SignIn';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ModuleProvider } from './context/ModuleContext';
 import { CredentialProvider } from './context/CredentialContext';
 import { Web3Provider } from './context/Web3Context';
@@ -37,7 +39,20 @@ function OttBalance() {
   );
 }
 
-function App() {
+function UserMenu() {
+  const { user, signOut } = useAuth();
+  if (!user) return null;
+  return (
+    <div className="header-user" title={user.email ?? undefined}>
+      <span className="status-user">{user.displayName}</span>
+      <button className="logout-btn" onClick={() => { signOut().catch((err) => console.error('[Auth] Sign-out failed:', err)); }} title="Sign out" aria-label="Sign out">
+        <LogOut size={14} />
+      </button>
+    </div>
+  );
+}
+
+function MainApp() {
   const [connected, setConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -148,6 +163,8 @@ function App() {
                 </button>
                 <WalletButton />
                 <span className="status-divider">|</span>
+                <UserMenu />
+                <span className="status-divider">|</span>
                 {connected ? (
                   <>
                     <Wifi size={16} className="status-icon online" />
@@ -189,6 +206,21 @@ function App() {
         </ModuleProvider>
       </CredentialProvider>
     </Web3Provider>
+  );
+}
+
+function AuthGate() {
+  const { status, user } = useAuth();
+  if (status !== 'signedIn' || !user) return <SignIn />;
+  // Remount the app per user so no state leaks between accounts.
+  return <MainApp key={user.id} />;
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
   );
 }
 

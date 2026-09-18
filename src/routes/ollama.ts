@@ -8,7 +8,8 @@ import { handoffService } from '../services/handoff-service';
 import { remoteInferenceService } from '../services/remote-inference';
 import { premiumService } from '../services/premium-service';
 import { ipfsSyncService } from '../services/ipfs-sync-service';
-import { appwriteService } from '../services/appwrite-service';
+import { supabaseService } from '../services/supabase-service';
+import { inferenceRelay, INFERENCE_REQUEST, INFERENCE_RESPONSE } from '../services/inference-relay';
 
 export function registerOllamaRoutes(deps: RouteDependencies): void {
   const { app, localAuth } = deps;
@@ -138,38 +139,40 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
               endpoint = ollamaManager.getEndpoint();
             }
           } catch {}
-          // Even if model not found locally, use local as fallback (Ollama will error with a clear message)
-          if (!endpoint) endpoint = ollamaManager.getEndpoint();
         }
       }
     }
 
-    // 2. Check workspace peers — relay inference through Appwrite (P2P, works over internet)
-    if (!endpoint && model && workspaceId) {
+    // 2. Check workspace peers — relay inference through Supabase signaling (P2P, works over internet)
+    if (!endpoint && model && workspaceId && supabaseService.isInitialized()) {
       const peers = ipfsSyncService.getWorkspacePeers(workspaceId);
       const peer = peers.find(p => p.ollamaModels.includes(model));
       if (peer) {
-        console.log(`[Ollama] Relaying "${model}" to peer ${peer.displayName} via Appwrite`);
+        console.log(`[Ollama] Relaying "${model}" to peer ${peer.displayName} (${peer.nodeId})`);
         try {
-          // Write inference request to Appwrite signaling
+          // Address the request to the peer's node ID; responses come back to ours
+          const myNodeId = inferenceRelay.machineNodeId;
           const requestId = `infer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-          await appwriteService.sendSignal({
+          const request = await supabaseService.sendSignal({
             workspaceId,
-            fromPeerId: 'local',
-            targetPeerId: peer.userId,
-            type: 'inference-request',
+            fromPeerId: myNodeId,
+            targetPeerId: peer.nodeId,
+            type: INFERENCE_REQUEST,
             payload: JSON.stringify({ requestId, model, messages, temperature, max_tokens }),
           });
 
-          // Poll for response (up to 120 seconds)
+          // Poll for response (up to 120 seconds). `since` is the request's
+          // server timestamp, so local clock skew doesn't matter.
           const startTime = Date.now();
-          const pollSince = new Date(startTime - 1000).toISOString();
+          const pollSince: string = request.timestamp;
           while (Date.now() - startTime < 120000) {
             await new Promise(r => setTimeout(r, 1000));
-            const signals = await appwriteService.pollSignals(workspaceId, 'local', pollSince);
-            const response = signals.documents.find((s: any) =>
-              s.type === 'inference-response' && s.payload.includes(requestId)
-            );
+            const signals = await supabaseService.pollSignals(workspaceId, myNodeId, pollSince, {
+              types: [INFERENCE_RESPONSE],
+            });
+            const response = signals.documents.find((s: any) => {
+              try { return JSON.parse(s.payload).requestId === requestId; } catch { return false; }
+            });
             if (response) {
               const data = JSON.parse(response.payload);
               res.setHeader('Content-Type', 'text/event-stream');
@@ -185,6 +188,12 @@ export function registerOllamaRoutes(deps: RouteDependencies): void {
           console.error('[Ollama] Peer relay failed:', err);
         }
       }
+    }
+
+    // Nobody in the workspace has the model: let local Ollama answer (it errors
+    // with a clear "model not found" message) before trying premium.
+    if (!endpoint && ollamaManager && await ollamaManager.checkRunning()) {
+      endpoint = ollamaManager.getEndpoint();
     }
 
     // 3. Premium fallback

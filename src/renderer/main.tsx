@@ -7,6 +7,10 @@ import './styles/animations.css';
 
 // Initialize API bridge (sets up window.electronAPI for Tauri compatibility)
 import './lib/api-bridge';
+import { installAuthFetch } from './lib/supabase';
+
+// Attach the signed-in user's access token to every local API request.
+installAuthFetch();
 
 // Use HashRouter for Electron compatibility
 ReactDOM.createRoot(document.getElementById('root')!).render(

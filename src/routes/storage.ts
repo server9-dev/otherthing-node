@@ -1,6 +1,6 @@
 /**
  * Storage Routes - file upload/download/IPFS, API keys
- * Persisted to Appwrite (shared across members), in-memory cache for speed.
+ * Persisted to Supabase (shared across members), in-memory cache for speed.
  */
 
 import { Request, Response } from 'express';
@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { RouteDependencies } from './types';
 import { safetyService } from '../services/safety-service';
 import { auditService } from '../services/audit-service';
-import { appwriteService } from '../services/appwrite-service';
+import { supabaseService } from '../services/supabase-service';
 
 // Local cache
 const storageStore: Map<string, any[]> = new Map();
@@ -18,32 +18,31 @@ const loadedFiles: Set<string> = new Set();
 const loadedKeys: Set<string> = new Set();
 
 async function loadFiles(workspaceId: string): Promise<void> {
-  if (loadedFiles.has(workspaceId) || !appwriteService.isInitialized()) return;
+  if (loadedFiles.has(workspaceId) || !supabaseService.isInitialized()) return;
   try {
-    const result = await appwriteService.listStoredFiles(workspaceId);
+    const result = await supabaseService.listStoredFiles(workspaceId);
     storageStore.set(workspaceId, result.documents.map((d: any) => ({
       id: d.$id, cid: d.cid, name: d.name, size: d.size,
       mimeType: d.mimeType, addedBy: d.addedBy, addedAt: d.addedAt,
-      pinned: d.pinned, _appwriteId: d.$id,
+      pinned: d.pinned,
     })));
     loadedFiles.add(workspaceId);
   } catch (err) {
-    console.warn('[Storage] Appwrite load failed:', err);
+    console.warn('[Storage] DB load failed:', err);
   }
 }
 
 async function loadApiKeys(workspaceId: string): Promise<void> {
-  if (loadedKeys.has(workspaceId) || !appwriteService.isInitialized()) return;
+  if (loadedKeys.has(workspaceId) || !supabaseService.isInitialized()) return;
   try {
-    const result = await appwriteService.listWorkspaceApiKeys(workspaceId);
+    const result = await supabaseService.listWorkspaceApiKeys(workspaceId);
     apiKeysStore.set(workspaceId, result.documents.map((d: any) => ({
       id: d.$id, provider: d.provider, name: d.name,
-      maskedKey: d.encryptedKey, addedBy: d.addedBy, addedAt: d.addedAt,
-      _appwriteId: d.$id,
+      maskedKey: d.maskedKey, addedBy: d.addedBy, addedAt: d.addedAt,
     })));
     loadedKeys.add(workspaceId);
   } catch (err) {
-    console.warn('[Storage] Appwrite API keys load failed:', err);
+    console.warn('[Storage] DB API keys load failed:', err);
   }
 }
 
@@ -63,6 +62,7 @@ export function registerStorageRoutes(deps: RouteDependencies): void {
     const workspaceId = req.params.id as string;
     const session = (req as any).session;
     const { content, filename, mimeType } = req.body;
+    await loadFiles(workspaceId);
 
     if (!content) {
       res.status(400).json({ error: 'Content is required' });
@@ -131,17 +131,22 @@ export function registerStorageRoutes(deps: RouteDependencies): void {
     };
 
     if (!storageStore.has(workspaceId)) storageStore.set(workspaceId, []);
+    const existing = storageStore.get(workspaceId)!.find(f => f.cid === cid);
+    if (existing) {
+      // Same content already stored (unique per cid + workspace)
+      res.status(201).json({ file: existing });
+      return;
+    }
     storageStore.get(workspaceId)!.push(file);
 
-    // Persist metadata to Appwrite (shared file list)
-    if (appwriteService.isInitialized()) {
-      appwriteService.createStoredFile(workspaceId, {
-        cid: file.cid, name: file.name, size: file.size,
-        mimeType: file.mimeType, addedBy: file.addedBy, pinned: true,
+    // Persist metadata to Supabase (shared file list). Upserts on (cid, workspace).
+    if (supabaseService.isInitialized()) {
+      supabaseService.createStoredFile(workspaceId, {
+        id: file.id, cid: file.cid, name: file.name, size: file.size,
+        mimeType: file.mimeType, pinned: true,
       }).then(doc => {
-        file._appwriteId = doc.$id;
         file.id = doc.$id;
-      }).catch(err => console.warn('[Storage] Appwrite write failed:', err));
+      }).catch(err => console.warn('[Storage] DB write failed:', err));
     }
 
     res.status(201).json({ file });
@@ -185,7 +190,7 @@ export function registerStorageRoutes(deps: RouteDependencies): void {
     await loadFiles(workspaceId);
 
     const files = storageStore.get(workspaceId) || [];
-    const fileIndex = files.findIndex(f => f.id === fileId || f._appwriteId === fileId);
+    const fileIndex = files.findIndex(f => f.id === fileId);
     if (fileIndex === -1) {
       res.status(404).json({ error: 'File not found' });
       return;
@@ -194,9 +199,9 @@ export function registerStorageRoutes(deps: RouteDependencies): void {
     storageContent.delete(file.cid);
     files.splice(fileIndex, 1);
 
-    if (appwriteService.isInitialized()) {
-      appwriteService.deleteStoredFile(file._appwriteId || fileId)
-        .catch(err => console.warn('[Storage] Appwrite delete failed:', err));
+    if (supabaseService.isInitialized()) {
+      supabaseService.deleteStoredFile(file.id)
+        .catch(err => console.warn('[Storage] DB delete failed:', err));
     }
 
     res.json({ success: true });
@@ -235,14 +240,10 @@ export function registerStorageRoutes(deps: RouteDependencies): void {
     if (!apiKeysStore.has(workspaceId)) apiKeysStore.set(workspaceId, []);
     apiKeysStore.get(workspaceId)!.push(apiKey);
 
-    if (appwriteService.isInitialized()) {
-      appwriteService.createWorkspaceApiKey(workspaceId, {
-        provider: apiKey.provider, name: apiKey.name,
-        encryptedKey: maskedKey, addedBy: apiKey.addedBy,
-      }).then(doc => {
-        apiKey._appwriteId = doc.$id;
-        apiKey.id = doc.$id;
-      }).catch(err => console.warn('[Storage] Appwrite API key write failed:', err));
+    if (supabaseService.isInitialized()) {
+      supabaseService.createWorkspaceApiKey(workspaceId, {
+        id: apiKey.id, provider: apiKey.provider, name: apiKey.name, maskedKey,
+      }).catch(err => console.warn('[Storage] DB API key write failed:', err));
     }
 
     res.status(201).json({ apiKey });
@@ -254,18 +255,17 @@ export function registerStorageRoutes(deps: RouteDependencies): void {
     await loadApiKeys(workspaceId);
 
     const keys = apiKeysStore.get(workspaceId) || [];
-    const keyIndex = keys.findIndex(k => k.id === keyId || k._appwriteId === keyId);
+    const keyIndex = keys.findIndex(k => k.id === keyId);
     if (keyIndex === -1) {
       res.status(404).json({ error: 'API key not found' });
       return;
     }
 
-    const awId = keys[keyIndex]._appwriteId || keyId;
     keys.splice(keyIndex, 1);
 
-    if (appwriteService.isInitialized()) {
-      appwriteService.deleteWorkspaceApiKey(awId)
-        .catch(err => console.warn('[Storage] Appwrite API key delete failed:', err));
+    if (supabaseService.isInitialized()) {
+      supabaseService.deleteWorkspaceApiKey(keyId)
+        .catch(err => console.warn('[Storage] DB API key delete failed:', err));
     }
 
     res.json({ success: true });

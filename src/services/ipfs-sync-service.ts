@@ -2,17 +2,20 @@
  * Workspace Sync Service — connects members' IPFS nodes and shares Ollama models
  *
  * When a user opens a workspace:
- * 1. Register this node's IPFS peer info + Ollama models in Appwrite
+ * 1. Upsert this node's row in workspace_peers (node_id, IPFS info, Ollama models)
  * 2. Connect to other members' IPFS nodes
- * 3. Make other members' Ollama models available for inference
+ * 3. Make other members' Ollama models available for inference (via the relay)
  */
 
 import * as os from 'os';
 import type { IPFSManager } from '../ipfs-manager';
 import type { OllamaManager } from '../ollama-manager';
-import { appwriteService } from './appwrite-service';
+import { supabaseService } from './supabase-service';
 
 export interface WorkspacePeer {
+  /** Stable node ID the peer's inference relay answers to (target for requests). */
+  nodeId: string;
+  /** Auth user that owns the node. */
   userId: string;
   displayName: string;
   peerId: string;
@@ -36,12 +39,17 @@ class WorkspaceSyncService {
     this.ollamaManager = ollama;
   }
 
-  async syncWorkspace(workspaceId: string, userId: string, displayNameOverride?: string): Promise<{
+  /**
+   * Register this node in the workspace and refresh the peer list.
+   * `nodeId` is the ID the local inference relay answers to (wallet address
+   * or machine ID) and becomes workspace_peers.node_id.
+   */
+  async syncWorkspace(workspaceId: string, nodeId: string, displayNameOverride?: string): Promise<{
     registered: boolean;
     peersFound: number;
     peersConnected: number;
   }> {
-    if (!appwriteService.isInitialized()) {
+    if (!supabaseService.isInitialized()) {
       return { registered: false, peersFound: 0, peersConnected: 0 };
     }
 
@@ -50,7 +58,7 @@ class WorkspaceSyncService {
     let addresses: string[] = [];
     let ollamaEndpoint: string | null = null;
     let ollamaModels: string[] = [];
-    const displayName = displayNameOverride || userId;
+    const displayName = displayNameOverride || nodeId;
 
     // IPFS info (optional — might not be running)
     if (this.ipfsManager && this.ipfsManager.getIsRunning()) {
@@ -61,32 +69,29 @@ class WorkspaceSyncService {
       } catch {}
     }
 
-    // Ollama info — use LAN IP so other workspace members can reach it
+    // Ollama info — model names from /api/tags; endpoint uses LAN IP so
+    // members on the same network can reach it directly
     if (this.ollamaManager) {
       try {
         const running = await this.ollamaManager.checkRunning();
         if (running) {
-          // Get LAN IP for cross-machine access
           const lanIp = this.getLanIP();
           const localEndpoint = this.ollamaManager.getEndpoint();
-          // Replace localhost/127.0.0.1 with LAN IP
           ollamaEndpoint = lanIp
             ? localEndpoint.replace(/127\.0\.0\.1|localhost/, lanIp)
             : localEndpoint;
-          const status = await this.ollamaManager.getStatus();
-          ollamaModels = (status.models || []).map((m: any) => m.name);
+          ollamaModels = (await this.ollamaManager.getModels()).map(m => m.name);
         }
       } catch {}
     }
 
-    // Register in Appwrite
     let registered = false;
     try {
-      await appwriteService.registerPeer(workspaceId, {
-        peerId: peerId || `node-${userId}`,
+      await supabaseService.registerPeer(workspaceId, {
+        nodeId,
+        peerId,
         addresses,
-        userId,
-        ollamaEndpoint: ollamaEndpoint || undefined,
+        ollamaEndpoint,
         ollamaModels,
         displayName,
       });
@@ -99,17 +104,17 @@ class WorkspaceSyncService {
     let peersFound = 0;
     let peersConnected = 0;
     try {
-      const result = await appwriteService.listWorkspacePeers(workspaceId);
-      const myPeerId = peerId || `node-${userId}`;
-      const peers = result.documents
-        .filter((p: any) => p.peerId !== myPeerId && p.userId !== userId)
+      const result = await supabaseService.listWorkspacePeers(workspaceId);
+      const peers: WorkspacePeer[] = result.documents
+        .filter((p: any) => p.nodeId !== nodeId)
         .map((p: any) => ({
+          nodeId: p.nodeId,
           userId: p.userId,
-          displayName: p.displayName || p.userId,
-          peerId: p.peerId,
-          addresses: p.addresses || [],
+          displayName: p.displayName || p.nodeId,
+          peerId: p.peerId || '',
+          addresses: Array.isArray(p.addresses) ? p.addresses : [],
           ollamaEndpoint: p.ollamaEndpoint || null,
-          ollamaModels: p.ollamaModels ? (typeof p.ollamaModels === 'string' ? JSON.parse(p.ollamaModels) : p.ollamaModels) : [],
+          ollamaModels: Array.isArray(p.ollamaModels) ? p.ollamaModels : [],
           lastSeen: p.lastSeen,
         }));
 
@@ -119,6 +124,7 @@ class WorkspaceSyncService {
       // Connect IPFS nodes
       if (this.ipfsManager && this.ipfsManager.getIsRunning()) {
         for (const peer of peers) {
+          if (!peer.peerId) continue;
           for (const addr of peer.addresses) {
             const fullAddr = addr.includes(peer.peerId) ? addr : `${addr}/p2p/${peer.peerId}`;
             try {
@@ -146,6 +152,11 @@ class WorkspaceSyncService {
 
   isSynced(workspaceId: string): boolean {
     return this.synced.has(workspaceId);
+  }
+
+  /** Workspaces this node has registered in (the inference relay polls these). */
+  getSyncedWorkspaces(): string[] {
+    return Array.from(this.synced);
   }
 
   private getLanIP(): string | null {

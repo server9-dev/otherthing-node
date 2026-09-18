@@ -80,7 +80,6 @@ export function TaskDetailPage() {
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/milestone-tasks/${taskId}`, {
-        headers: { 'Authorization': 'Bearer local-token' },
       });
       if (!res.ok) throw new Error('Failed to load task');
       const data = await res.json();
@@ -109,7 +108,6 @@ export function TaskDetailPage() {
       // Check IP status
       try {
         const ipRes = await fetch(`${API_BASE}/ip/task/${taskId}/check`, {
-          headers: { 'Authorization': 'Bearer local-token' },
         });
         if (ipRes.ok) {
           const ipData = await ipRes.json();
@@ -132,7 +130,7 @@ export function TaskDetailPage() {
       const m = milestones[milestoneIndex];
       const res = await fetch(`${API_BASE}/milestone-tasks/${taskId}/milestones/${milestoneIndex}/analyze-dispute`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           workspaceId: task.workspaceId,
           milestoneDescription: m.description,
@@ -154,7 +152,6 @@ export function TaskDetailPage() {
   useEffect(() => {
     if (!task?.workspaceId) return;
     fetch(`${API_BASE}/workspaces/${task.workspaceId}/agreements`, {
-      headers: { 'Authorization': 'Bearer local-token' },
     })
       .then(r => r.ok ? r.json() : { agreements: [] })
       .then(d => setAgreements(d.agreements || []))
@@ -171,7 +168,7 @@ export function TaskDetailPage() {
     try {
       const res = await fetch(`${API_BASE}${url}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
       });
       if (!res.ok) {

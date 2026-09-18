@@ -1,23 +1,25 @@
 /**
  * Task Routes - task CRUD
- * Persisted to Appwrite (shared across members), in-memory cache for speed.
+ * Persisted to Supabase (shared across members), in-memory cache for speed.
  */
 
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import type { RouteDependencies } from './types';
-import { appwriteService } from '../services/appwrite-service';
+import { supabaseService } from '../services/supabase-service';
 
-// In-memory cache (populated from Appwrite on first read)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// In-memory cache (populated from Supabase on first read)
 const tasksStore: Map<string, any[]> = new Map();
 const loadedWorkspaces: Set<string> = new Set();
 
-async function loadFromAppwrite(workspaceId: string): Promise<void> {
+async function loadFromDb(workspaceId: string): Promise<void> {
   if (loadedWorkspaces.has(workspaceId)) return;
-  if (!appwriteService.isInitialized()) return;
+  if (!supabaseService.isInitialized()) return;
 
   try {
-    const result = await appwriteService.listWorkspaceBoardTasks(workspaceId);
+    const result = await supabaseService.listWorkspaceBoardTasks(workspaceId);
     const tasks = result.documents.map((d: any) => ({
       id: d.$id,
       title: d.title,
@@ -29,12 +31,11 @@ async function loadFromAppwrite(workspaceId: string): Promise<void> {
       assignee: d.assignee,
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
-      _appwriteId: d.$id,
     }));
     tasksStore.set(workspaceId, tasks);
     loadedWorkspaces.add(workspaceId);
   } catch (err) {
-    console.warn('[Tasks] Appwrite load failed, using local:', err);
+    console.warn('[Tasks] DB load failed, using local:', err);
   }
 }
 
@@ -43,14 +44,14 @@ export function registerTaskRoutes(deps: RouteDependencies): void {
 
   app.get('/api/v1/workspaces/:id/tasks', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
-    await loadFromAppwrite(workspaceId);
+    await loadFromDb(workspaceId);
     const tasks = tasksStore.get(workspaceId) || [];
     res.json({ tasks });
   });
 
   app.post('/api/v1/workspaces/:id/tasks', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
-    await loadFromAppwrite(workspaceId);
+    await loadFromDb(workspaceId);
 
     const milestones = req.body.milestones || [];
     const bounty = req.body.bounty || (milestones.length > 0
@@ -58,7 +59,8 @@ export function registerTaskRoutes(deps: RouteDependencies): void {
       : undefined);
 
     const task: any = {
-      id: req.body.id || uuidv4(),
+      // DB ids are uuids; keep a client-supplied id only if it is one.
+      id: UUID_RE.test(req.body.id || '') ? req.body.id : uuidv4(),
       title: req.body.title || '',
       description: req.body.description || '',
       status: req.body.status || 'todo',
@@ -76,9 +78,10 @@ export function registerTaskRoutes(deps: RouteDependencies): void {
     }
     tasksStore.get(workspaceId)!.push(task);
 
-    // Persist to Appwrite
-    if (appwriteService.isInitialized()) {
-      appwriteService.createWorkspaceTask({
+    // Persist to Supabase under the same id
+    if (supabaseService.isInitialized()) {
+      supabaseService.createWorkspaceTask({
+        id: task.id,
         workspaceId,
         title: task.title,
         description: task.description,
@@ -87,10 +90,7 @@ export function registerTaskRoutes(deps: RouteDependencies): void {
         assignee: task.assignee,
         bounty: task.bounty,
         deadline: task.deadline,
-      }).then(doc => {
-        task._appwriteId = doc.$id;
-        task.id = doc.$id;
-      }).catch(err => console.warn('[Tasks] Appwrite write failed:', err));
+      }).catch(err => console.warn('[Tasks] DB write failed:', err));
     }
 
     res.status(201).json({ task });
@@ -99,21 +99,20 @@ export function registerTaskRoutes(deps: RouteDependencies): void {
   app.patch('/api/v1/workspaces/:id/tasks/:taskId', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const taskId = req.params.taskId as string;
-    await loadFromAppwrite(workspaceId);
+    await loadFromDb(workspaceId);
 
     const tasks = tasksStore.get(workspaceId) || [];
-    const taskIndex = tasks.findIndex(t => t.id === taskId || t._appwriteId === taskId);
+    const taskIndex = tasks.findIndex(t => t.id === taskId);
     if (taskIndex === -1) {
       res.status(404).json({ error: 'Task not found' });
       return;
     }
     tasks[taskIndex] = { ...tasks[taskIndex], ...req.body, updatedAt: new Date().toISOString() };
 
-    // Sync to Appwrite
-    const awId = tasks[taskIndex]._appwriteId || taskId;
-    if (appwriteService.isInitialized()) {
-      appwriteService.updateWorkspaceTask(awId, req.body)
-        .catch(err => console.warn('[Tasks] Appwrite update failed:', err));
+    // Sync to Supabase (service whitelists the writable columns)
+    if (supabaseService.isInitialized()) {
+      supabaseService.updateWorkspaceTask(taskId, req.body)
+        .catch(err => console.warn('[Tasks] DB update failed:', err));
     }
 
     res.json({ task: tasks[taskIndex] });
@@ -122,22 +121,20 @@ export function registerTaskRoutes(deps: RouteDependencies): void {
   app.delete('/api/v1/workspaces/:id/tasks/:taskId', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const taskId = req.params.taskId as string;
-    await loadFromAppwrite(workspaceId);
+    await loadFromDb(workspaceId);
 
     const tasks = tasksStore.get(workspaceId) || [];
-    const taskIndex = tasks.findIndex(t => t.id === taskId || t._appwriteId === taskId);
+    const taskIndex = tasks.findIndex(t => t.id === taskId);
     if (taskIndex === -1) {
       res.status(404).json({ error: 'Task not found' });
       return;
     }
 
-    const awId = tasks[taskIndex]._appwriteId || taskId;
     tasks.splice(taskIndex, 1);
 
-    // Delete from Appwrite
-    if (appwriteService.isInitialized()) {
-      appwriteService.deleteWorkspaceTask(awId)
-        .catch(err => console.warn('[Tasks] Appwrite delete failed:', err));
+    if (supabaseService.isInitialized()) {
+      supabaseService.deleteWorkspaceTask(taskId)
+        .catch(err => console.warn('[Tasks] DB delete failed:', err));
     }
 
     res.json({ success: true });

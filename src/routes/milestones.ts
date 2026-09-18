@@ -5,7 +5,7 @@
 import { Request, Response } from 'express';
 import { ethers } from 'ethers';
 import { web3Service } from '../services/web3-service';
-import { appwriteService } from '../services/appwrite-service';
+import { supabaseService } from '../services/supabase-service';
 import type { RouteDependencies } from './types';
 
 export function registerMilestoneRoutes(deps: RouteDependencies): void {
@@ -34,10 +34,10 @@ export function registerMilestoneRoutes(deps: RouteDependencies): void {
         milestoneAmounts
       );
 
-      // Mirror to Appwrite
-      if (appwriteService.isInitialized()) {
+      // Mirror to Supabase (upsert on task_id; chain-sync may write it too)
+      if (supabaseService.isInitialized()) {
         try {
-          await appwriteService.createTask({
+          await supabaseService.createTask({
             taskId,
             workspaceId,
             title: `Milestone Task`,
@@ -47,7 +47,7 @@ export function registerMilestoneRoutes(deps: RouteDependencies): void {
             createdBy: web3Service.address || '',
           });
         } catch (err) {
-          console.warn('[Milestones] Appwrite mirror failed:', err);
+          console.warn('[Milestones] DB mirror failed:', err);
         }
       }
 
@@ -71,18 +71,15 @@ export function registerMilestoneRoutes(deps: RouteDependencies): void {
       const tx = await web3Service.assignMilestoneWorker(taskId, workerAddress, nodeId);
       const receipt = await tx.wait();
 
-      // Update Appwrite mirror
-      if (appwriteService.isInitialized()) {
+      // Update Supabase mirror
+      if (supabaseService.isInitialized()) {
         try {
-          const existing = await appwriteService.getTaskByChainId(taskId);
-          if (existing) {
-            await appwriteService.updateTask(existing.$id, {
-              assigneeAddress: workerAddress,
-              status: 'assigned',
-            });
-          }
+          await supabaseService.updateTaskByChainId(taskId, {
+            assigneeAddress: workerAddress,
+            status: 'assigned',
+          });
         } catch (err) {
-          console.warn('[Milestones] Appwrite mirror failed:', err);
+          console.warn('[Milestones] DB mirror failed:', err);
         }
       }
 
@@ -162,15 +159,12 @@ export function registerMilestoneRoutes(deps: RouteDependencies): void {
       const tx = await web3Service.cancelMilestoneTask(taskId);
       const receipt = await tx.wait();
 
-      // Update Appwrite mirror
-      if (appwriteService.isInitialized()) {
+      // Update Supabase mirror
+      if (supabaseService.isInitialized()) {
         try {
-          const existing = await appwriteService.getTaskByChainId(taskId);
-          if (existing) {
-            await appwriteService.updateTask(existing.$id, { status: 'cancelled' });
-          }
+          await supabaseService.updateTaskByChainId(taskId, { status: 'cancelled' });
         } catch (err) {
-          console.warn('[Milestones] Appwrite mirror failed:', err);
+          console.warn('[Milestones] DB mirror failed:', err);
         }
       }
 
@@ -193,13 +187,13 @@ export function registerMilestoneRoutes(deps: RouteDependencies): void {
     }
   });
 
-  // List workspace milestone tasks (from Appwrite, graceful fallback)
+  // List workspace milestone tasks (from Supabase, graceful fallback)
   app.get('/api/v1/workspaces/:id/milestone-tasks', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
 
     try {
-      if (appwriteService.isInitialized()) {
-        const result = await appwriteService.listWorkspaceTasks(workspaceId);
+      if (supabaseService.isInitialized()) {
+        const result = await supabaseService.listWorkspaceTasks(workspaceId);
         res.json({ tasks: result.documents });
         return;
       }
