@@ -19,6 +19,11 @@ import { inferenceRelay } from '../services/inference-relay';
 import { auditService } from '../services/audit-service';
 import { banService } from '../services/ban-service';
 
+/** Nodes re-announce every 5 minutes; allow a couple of missed beats. */
+export function isPeerOnline(lastSeen: string | undefined): boolean {
+  return !!lastSeen && Date.now() - Date.parse(lastSeen) < 12 * 60_000;
+}
+
 export function registerComputeRoutes(deps: RouteDependencies): void {
   const { app, localAuth } = deps;
 
@@ -597,7 +602,8 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
 
   app.get('/api/v1/workspaces/:id/models', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
-    const peers = ipfsSyncService.getWorkspacePeers(workspaceId);
+    const peers = await ipfsSyncService.refreshPeers(workspaceId, inferenceRelay.machineNodeId)
+      .catch(() => ipfsSyncService.getWorkspacePeers(workspaceId));
 
     // Local models
     const groups: Array<{ owner: string; userId: string; endpoint: string | null; models: any[] }> = [];
@@ -608,7 +614,8 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
         const status = await ollamaManager.getStatus();
         if (status.models?.length) {
           groups.push({
-            owner: 'You (local)',
+            // On a web-mode node the "local" models belong to the shared server
+            owner: process.env.OTHERTHING_WEB_MODE === '1' ? `${os.hostname()} (shared)` : 'You (local)',
             userId: 'local',
             endpoint: ollamaManager.getEndpoint(),
             models: status.models.map((m: any) => ({
@@ -619,31 +626,16 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
       } catch {}
     }
 
-    // Peer models — fetch live from their Ollama endpoints
+    // Peer models — as advertised by each node. Requests for them go through
+    // the inference relay, so the peer's Ollama needn't be reachable from here.
     for (const peer of peers) {
-      if (peer.ollamaEndpoint) {
-        try {
-          const peerRes = await fetch(`${peer.ollamaEndpoint}/api/tags`, {
-            signal: AbortSignal.timeout(3000),
-          });
-          if (peerRes.ok) {
-            const peerData: any = await peerRes.json();
-            const peerModels = (peerData.models || []).map((m: any) => ({
-              name: m.name, size: m.size, parameterSize: m.details?.parameter_size || '', family: m.details?.family || '',
-            }));
-            if (peerModels.length > 0) {
-              groups.push({
-                owner: peer.displayName || peer.userId,
-                userId: peer.userId,
-                endpoint: peer.ollamaEndpoint,
-                models: peerModels,
-              });
-            }
-          }
-        } catch {
-          // Peer offline or unreachable
-        }
-      }
+      if (!peer.ollamaModels.length || !isPeerOnline(peer.lastSeen)) continue;
+      groups.push({
+        owner: peer.displayName || peer.nodeId,
+        userId: peer.userId,
+        endpoint: null,
+        models: peer.ollamaModels.map(name => ({ name, size: 0, parameterSize: '', family: '' })),
+      });
     }
 
     res.json({ groups });

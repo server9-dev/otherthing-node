@@ -16,6 +16,10 @@ import { nodeSession } from './services/supabase-client';
 import { WorkspaceDirectory } from './services/workspace-directory';
 import { ipfsSyncService } from './services/ipfs-sync-service';
 import { inferenceRelay } from './services/inference-relay';
+import { ethers } from 'ethers';
+import {
+  resolveChainWorkspace, linkWalletWithKey, CHAIN_RPC_URL, WORKSPACE_REGISTRY_ADDRESS,
+} from './services/chain-bridge';
 
 const PORT = process.env.API_PORT || 8080;
 
@@ -81,6 +85,50 @@ async function main() {
 }
 
 /**
+ * On-chain workspaces (the ones the app's UI uses). OTHERTHING_JOIN_CHAIN_WORKSPACES
+ * is a comma-separated list of `workspaceId:inviteCode` — the same string the
+ * app copies as an invite. The node joins on-chain with OTHERTHING_NODE_WALLET_KEY
+ * (needs a little Sepolia ETH for gas), links that wallet to its account, and
+ * the chain-bridge function then grants it the linked Postgres workspace.
+ */
+async function joinChainWorkspaces(): Promise<boolean> {
+  const invites = (process.env.OTHERTHING_JOIN_CHAIN_WORKSPACES || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const key = process.env.OTHERTHING_NODE_WALLET_KEY;
+  if (!invites.length) return true;
+  if (!key) {
+    console.error('[Server] OTHERTHING_JOIN_CHAIN_WORKSPACES needs OTHERTHING_NODE_WALLET_KEY');
+    return true;
+  }
+  const wallet = new ethers.Wallet(key, new ethers.JsonRpcProvider(CHAIN_RPC_URL));
+  const registry = new ethers.Contract(WORKSPACE_REGISTRY_ADDRESS, [
+    'function isMember(bytes32, address) view returns (bool)',
+    'function joinWithInviteCode(bytes32 workspaceId, string inviteCode)',
+  ], wallet);
+
+  await linkWalletWithKey(wallet);
+  console.log(`[Server] Node wallet ${wallet.address} linked to its account`);
+
+  let ok = true;
+  for (const invite of invites) {
+    const [chainId, code] = invite.split(':');
+    try {
+      if (!(await registry.isMember(chainId, wallet.address))) {
+        console.log(`[Server] Joining on-chain workspace ${chainId.slice(0, 10)}…`);
+        const tx = await registry.joinWithInviteCode(chainId, code);
+        await tx.wait();
+      }
+      const workspaceId = await resolveChainWorkspace(chainId);
+      console.log(`[Server] On-chain workspace ${chainId.slice(0, 10)}… → ${workspaceId}`);
+    } catch (err) {
+      console.error(`[Server] Could not join on-chain workspace ${chainId.slice(0, 10)}… (will retry):`, (err as any).shortMessage || (err as Error).message);
+      ok = false;
+    }
+  }
+  return ok;
+}
+
+/**
  * Headless nodes have no UI to open a workspace, so they join and announce
  * themselves here. OTHERTHING_JOIN_WORKSPACES is a comma-separated list of
  * invite codes; joining is idempotent. Every workspace the node's account
@@ -99,6 +147,7 @@ function startWorkspacePresence(): void {
     if (!user) return;
     try {
       if (!joined) {
+        const chainOk = await joinChainWorkspaces();
         for (const code of inviteCodes) {
           const ws = await directory.join(code).catch(err => {
             console.error(`[Server] Could not join workspace with code ${code}: ${err.message}`);
@@ -106,7 +155,7 @@ function startWorkspacePresence(): void {
           });
           if (ws) console.log(`[Server] Member of workspace "${ws.name}" (${ws.id})`);
         }
-        joined = true;
+        joined = chainOk;
       }
       inferenceRelay.registerNodeId(nodeId);
       for (const ws of await directory.listMine(user.id)) {
