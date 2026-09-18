@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import {
   LayoutDashboard, MessageSquare, CheckSquare, Code, FolderOpen,
   Users, ArrowLeft, Globe, Lock, Wallet, PenTool, FileText,
-  Activity, Monitor, Workflow, ChevronLeft, ChevronRight
+  Activity, Monitor, Workflow, ChevronLeft, ChevronRight, Bot
 } from 'lucide-react';
 import { CyberButton } from '../../components';
 import { useWeb3, OnChainWorkspace } from '../../context/Web3Context';
@@ -19,10 +19,13 @@ import { DigestTab } from './DigestTab';
 import { HealthTab } from './HealthTab';
 import { SandboxPreviewTab } from './SandboxPreviewTab';
 import { WorkflowTab } from './WorkflowTab';
+import { AIChatTab } from './AIChatTab';
+import { IS_WEB } from '../../lib/supabase';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'chat', label: 'Chat', icon: MessageSquare },
+  { id: 'ai', label: 'AI', icon: Bot },
   { id: 'tasks', label: 'Tasks', icon: CheckSquare },
   { id: 'code', label: 'Code', icon: Code },
   { id: 'files', label: 'Files', icon: FolderOpen },
@@ -34,12 +37,20 @@ const TABS = [
   { id: 'members', label: 'Members', icon: Users },
 ];
 
-const FULL_BLEED_TABS = ['whiteboard', 'code', 'preview', 'workflows'];
+// Tabs whose APIs a shared web node doesn't serve (code, files, sandboxes, agents).
+const DESKTOP_ONLY_TABS = ['code', 'files', 'workflows', 'health', 'preview'];
+const VISIBLE_TABS = IS_WEB ? TABS.filter(t => !DESKTOP_ONLY_TABS.includes(t.id)) : TABS;
+
+const FULL_BLEED_TABS = ['whiteboard', 'code', 'preview', 'workflows', 'ai'];
 
 export function WorkspaceTabs() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'overview';
+  const [aiTabOpened, setAiTabOpened] = useState(activeTab === 'ai');
+  useEffect(() => {
+    if (activeTab === 'ai') setAiTabOpened(true);
+  }, [activeTab]);
   const [collapsed, setCollapsed] = useState(false);
 
   const {
@@ -156,7 +167,7 @@ export function WorkspaceTabs() {
 
         {/* Navigation items */}
         <nav style={{ flex: 1, overflow: 'auto', padding: '0.35rem' }}>
-          {TABS.map(tab => {
+          {VISIBLE_TABS.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
@@ -247,24 +258,37 @@ export function WorkspaceTabs() {
           This keeps code-server, whiteboard, and workflows alive
           so they don't reload when you switch to chat and back.
         */}
-        <div style={{
-          display: activeTab === 'code' ? 'flex' : 'none',
-          flexDirection: 'column', flex: 1, minHeight: 0,
-        }}>
-          <CodeTab workspaceId={workspaceId!} />
-        </div>
+        {!IS_WEB && (
+          <div style={{
+            display: activeTab === 'code' ? 'flex' : 'none',
+            flexDirection: 'column', flex: 1, minHeight: 0,
+          }}>
+            <CodeTab workspaceId={workspaceId!} />
+          </div>
+        )}
         <div style={{
           display: activeTab === 'whiteboard' ? 'flex' : 'none',
           flexDirection: 'column', flex: 1, minHeight: 0,
         }}>
           <WhiteboardTab workspaceId={workspaceId!} />
         </div>
-        <div style={{
-          display: activeTab === 'workflows' ? 'flex' : 'none',
-          flexDirection: 'column', flex: 1, minHeight: 0,
-        }}>
-          <WorkflowTab workspaceId={workspaceId!} />
-        </div>
+        {!IS_WEB && (
+          <div style={{
+            display: activeTab === 'workflows' ? 'flex' : 'none',
+            flexDirection: 'column', flex: 1, minHeight: 0,
+          }}>
+            <WorkflowTab workspaceId={workspaceId!} />
+          </div>
+        )}
+        {/* Mounted on first visit, then kept alive so the chat isn't reloaded */}
+        {aiTabOpened && (
+          <div style={{
+            display: activeTab === 'ai' ? 'flex' : 'none',
+            flexDirection: 'column', flex: 1, minHeight: 0,
+          }}>
+            <AIChatTab />
+          </div>
+        )}
       </div>
     </div>
   );
