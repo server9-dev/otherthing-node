@@ -354,6 +354,7 @@ export function WorkflowTab({ workspaceId }: Props) {
       {/* Canvas */}
       <div style={{ flex: 1 }}>
         <ReactFlow
+            colorMode="dark"
           nodes={nodes}
           edges={edges}
           onNodesChange={(changes) => { onNodesChange(changes); setSaved(false); }}
@@ -371,7 +372,7 @@ export function WorkflowTab({ workspaceId }: Props) {
           }}
         >
           <Background color="#222" gap={16} />
-          <Controls style={{ button: { background: '#1a1a3e', color: '#e0e0e0', border: '1px solid #333' } } as any} />
+          <Controls />
           <MiniMap
             nodeColor={(node) => {
               switch (node.type) {

@@ -728,7 +728,7 @@ export function ChatTab({ workspace, workspaceId }: Props) {
                 fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: 1.6,
                 whiteSpace: 'pre-wrap', wordBreak: 'break-word',
               }}>
-                {msg.content}
+                {msg.role === 'user' ? msg.content : renderMarkdownLite(msg.content)}
               </div>
               {msg.model && (
                 <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
@@ -811,4 +811,26 @@ export function ChatTab({ workspace, workspaceId }: Props) {
       </div>}
     </div>
   );
+}
+
+/**
+ * Minimal, safe markdown for model replies: **bold**, `code` and "- " / "* "
+ * bullets. Builds React elements (no HTML injection).
+ */
+function renderMarkdownLite(text: string): React.ReactNode {
+  const inline = (line: string, key: string) =>
+    line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return <strong key={`${key}-${i}`}>{part.slice(2, -2)}</strong>;
+      if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+        return <code key={`${key}-${i}`} style={{ background: 'rgba(255,255,255,0.08)', padding: '0 4px', borderRadius: 3 }}>{part.slice(1, -1)}</code>;
+      }
+      return part;
+    });
+  return text.split('\n').map((line, i) => {
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+    if (bullet) {
+      return <div key={i} style={{ display: 'flex', gap: '0.5rem', margin: '0.15rem 0' }}><span style={{ color: 'var(--primary)' }}>•</span><span>{inline(bullet[1], `l${i}`)}</span></div>;
+    }
+    return <div key={i}>{line ? inline(line, `l${i}`) : '\u00a0'}</div>;
+  });
 }
