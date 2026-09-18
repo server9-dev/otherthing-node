@@ -34,7 +34,7 @@ export function useVoiceVideo({ workspaceId, displayName }: UseVoiceVideoOptions
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const lastPollRef = useRef<string>(new Date().toISOString());
   const processedSignals = useRef<Set<string>>(new Set());
-  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' };
+  const headers = { 'Content-Type': 'application/json' };
 
   useEffect(() => { inCallRef.current = inCall; }, [inCall]);
 
@@ -173,8 +173,7 @@ export function useVoiceVideo({ workspaceId, displayName }: UseVoiceVideoOptions
     const poll = async () => {
       try {
         const res = await fetch(
-          `${API_BASE}/workspaces/${workspaceId}/signal/poll?peerId=${peerIdRef.current}&since=${encodeURIComponent(lastPollRef.current)}`,
-          { headers: { Authorization: 'Bearer local-token' } }
+          `${API_BASE}/workspaces/${workspaceId}/signal/poll?peerId=${peerIdRef.current}&since=${encodeURIComponent(lastPollRef.current)}`
         );
         const data = await res.json();
         if (data.signals?.length > 0) {
@@ -232,7 +231,7 @@ export function useVoiceVideo({ workspaceId, displayName }: UseVoiceVideoOptions
 
     // Cleanup old signals
     fetch(`${API_BASE}/workspaces/${workspaceId}/signal/cleanup`, {
-      method: 'POST', headers: { Authorization: 'Bearer local-token' },
+      method: 'POST',
     }).catch(() => {});
 
     setLocalStream(null);

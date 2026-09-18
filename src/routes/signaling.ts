@@ -1,8 +1,8 @@
 /**
- * Signaling Routes — WebRTC signaling relay via Appwrite
+ * Signaling Routes — WebRTC signaling relay via Supabase
  *
  * Since each user runs their own localhost server, the WebSocket
- * signaling can't cross machines. This relay uses Appwrite documents
+ * signaling can't cross machines. This relay uses Supabase rows
  * as a message bus for SDP offers/answers/ICE candidates.
  *
  * Once the WebRTC connection is established (peer-to-peer), the
@@ -11,7 +11,7 @@
 
 import { Request, Response } from 'express';
 import type { RouteDependencies } from './types';
-import { appwriteService } from '../services/appwrite-service';
+import { supabaseService } from '../services/supabase-service';
 
 export function registerSignalingRoutes(deps: RouteDependencies): void {
   const { app, localAuth } = deps;
@@ -26,13 +26,13 @@ export function registerSignalingRoutes(deps: RouteDependencies): void {
       return;
     }
 
-    if (!appwriteService.isInitialized()) {
-      res.status(503).json({ error: 'Signaling unavailable — Appwrite not connected' });
+    if (!supabaseService.isInitialized()) {
+      res.status(503).json({ error: 'Signaling unavailable — not connected to OtherThing' });
       return;
     }
 
     try {
-      await appwriteService.sendSignal({
+      await supabaseService.sendSignal({
         workspaceId, fromPeerId, targetPeerId, type,
         payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
       });
@@ -47,14 +47,14 @@ export function registerSignalingRoutes(deps: RouteDependencies): void {
     const workspaceId = req.params.id as string;
     const { fromPeerId, type, payload } = req.body;
 
-    if (!appwriteService.isInitialized()) {
+    if (!supabaseService.isInitialized()) {
       res.status(503).json({ error: 'Signaling unavailable' });
       return;
     }
 
     try {
       // Write a single signal with targetPeerId='all' — everyone polling picks it up
-      await appwriteService.sendSignal({
+      await supabaseService.sendSignal({
         workspaceId,
         fromPeerId,
         targetPeerId: 'all',
@@ -78,13 +78,13 @@ export function registerSignalingRoutes(deps: RouteDependencies): void {
       return;
     }
 
-    if (!appwriteService.isInitialized()) {
+    if (!supabaseService.isInitialized()) {
       res.json({ signals: [] });
       return;
     }
 
     try {
-      const result = await appwriteService.pollSignals(workspaceId, peerId, since);
+      const result = await supabaseService.pollSignals(workspaceId, peerId, since);
       const signals = result.documents.map((d: any) => ({
         id: d.$id,
         fromPeerId: d.fromPeerId,
@@ -101,7 +101,7 @@ export function registerSignalingRoutes(deps: RouteDependencies): void {
   // Cleanup old signals (call periodically or on session end)
   app.post('/api/v1/workspaces/:id/signal/cleanup', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
-    await appwriteService.cleanupSignals(workspaceId);
+    if (supabaseService.isInitialized()) await supabaseService.cleanupSignals(workspaceId);
     res.json({ success: true });
   });
 }

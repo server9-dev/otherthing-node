@@ -13,23 +13,23 @@ import { existsSync, mkdirSync } from 'fs';
 import { execSync, spawnSync } from 'child_process';
 import { analyzeRepository, RepoAnalysis } from '../services/repo-analyzer';
 import type { RouteDependencies } from './types';
-import { appwriteService } from '../services/appwrite-service';
+import { supabaseService } from '../services/supabase-service';
 
 const loadedRepos: Set<string> = new Set();
 
-async function loadReposFromAppwrite(workspaceId: string): Promise<void> {
-  if (loadedRepos.has(workspaceId) || !appwriteService.isInitialized()) return;
+async function loadReposFromDb(workspaceId: string): Promise<void> {
+  if (loadedRepos.has(workspaceId) || !supabaseService.isInitialized()) return;
   try {
-    const result = await appwriteService.listWorkspaceRepos(workspaceId);
+    const result = await supabaseService.listWorkspaceRepos(workspaceId);
     const repos = result.documents.map((d: any) => ({
       id: d.$id, url: d.url, name: d.name, status: d.status || 'ready',
-      ipfsCid: d.ipfsCid, addedBy: d.addedBy, addedAt: d.addedAt,
-      _appwriteId: d.$id,
+      ipfsCid: d.ipfsCid || null, error: d.error || undefined,
+      addedBy: d.addedBy, addedAt: d.addedAt, analyzedAt: d.analyzedAt || undefined,
     }));
     reposStore.set(workspaceId, repos);
     loadedRepos.add(workspaceId);
   } catch (err) {
-    console.warn('[Repos] Appwrite load failed:', err);
+    console.warn('[Repos] DB load failed:', err);
   }
 }
 
@@ -55,7 +55,7 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
   // ── List repos ────────────────────────────────────────────
   app.get('/api/v1/workspaces/:id/repos', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
-    await loadReposFromAppwrite(workspaceId);
+    await loadReposFromDb(workspaceId);
     const repos = (reposStore.get(workspaceId) || []).map(r => {
       // Reconstruct localPath — check if the cloned dir exists on this machine
       const expectedPath = path.join(getReposDir(), `${workspaceId}-${r.id}`);
@@ -64,7 +64,7 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
       let status = r.status;
       if (hasLocal && status === 'pending') status = 'ready';
 
-      // If repo exists in Appwrite but not locally, auto-clone it in background
+      // If repo exists in the DB but not locally, auto-clone it in background
       if (!hasLocal && r.url && status === 'ready') {
         status = 'cloning';
         // Validate URL format
@@ -104,14 +104,19 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
     }
     reposStore.get(workspaceId)!.push(repo);
 
-    // Persist to Appwrite
-    if (appwriteService.isInitialized()) {
-      appwriteService.createWorkspaceRepo(workspaceId, {
-        url: repo.url, name: repo.name, addedBy: repo.addedBy,
-      }).then(doc => {
-        repo._appwriteId = doc.$id;
-      }).catch(err => console.warn('[Repos] Appwrite write failed:', err));
-    }
+    // Persist to Supabase under the same id (the clone dir is named after it).
+    // Later status/CID updates wait on this insert.
+    const persisted: Promise<boolean> = supabaseService.isInitialized()
+      ? supabaseService.createWorkspaceRepo(workspaceId, {
+          id: repo.id, url: repo.url, name: repo.name, status: 'pending',
+        }).then(() => true, err => { console.warn('[Repos] DB write failed:', err); return false; })
+      : Promise.resolve(false);
+    const persistUpdate = (data: Record<string, any>, what: string) => {
+      persisted.then(ok => {
+        if (ok) supabaseService.updateWorkspaceRepo(repo.id, data)
+          .catch(err => console.warn(`[Repos] DB ${what} update failed:`, err));
+      });
+    };
 
     // Return immediately, clone + analyze + IPFS in background
     res.status(201).json({ repo });
@@ -137,11 +142,8 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
         repo.analyzedAt = new Date().toISOString();
         console.log(`[Repos] Analysis complete for ${repo.name}`);
 
-        // Update status in Appwrite so other members see it's ready
-        if (appwriteService.isInitialized() && repo._appwriteId) {
-          appwriteService.updateWorkspaceRepo(repo._appwriteId, { status: 'ready' })
-            .catch(err => console.warn('[Repos] Appwrite status update failed:', err));
-        }
+        // Update status in the DB so other members see it's ready
+        persistUpdate({ status: 'ready', analyzedAt: repo.analyzedAt }, 'status');
 
         // Add to IPFS for workspace sharing
         const ipfs = getIpfs();
@@ -157,13 +159,8 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
             await ipfs.pin(cid);
             console.log(`[Repos] ${repo.name} added to IPFS: ${cid}`);
 
-            // Store CID in Appwrite so other members can pull
-            if (appwriteService.isInitialized() && repo._appwriteId) {
-              appwriteService.updateWorkspaceRepo(repo._appwriteId, {
-                status: 'ready',
-                data: JSON.stringify({ ipfsCid: cid, localPath: repoDir }),
-              }).catch(err => console.warn('[Repos] Appwrite CID update failed:', err));
-            }
+            // Store CID so other members can pull
+            persistUpdate({ status: 'ready', ipfsCid: cid, data: { localPath: repoDir } }, 'CID');
           } catch (ipfsErr: any) {
             console.warn(`[Repos] IPFS add failed for ${repo.name}: ${ipfsErr.message}`);
           }
@@ -174,6 +171,7 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
         console.error(`[Repos] Clone/analyze failed for ${repo.name}:`, err.message);
         repo.status = 'error';
         repo.error = err.message || 'Clone or analysis failed';
+        persistUpdate({ status: 'error', error: repo.error }, 'error');
       }
     })();
   });
@@ -182,6 +180,7 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
   app.post('/api/v1/workspaces/:id/repos/:repoId/sync', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const repoId = req.params.repoId as string;
+    await loadReposFromDb(workspaceId);
 
     const repos = reposStore.get(workspaceId) || [];
     const repo = repos.find(r => r.id === repoId);
@@ -214,6 +213,11 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
       }
 
       console.log(`[Repos] ${repo.name} synced to IPFS: ${cid}`);
+      // Publish the new CID so other members pull the latest version
+      if (supabaseService.isInitialized()) {
+        supabaseService.updateWorkspaceRepo(repo.id, { ipfsCid: cid })
+          .catch(err => console.warn('[Repos] DB CID update failed:', err));
+      }
       res.json({ cid, previousCid, status: 'synced' });
     } catch (err: any) {
       console.error(`[Repos] Sync failed for ${repo.name}:`, err.message);
@@ -225,6 +229,7 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
   app.post('/api/v1/workspaces/:id/repos/:repoId/pull', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const repoId = req.params.repoId as string;
+    await loadReposFromDb(workspaceId);
 
     const repos = reposStore.get(workspaceId) || [];
     const repo = repos.find(r => r.id === repoId);
@@ -263,6 +268,7 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
   app.post('/api/v1/workspaces/:id/repos/:repoId/analyze', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const repoId = req.params.repoId as string;
+    await loadReposFromDb(workspaceId);
 
     const repos = reposStore.get(workspaceId) || [];
     const repo = repos.find(r => r.id === repoId);
@@ -309,6 +315,7 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
   app.delete('/api/v1/workspaces/:id/repos/:repoId', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const repoId = req.params.repoId as string;
+    await loadReposFromDb(workspaceId);
     const repos = reposStore.get(workspaceId) || [];
     const repoIndex = repos.findIndex(r => r.id === repoId);
     if (repoIndex === -1) {
@@ -327,6 +334,10 @@ export function registerRepoRoutes(deps: RouteDependencies): void {
     }
 
     repos.splice(repoIndex, 1);
+    if (supabaseService.isInitialized()) {
+      supabaseService.deleteWorkspaceRepo(repoId)
+        .catch(err => console.warn('[Repos] DB delete failed:', err));
+    }
     res.json({ success: true });
   });
 

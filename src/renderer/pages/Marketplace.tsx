@@ -39,8 +39,8 @@ export function Marketplace() {
 
       // Fetch registered nodes from web3 stats + verified nodes
       const [statsRes, verifiedRes] = await Promise.all([
-        fetch(`${API_BASE}/api/v1/web3/stats`, { headers: { 'Authorization': 'Bearer local-token' } }),
-        fetch(`${API_BASE}/api/v1/web3/nodes/verified`, { headers: { 'Authorization': 'Bearer local-token' } }),
+        fetch(`${API_BASE}/api/v1/web3/stats`),
+        fetch(`${API_BASE}/api/v1/web3/nodes/verified`),
       ]);
 
       const registeredNodes: RegisteredNode[] = [];

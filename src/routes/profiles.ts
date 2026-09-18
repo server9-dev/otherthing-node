@@ -5,7 +5,8 @@
 import { Request, Response } from 'express';
 import { ethers } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
-import { appwriteService } from '../services/appwrite-service';
+import { supabaseService } from '../services/supabase-service';
+import { isSupabaseConfigured } from '../services/supabase-client';
 import type { RouteDependencies } from './types';
 
 // In-memory challenge store (nonce => { userId, challenge, expiresAt })
@@ -18,14 +19,14 @@ export function registerProfileRoutes(deps: RouteDependencies): void {
   app.get('/api/v1/profile', localAuth, async (req: Request, res: Response) => {
     const session = (req as any).session;
     try {
-      if (!appwriteService.isInitialized()) {
+      if (!supabaseService.isInitialized()) {
         res.json({ profile: { userId: session.userId, username: session.username } });
         return;
       }
-      let profile = await appwriteService.getUserProfile(session.userId);
+      let profile = await supabaseService.getUserProfile(session.userId);
       if (!profile) {
         // Auto-create profile on first access
-        profile = await appwriteService.createUserProfile({
+        profile = await supabaseService.createUserProfile({
           userId: session.userId,
           displayName: session.username,
         });
@@ -42,14 +43,14 @@ export function registerProfileRoutes(deps: RouteDependencies): void {
     const { displayName, bio, avatar } = req.body;
 
     try {
-      if (!appwriteService.isInitialized()) {
+      if (!supabaseService.isInitialized()) {
         res.json({ profile: { userId: session.userId, displayName, bio, avatar } });
         return;
       }
 
-      let profile = await appwriteService.getUserProfile(session.userId);
+      let profile = await supabaseService.getUserProfile(session.userId);
       if (!profile) {
-        profile = await appwriteService.createUserProfile({
+        profile = await supabaseService.createUserProfile({
           userId: session.userId,
           displayName,
           bio,
@@ -60,7 +61,7 @@ export function registerProfileRoutes(deps: RouteDependencies): void {
         if (displayName !== undefined) updateData.displayName = displayName;
         if (bio !== undefined) updateData.bio = bio;
         if (avatar !== undefined) updateData.avatar = avatar;
-        profile = await appwriteService.updateUserProfile(profile.$id, updateData);
+        profile = await supabaseService.updateUserProfile(profile.$id, updateData);
       }
 
       res.json({ profile });
@@ -129,17 +130,17 @@ export function registerProfileRoutes(deps: RouteDependencies): void {
 
     // Store wallet association
     try {
-      if (!appwriteService.isInitialized()) {
+      if (!supabaseService.isInitialized()) {
         res.json({ success: true, walletAddress, chainId: chainId || 11155111 });
         return;
       }
 
-      let profile = await appwriteService.getUserProfile(session.userId);
+      let profile = await supabaseService.getUserProfile(session.userId);
       if (!profile) {
-        profile = await appwriteService.createUserProfile({ userId: session.userId });
+        profile = await supabaseService.createUserProfile({ userId: session.userId });
       }
 
-      await appwriteService.linkWallet(profile.$id, walletAddress, chainId || 11155111);
+      await supabaseService.linkWallet(profile.$id, walletAddress, chainId || 11155111);
 
       res.json({ success: true, walletAddress, chainId: chainId || 11155111 });
     } catch (err) {
@@ -152,18 +153,18 @@ export function registerProfileRoutes(deps: RouteDependencies): void {
     const session = (req as any).session;
 
     try {
-      if (!appwriteService.isInitialized()) {
+      if (!supabaseService.isInitialized()) {
         res.json({ success: true });
         return;
       }
 
-      const profile = await appwriteService.getUserProfile(session.userId);
+      const profile = await supabaseService.getUserProfile(session.userId);
       if (!profile) {
         res.status(404).json({ error: 'Profile not found' });
         return;
       }
 
-      await appwriteService.unlinkWallet(profile.$id);
+      await supabaseService.unlinkWallet(profile.$id);
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: 'Failed to unlink wallet', details: String(err) });
@@ -175,12 +176,13 @@ export function registerProfileRoutes(deps: RouteDependencies): void {
     const address = req.params.address as string;
 
     try {
-      if (!appwriteService.isInitialized()) {
+      // Public lookup: works signed out too (profile_by_wallet is granted to anon)
+      if (!isSupabaseConfigured()) {
         res.status(404).json({ error: 'Profile not found' });
         return;
       }
 
-      const profile = await appwriteService.getUserByWallet(address);
+      const profile = await supabaseService.getUserByWallet(address);
       if (!profile) {
         res.status(404).json({ error: 'Profile not found' });
         return;

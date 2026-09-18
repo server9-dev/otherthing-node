@@ -42,7 +42,7 @@ export function PlansPage() {
 
   useEffect(() => {
     if (address) {
-      fetch(`${API_BASE}/premium/status?wallet=${address}`, { headers: { Authorization: 'Bearer local-token' } })
+      fetch(`${API_BASE}/premium/status?wallet=${address}`)
         .then(r => r.json()).then(setPremiumStatus).catch(() => {});
     }
     fetch(`${API_BASE}/ollama/status`)
@@ -60,10 +60,10 @@ export function PlansPage() {
     try {
       await fetch(`${API_BASE}/premium/activate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ wallet: address, days: 30 }),
       });
-      const res = await fetch(`${API_BASE}/premium/status?wallet=${address}`, { headers: { Authorization: 'Bearer local-token' } });
+      const res = await fetch(`${API_BASE}/premium/status?wallet=${address}`);
       setPremiumStatus(await res.json());
     } catch {} finally { setLoading(false); }
   };

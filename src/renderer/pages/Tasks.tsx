@@ -57,7 +57,6 @@ export function TasksPage() {
       for (const ws of myWorkspaces) {
         try {
           const res = await fetch(`${API_BASE}/workspaces/${ws.id}/tasks`, {
-            headers: { 'Authorization': 'Bearer local-token' },
           });
           if (res.ok) {
             const data = await res.json();
@@ -140,7 +139,7 @@ export function TasksPage() {
       const totalPayout = milestones.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0);
       const res = await fetch(`${API_BASE}/workspaces/${selectedWorkspace}/tasks`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: taskTitle,
           description: taskDescription,

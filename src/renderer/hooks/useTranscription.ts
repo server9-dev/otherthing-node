@@ -43,7 +43,7 @@ export function useTranscription({
 
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/transcription/chunk`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ audio: base64, speaker, peerId }),
       });
 
@@ -143,7 +143,6 @@ export function useTranscription({
     try {
       await fetch(`${API_BASE}/workspaces/${workspaceId}/transcription/finalize`, {
         method: 'POST',
-        headers: { Authorization: 'Bearer local-token' },
       });
     } catch {}
   }, [workspaceId, stopAllRecorders]);

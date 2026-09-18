@@ -1,12 +1,12 @@
 /**
  * Transcription Routes — audio chunk submission, session management
- * Segments are shared via Appwrite so all call participants see live transcription.
+ * Segments are shared via Supabase so all call participants see live transcription.
  */
 
 import { Request, Response } from 'express';
 import type { RouteDependencies } from './types';
 import { transcriptionService } from '../services/transcription-service';
-import { appwriteService } from '../services/appwrite-service';
+import { supabaseService } from '../services/supabase-service';
 
 export function registerTranscriptionRoutes(deps: RouteDependencies): void {
   const { app, localAuth } = deps;
@@ -24,9 +24,9 @@ export function registerTranscriptionRoutes(deps: RouteDependencies): void {
     const segment = await transcriptionService.processChunk(workspaceId, audio, speaker, peerId);
 
     if (segment) {
-      // Share segment via Appwrite so all callers see it live
-      if (appwriteService.isInitialized()) {
-        appwriteService.createChatMessage({
+      // Share segment via Supabase so all callers see it live
+      if (supabaseService.isInitialized()) {
+        supabaseService.createChatMessage({
           workspaceId,
           sender: peerId,
           senderName: speaker,
@@ -40,16 +40,16 @@ export function registerTranscriptionRoutes(deps: RouteDependencies): void {
     }
   });
 
-  // Get current transcription session (local + poll from Appwrite for peer segments)
+  // Get current transcription session (local + poll from Supabase for peer segments)
   app.get('/api/v1/workspaces/:id/transcription/session', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const session = transcriptionService.getSession(workspaceId);
 
-    // Also fetch recent transcription messages from Appwrite (from other callers)
+    // Also fetch recent transcription messages from Supabase (from other callers)
     let peerSegments: any[] = [];
-    if (appwriteService.isInitialized()) {
+    if (supabaseService.isInitialized()) {
       try {
-        const result = await appwriteService.listChatMessages(workspaceId, 50);
+        const result = await supabaseService.listChatMessages(workspaceId, 50);
         peerSegments = result.documents
           .filter((d: any) => d.content?.startsWith('[Transcription]'))
           .map((d: any) => {

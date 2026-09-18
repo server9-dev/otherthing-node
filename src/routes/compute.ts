@@ -13,7 +13,7 @@ import { ipfsExportService } from '../services/ipfs-export-service';
 import { healthReportService } from '../services/health-report-service';
 import { setWorkspaceToolRefs } from '../services/workspace-tools';
 import { safetyService } from '../services/safety-service';
-import { appwriteService } from '../services/appwrite-service';
+import { supabaseService } from '../services/supabase-service';
 import { ipfsSyncService } from '../services/ipfs-sync-service';
 import { inferenceRelay } from '../services/inference-relay';
 import { auditService } from '../services/audit-service';
@@ -204,10 +204,10 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     const workspaceId = req.params.id as string;
     const limit = parseInt(req.query.limit as string) || 50;
 
-    // Try Appwrite first (shared across all members)
-    if (appwriteService.isInitialized()) {
+    // Try Supabase first (shared across all members)
+    if (supabaseService.isInitialized()) {
       try {
-        const result = await appwriteService.listChatMessages(workspaceId, limit);
+        const result = await supabaseService.listChatMessages(workspaceId, limit);
         const messages = result.documents.map((d: any) => ({
           id: d.$id,
           workspaceId: d.workspaceId,
@@ -215,14 +215,14 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
           senderName: d.senderName,
           content: d.content,
           timestamp: d.timestamp,
-        })).reverse(); // Appwrite returns newest first, we want oldest first
+        })).reverse(); // DB returns newest first, we want oldest first
 
         // Update local cache
         chatMessages.set(workspaceId, messages);
         res.json({ messages: messages.slice(-limit) });
         return;
       } catch (err) {
-        console.warn('[Chat] Appwrite read failed, using local cache:', err);
+        console.warn('[Chat] DB read failed, using local cache:', err);
       }
     }
 
@@ -279,14 +279,14 @@ export function registerComputeRoutes(deps: RouteDependencies): void {
     const msgs = chatMessages.get(workspaceId)!;
     msgs.push(msg);
 
-    // Persist to Appwrite (shared across all workspace members)
-    if (appwriteService.isInitialized()) {
-      appwriteService.createChatMessage({
+    // Persist to Supabase (shared across all workspace members)
+    if (supabaseService.isInitialized()) {
+      supabaseService.createChatMessage({
         workspaceId,
         sender: senderId,
         senderName: displayName || session.username,
         content: content.trim(),
-      }).catch(err => console.warn('[Chat] Appwrite write failed:', err));
+      }).catch(err => console.warn('[Chat] DB write failed:', err));
     }
 
     // Keyword scan is the primary gate for chat (instant, no false positives).

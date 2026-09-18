@@ -41,7 +41,6 @@ export function FilesTab({ workspaceId }: Props) {
   const loadFiles = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/storage/files`, {
-        headers: { Authorization: 'Bearer local-token' },
       });
       if (res.ok) {
         const data = await res.json();
@@ -58,7 +57,7 @@ export function FilesTab({ workspaceId }: Props) {
       const content = await file.text();
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/storage/upload`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, filename: file.name, mimeType: file.type || 'application/octet-stream' }),
       });
       if (res.ok) loadFiles();
@@ -68,7 +67,7 @@ export function FilesTab({ workspaceId }: Props) {
   const deleteFile = async (fileId: string) => {
     try {
       await fetch(`${API_BASE}/workspaces/${workspaceId}/storage/files/${fileId}`, {
-        method: 'DELETE', headers: { Authorization: 'Bearer local-token' },
+        method: 'DELETE',
       });
       loadFiles();
     } catch {}
@@ -77,7 +76,6 @@ export function FilesTab({ workspaceId }: Props) {
   const previewContent = async (file: StorageFile) => {
     try {
       const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/storage/content/${file.cid}`, {
-        headers: { Authorization: 'Bearer local-token' },
       });
       if (res.ok) {
         const data = await res.json();

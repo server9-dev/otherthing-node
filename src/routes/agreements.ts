@@ -5,13 +5,13 @@
 import { Request, Response } from 'express';
 import { ethers } from 'ethers';
 import { web3Service, AgreementType } from '../services/web3-service';
-import { appwriteService } from '../services/appwrite-service';
+import { supabaseService } from '../services/supabase-service';
 import type { RouteDependencies } from './types';
 
 export function registerAgreementRoutes(deps: RouteDependencies): void {
   const { app, localAuth } = deps;
 
-  // Create agreement (on-chain + Appwrite mirror)
+  // Create agreement (on-chain + Supabase mirror)
   app.post('/api/v1/workspaces/:id/agreements', localAuth, async (req: Request, res: Response) => {
     const workspaceId = req.params.id as string;
     const { documentHash, title, type, expiresAt, required } = req.body;
@@ -37,11 +37,12 @@ export function registerAgreementRoutes(deps: RouteDependencies): void {
         workspaceId, documentHash, title, agreementType, expires, required ?? false
       );
 
-      // Mirror to Appwrite
-      if (appwriteService.isInitialized()) {
+      // Mirror to Supabase (upsert on chain_agreement_id)
+      if (supabaseService.isInitialized()) {
         try {
-          await appwriteService.createAgreement({
+          await supabaseService.createAgreement({
             workspaceId,
+            chainAgreementId: String(agreementId),
             documentHash,
             title,
             type,
@@ -50,7 +51,7 @@ export function registerAgreementRoutes(deps: RouteDependencies): void {
             required: required ?? false,
           });
         } catch (err) {
-          console.warn('[Agreements] Appwrite mirror failed:', err);
+          console.warn('[Agreements] DB mirror failed:', err);
         }
       }
 
@@ -65,9 +66,9 @@ export function registerAgreementRoutes(deps: RouteDependencies): void {
     const workspaceId = req.params.id as string;
 
     try {
-      // Try Appwrite first
-      if (appwriteService.isInitialized()) {
-        const result = await appwriteService.listAgreements(workspaceId);
+      // Try Supabase first
+      if (supabaseService.isInitialized()) {
+        const result = await supabaseService.listAgreements(workspaceId);
         res.json({ agreements: result.documents });
         return;
       }
@@ -96,16 +97,16 @@ export function registerAgreementRoutes(deps: RouteDependencies): void {
       const tx = await web3Service.signAgreement(agreementId);
       const receipt = await tx.wait();
 
-      // Mirror signature to Appwrite
-      if (appwriteService.isInitialized()) {
+      // Mirror signature to Supabase (idempotent with chain-sync)
+      if (supabaseService.isInitialized()) {
         try {
-          await appwriteService.recordSignature({
+          await supabaseService.recordSignature({
             agreementId: String(agreementId),
             signerAddress: web3Service.address || '',
             txHash: receipt?.hash,
           });
         } catch (err) {
-          console.warn('[Agreements] Appwrite signature mirror failed:', err);
+          console.warn('[Agreements] DB signature mirror failed:', err);
         }
       }
 
@@ -133,9 +134,9 @@ export function registerAgreementRoutes(deps: RouteDependencies): void {
     const agreementId = parseInt(req.params.agreementId as string);
 
     try {
-      // Try Appwrite first
-      if (appwriteService.isInitialized()) {
-        const result = await appwriteService.getSignatures(String(agreementId));
+      // Try Supabase first
+      if (supabaseService.isInitialized()) {
+        const result = await supabaseService.getSignatures(String(agreementId));
         res.json({ signatures: result.documents });
         return;
       }

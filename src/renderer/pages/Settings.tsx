@@ -1,8 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, HardDrive, Cpu, Save, FolderOpen, Check, User } from 'lucide-react';
+import { Settings as SettingsIcon, HardDrive, Cpu, Save, FolderOpen, Check, User, LogOut } from 'lucide-react';
 import { CyberButton } from '../components';
+import { useAuth } from '../context/AuthContext';
+import { fetchMe } from '../lib/supabase';
 
 export function Settings() {
+  const { user, signOut, updateDisplayName } = useAuth();
+  const [nodeSignedIn, setNodeSignedIn] = useState<boolean | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [ollamaPath, setOllamaPath] = useState('');
   const [storagePath, setStoragePath] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -11,9 +17,10 @@ export function Settings() {
 
   useEffect(() => {
     const loadSettings = async () => {
-      // Load display name from localStorage
-      const savedName = localStorage.getItem('ott-display-name');
-      if (savedName) setDisplayName(savedName);
+      if (user) setDisplayName(user.displayName);
+      fetchMe()
+        .then((me) => setNodeSignedIn(me ? me.nodeSignedIn : null))
+        .catch(() => setNodeSignedIn(null));
 
       if (!window.electronAPI) return;
 
@@ -32,17 +39,15 @@ export function Settings() {
   }, []);
 
   const handleSave = async () => {
-    if (!window.electronAPI) return;
-
     setSaving(true);
     setSaved(false);
+    setSaveError(null);
 
     try {
-      // Save display name to localStorage (works with or without electronAPI)
-      if (displayName.trim()) {
-        localStorage.setItem('ott-display-name', displayName.trim());
-      } else {
-        localStorage.removeItem('ott-display-name');
+      // Display name lives in the Supabase user's metadata.
+      const name = displayName.trim();
+      if (name && name !== user?.displayName) {
+        await updateDisplayName(name);
       }
 
       if (window.electronAPI) {
@@ -59,8 +64,19 @@ export function Settings() {
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       console.error('Failed to save settings:', err);
+      setSaveError(err instanceof Error ? err.message : 'Failed to save settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await signOut();
+    } catch (err) {
+      console.error('Sign-out failed:', err);
+      setSigningOut(false);
     }
   };
 
@@ -109,10 +125,26 @@ export function Settings() {
         <div className="cyber-card-header">
           <span className="cyber-card-title">
             <User size={14} style={{ marginRight: '0.5rem' }} />
-            PROFILE
+            ACCOUNT
           </span>
         </div>
         <div className="cyber-card-body">
+          <div className="settings-group" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--gap-md)' }}>
+            <div>
+              <div className="settings-label" style={{ marginBottom: 'var(--gap-xs)' }}>Signed in as</div>
+              <div style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>{user?.email ?? user?.id}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 'var(--gap-xs)' }}>
+                {nodeSignedIn === null
+                  ? 'Background node status unavailable'
+                  : nodeSignedIn
+                    ? 'Background node is running as this account'
+                    : 'Background node is not linked to this account. Sign out and back in to link it.'}
+              </div>
+            </div>
+            <CyberButton variant="danger" icon={LogOut} onClick={handleSignOut} loading={signingOut}>
+              Sign out
+            </CyberButton>
+          </div>
           <div className="settings-group">
             <label className="settings-label">Display Name</label>
             <input
@@ -124,7 +156,7 @@ export function Settings() {
               maxLength={32}
             />
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 'var(--gap-xs)' }}>
-              Shown in workspace chat instead of your wallet address
+              Shown to other people in workspace chat and calls
             </div>
           </div>
         </div>
@@ -194,6 +226,9 @@ export function Settings() {
 
       {/* Save Button */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 'var(--gap-md)' }}>
+        {saveError && (
+          <span style={{ color: 'var(--accent-light)', fontSize: '0.8125rem' }}>{saveError}</span>
+        )}
         {saved && (
           <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--gap-xs)', color: 'var(--primary)' }}>
             <Check size={16} />

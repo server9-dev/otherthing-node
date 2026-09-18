@@ -1,12 +1,14 @@
 /**
  * Chain Sync Service
  *
- * Subscribes to contract events via ethers and mirrors state to Appwrite.
+ * Subscribes to contract events via ethers and mirrors state to Supabase.
+ * Runs as the node session. All writes are upserts, so events mirrored by the
+ * HTTP routes as well are idempotent.
  * Provides catch-up logic on startup by scanning from last known block.
  */
 
 import { ethers, Contract } from 'ethers';
-import { appwriteService } from './appwrite-service';
+import { supabaseService } from './supabase-service';
 import {
   CONTRACT_ADDRESSES,
   MILESTONE_ESCROW_ABI,
@@ -23,8 +25,8 @@ export class ChainSyncService {
   private lastSyncedBlock = 0;
 
   async start(rpcUrl: string, network: 'sepolia' | 'localhost' = 'sepolia'): Promise<void> {
-    if (!appwriteService.isInitialized()) {
-      console.log('[ChainSync] Appwrite not initialized, skipping chain sync');
+    if (!supabaseService.isInitialized()) {
+      console.log('[ChainSync] Not signed in to Supabase, skipping chain sync');
       return;
     }
 
@@ -90,10 +92,10 @@ export class ChainSyncService {
       this.milestoneEscrowContract.on('TaskCreated', async (taskId, creator, workspaceId, totalAmount) => {
         console.log(`[ChainSync] TaskCreated: ${taskId}`);
         try {
-          await appwriteService.createTask({
+          // No title: don't overwrite one the creating route may have written
+          await supabaseService.createTask({
             taskId,
             workspaceId: workspaceId,
-            title: 'On-chain Task',
             status: 'created',
             createdBy: creator,
           });
@@ -105,13 +107,10 @@ export class ChainSyncService {
       this.milestoneEscrowContract.on('WorkerAssigned', async (taskId, worker) => {
         console.log(`[ChainSync] WorkerAssigned: ${taskId} -> ${worker}`);
         try {
-          const existing = await appwriteService.getTaskByChainId(taskId);
-          if (existing) {
-            await appwriteService.updateTask(existing.$id, {
-              assigneeAddress: worker,
-              status: 'assigned',
-            });
-          }
+          await supabaseService.updateTaskByChainId(taskId, {
+            assigneeAddress: worker,
+            status: 'assigned',
+          });
         } catch (err) {
           console.error('[ChainSync] Failed to sync WorkerAssigned:', err);
         }
@@ -120,10 +119,7 @@ export class ChainSyncService {
       this.milestoneEscrowContract.on('MilestoneApproved', async (taskId, milestoneIndex) => {
         console.log(`[ChainSync] MilestoneApproved: ${taskId} #${milestoneIndex}`);
         try {
-          const existing = await appwriteService.getTaskByChainId(taskId);
-          if (existing) {
-            await appwriteService.updateTask(existing.$id, { status: 'in_progress' });
-          }
+          await supabaseService.updateTaskByChainId(taskId, { status: 'in_progress' });
         } catch (err) {
           console.error('[ChainSync] Failed to sync MilestoneApproved:', err);
         }
@@ -132,14 +128,11 @@ export class ChainSyncService {
       this.milestoneEscrowContract.on('MilestonePaymentReleased', async (taskId, milestoneIndex, worker, amount) => {
         console.log(`[ChainSync] MilestonePaymentReleased: ${taskId} #${milestoneIndex}`);
         try {
-          const existing = await appwriteService.getTaskByChainId(taskId);
-          if (existing) {
-            // Check if this was the last milestone
-            const task = await this.milestoneEscrowContract!.getTask(taskId);
-            const milestoneCount = Number(task[9]); // milestoneCount field
-            if (Number(milestoneIndex) === milestoneCount - 1) {
-              await appwriteService.updateTask(existing.$id, { status: 'completed' });
-            }
+          // Check if this was the last milestone
+          const task = await this.milestoneEscrowContract!.getTask(taskId);
+          const milestoneCount = Number(task[9]); // milestoneCount field
+          if (Number(milestoneIndex) === milestoneCount - 1) {
+            await supabaseService.updateTaskByChainId(taskId, { status: 'completed' });
           }
         } catch (err) {
           console.error('[ChainSync] Failed to sync MilestonePaymentReleased:', err);
@@ -149,10 +142,7 @@ export class ChainSyncService {
       this.milestoneEscrowContract.on('TaskCancelled', async (taskId) => {
         console.log(`[ChainSync] TaskCancelled: ${taskId}`);
         try {
-          const existing = await appwriteService.getTaskByChainId(taskId);
-          if (existing) {
-            await appwriteService.updateTask(existing.$id, { status: 'cancelled' });
-          }
+          await supabaseService.updateTaskByChainId(taskId, { status: 'cancelled' });
         } catch (err) {
           console.error('[ChainSync] Failed to sync TaskCancelled:', err);
         }
@@ -164,7 +154,7 @@ export class ChainSyncService {
       this.agreementRegistryContract.on('AgreementSigned', async (agreementId, signer) => {
         console.log(`[ChainSync] AgreementSigned: #${agreementId} by ${signer}`);
         try {
-          await appwriteService.recordSignature({
+          await supabaseService.recordSignature({
             agreementId: String(agreementId),
             signerAddress: signer,
           });
@@ -181,7 +171,7 @@ export class ChainSyncService {
         try {
           // Fetch full registration data
           const ip = await this.ipRegistryContract!.getIPForTask(taskId);
-          await appwriteService.registerIP({
+          await supabaseService.registerIP({
             workspaceId: workspaceId,
             taskId: taskId,
             creatorAddress: creator,
@@ -214,18 +204,15 @@ export class ChainSyncService {
           const parsed = this.milestoneEscrowContract.interface.parseLog(event as any);
           if (parsed) {
             try {
-              const existing = await appwriteService.getTaskByChainId(parsed.args[0]);
-              if (!existing) {
-                await appwriteService.createTask({
-                  taskId: parsed.args[0],
-                  workspaceId: parsed.args[2],
-                  title: 'On-chain Task',
-                  status: 'created',
-                  createdBy: parsed.args[1],
-                });
-              }
-            } catch {
-              // Skip duplicates
+              // Insert only if missing — never regress a task's status
+              await supabaseService.createTask({
+                taskId: parsed.args[0],
+                workspaceId: parsed.args[2],
+                status: 'created',
+                createdBy: parsed.args[1],
+              }, { onlyIfNew: true });
+            } catch (err) {
+              console.warn('[ChainSync] Catch-up upsert failed:', (err as Error).message);
             }
           }
         }

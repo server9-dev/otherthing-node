@@ -176,11 +176,11 @@ export function WorkflowTab({ workspaceId }: Props) {
   const [flows, setFlows] = useState<any[]>([]);
   const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
 
-  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' };
+  const headers = { 'Content-Type': 'application/json' };
 
   // Load existing flows
   useEffect(() => {
-    fetch(`${API_BASE}/workspaces/${workspaceId}/flows`, { headers: { Authorization: 'Bearer local-token' } })
+    fetch(`${API_BASE}/workspaces/${workspaceId}/flows`)
       .then(r => r.json())
       .then(d => {
         const list = d.flows || [];
@@ -240,7 +240,7 @@ export function WorkflowTab({ workspaceId }: Props) {
         setActiveFlowId(data.flow.id);
         setSaved(true);
         // Refresh list
-        const listRes = await fetch(`${API_BASE}/workspaces/${workspaceId}/flows`, { headers: { Authorization: 'Bearer local-token' } });
+        const listRes = await fetch(`${API_BASE}/workspaces/${workspaceId}/flows`);
         const listData = await listRes.json();
         setFlows(listData.flows || []);
       }

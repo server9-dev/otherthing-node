@@ -1,98 +1,77 @@
 /**
  * Workspace Routes - CRUD, join, leave, delete
+ *
+ * Workspaces and membership live in Supabase (see services/workspace-directory.ts).
  */
 
 import { Request, Response } from 'express';
 import type { RouteDependencies } from './types';
+import { WorkspaceDirectory } from '../services/workspace-directory';
 
 export function registerWorkspaceRoutes(deps: RouteDependencies): void {
   const { app, localAuth, workspaceManager } = deps;
+  const directory = new WorkspaceDirectory(workspaceManager);
 
-  app.get('/api/v1/workspaces', localAuth, (req: Request, res: Response) => {
+  const handle = (fn: (req: Request, res: Response) => Promise<void>) =>
+    async (req: Request, res: Response) => {
+      try {
+        await fn(req, res);
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    };
+
+  app.get('/api/v1/workspaces', localAuth, handle(async (req, res) => {
     const session = (req as any).session;
-    const workspaces = workspaceManager.getUserWorkspaces(session.userId);
+    const workspaces = await directory.listMine(session.userId);
     res.json({ workspaces });
-  });
+  }));
 
-  app.post('/api/v1/workspaces', localAuth, (req: Request, res: Response) => {
+  app.post('/api/v1/workspaces', localAuth, handle(async (req, res) => {
     const session = (req as any).session;
     const { name, description } = req.body;
     if (!name) {
       res.status(400).json({ error: 'Name is required' });
       return;
     }
-    const workspace = workspaceManager.createWorkspace(
-      name,
-      description || '',
-      session.userId,
-      session.username,
-      true
-    );
+    const workspace = await directory.create(session.userId, name, description || '');
     res.status(201).json(workspace);
-  });
+  }));
 
   // Join workspace by invite code (must be before :id routes)
-  app.post('/api/v1/workspaces/join', localAuth, (req: Request, res: Response) => {
-    const session = (req as any).session;
+  app.post('/api/v1/workspaces/join', localAuth, handle(async (req, res) => {
     const inviteCode = req.body?.inviteCode;
-
     if (!inviteCode) {
       res.status(400).json({ error: 'Invite code is required' });
       return;
     }
+    const workspace = await directory.join(inviteCode);
+    res.json({ success: true, workspace });
+  }));
 
-    const result = workspaceManager.joinWorkspace(
-      inviteCode.trim(),
-      session.userId,
-      session.username
-    );
-
-    if (!result.success) {
-      res.status(400).json({ error: result.error });
-      return;
-    }
-
-    res.json({ success: true, workspace: result.workspace });
-  });
-
-  app.get('/api/v1/workspaces/:id', localAuth, (req: Request, res: Response) => {
-    const workspaceId = req.params.id as string;
-    const workspace = workspaceManager.getWorkspace(workspaceId);
+  app.get('/api/v1/workspaces/:id', localAuth, handle(async (req, res) => {
+    const workspace = await directory.get(req.params.id as string);
     if (!workspace) {
       res.status(404).json({ error: 'Workspace not found' });
       return;
     }
     res.json({ workspace });
-  });
+  }));
 
-  app.delete('/api/v1/workspaces/:id', localAuth, (req: Request, res: Response) => {
-    const session = (req as any).session;
-    const workspaceId = req.params.id as string;
-    const workspace = workspaceManager.getWorkspace(workspaceId);
-    if (!workspace) {
-      res.status(404).json({ error: 'Workspace not found' });
-      return;
-    }
-    if (workspace.ownerId !== session.userId) {
-      res.status(403).json({ error: 'Only owner can delete workspace' });
-      return;
-    }
-    workspaceManager.deleteWorkspace(workspaceId, session.userId);
+  app.delete('/api/v1/workspaces/:id', localAuth, handle(async (req, res) => {
+    await directory.remove(req.params.id as string);
     res.json({ success: true });
-  });
+  }));
 
   // Leave workspace
-  app.post('/api/v1/workspaces/:id/leave', localAuth, (req: Request, res: Response) => {
+  app.post('/api/v1/workspaces/:id/leave', localAuth, handle(async (req, res) => {
     const session = (req as any).session;
-    const workspaceId = req.params.id as string;
-
-    const result = workspaceManager.leaveWorkspace(workspaceId, session.userId);
-
-    if (!result.success) {
-      res.status(400).json({ error: result.error });
-      return;
-    }
-
+    await directory.leave(req.params.id as string, session.userId);
     res.json({ success: true });
-  });
+  }));
+
+  app.post('/api/v1/workspaces/:id/invite-code', localAuth, handle(async (req, res) => {
+    const inviteCode = await directory.regenerateInviteCode(req.params.id as string);
+    res.json({ success: true, inviteCode });
+  }));
 }

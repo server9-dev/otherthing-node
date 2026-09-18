@@ -5,6 +5,7 @@ import { useWeb3 } from '../../context/Web3Context';
 import { useVoiceVideo, Participant } from '../../hooks/useVoiceVideo';
 import { useTranscription } from '../../hooks/useTranscription';
 import { useVideoSafety } from '../../hooks/useVideoSafety';
+import { useAuth } from '../../context/AuthContext';
 
 const API_BASE = 'http://localhost:8080/api/v1';
 
@@ -44,7 +45,8 @@ interface Props {
 export function ChatTab({ workspace, workspaceId }: Props) {
   const { address } = useWeb3();
   const [chatMode, setChatMode] = useState<ChatMode>('ai');
-  const displayName = localStorage.getItem('ott-display-name') || '';
+  const { user } = useAuth();
+  const displayName = user?.displayName || '';
 
   const peerId = `local-${address?.slice(0, 8) || 'anon'}`;
   const callerName = displayName || address?.slice(0, 8) || 'Anonymous';
@@ -59,7 +61,7 @@ export function ChatTab({ workspace, workspaceId }: Props) {
     await rawJoinCall(withVideo);
     fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         content: `📞 ${callerName} started a voice call`,
         senderAddress: address || 'system',
@@ -71,7 +73,7 @@ export function ChatTab({ workspace, workspaceId }: Props) {
     rawLeaveCall();
     fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         content: `📞 ${callerName} left the call`,
         senderAddress: address || 'system',
@@ -113,7 +115,7 @@ export function ChatTab({ workspace, workspaceId }: Props) {
   useEffect(() => {
     if (chatMode !== 'team') return;
     const load = () => {
-      fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, { headers: { Authorization: 'Bearer local-token' } })
+      fetch(`${API_BASE}/workspaces/${workspaceId}/chat`)
         .then(r => r.json()).then(d => {
           const msgs = d.messages || [];
           const lastId = msgs.length > 0 ? msgs[msgs.length - 1].id : '';
@@ -153,12 +155,12 @@ export function ChatTab({ workspace, workspaceId }: Props) {
     try {
       await fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local-token' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: teamInput, senderAddress: address, displayName: displayName || undefined }),
       });
       setTeamInput('');
       // Immediate refresh
-      const r = await fetch(`${API_BASE}/workspaces/${workspaceId}/chat`, { headers: { Authorization: 'Bearer local-token' } });
+      const r = await fetch(`${API_BASE}/workspaces/${workspaceId}/chat`);
       const d = await r.json();
       setTeamMessages(d.messages || []);
     } catch {}
@@ -201,7 +203,7 @@ export function ChatTab({ workspace, workspaceId }: Props) {
       .catch(() => {});
 
     // Load workspace peer models
-    fetch(`${API_BASE}/workspaces/${workspaceId}/models`, { headers: { Authorization: 'Bearer local-token' } })
+    fetch(`${API_BASE}/workspaces/${workspaceId}/models`)
       .then(r => r.json())
       .then(data => {
         if (data.groups) {

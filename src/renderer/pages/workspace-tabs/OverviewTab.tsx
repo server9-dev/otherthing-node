@@ -22,11 +22,11 @@ export function OverviewTab({ workspace, workspaceId, members, isOwner, onSwitch
 
   useEffect(() => {
     // Load stats
-    fetch(`${API_BASE}/api/v1/workspaces/${workspaceId}/tasks`, { headers: { Authorization: 'Bearer local-token' } })
+    fetch(`${API_BASE}/api/v1/workspaces/${workspaceId}/tasks`)
       .then(r => r.json()).then(d => setTaskCount(d.tasks?.length || 0)).catch(() => {});
     fetch(`${API_BASE}/api/v1/ollama/models`)
       .then(r => r.json()).then(d => setModelCount(Array.isArray(d) ? d.length : 0)).catch(() => {});
-    fetch(`${API_BASE}/api/v1/workspaces/${workspaceId}/nodes`, { headers: { Authorization: 'Bearer local-token' } })
+    fetch(`${API_BASE}/api/v1/workspaces/${workspaceId}/nodes`)
       .then(r => r.json()).then(d => setNodeCount(d.nodes?.length || 0)).catch(() => {});
   }, [workspaceId]);
 

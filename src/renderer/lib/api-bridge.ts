@@ -372,32 +372,52 @@ export const api = {
 
   async downloadIPFSBinary(): Promise<CommandResult> {
     if (useRestApi) {
-      return new Promise((resolve) => {
-        const eventSource = new EventSource(`${API_BASE}/api/v1/ipfs/download`);
-
-        eventSource.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.status === 'downloading' && api._ipfsProgressCallback) {
-              api._ipfsProgressCallback(data.progress);
-            } else if (data.status === 'complete') {
-              if (api._ipfsProgressCallback) api._ipfsProgressCallback(100);
-              eventSource.close();
-              resolve({ success: true });
-            } else if (data.status === 'error') {
-              eventSource.close();
-              resolve({ success: false, error: data.error });
+      // Read the SSE stream with fetch (not EventSource) so the auth header is sent.
+      try {
+        const response = await fetch(`${API_BASE}/api/v1/ipfs/download`, {
+          headers: { Accept: 'text/event-stream' },
+        });
+        if (!response.ok || !response.body) {
+          return { success: false, error: `Download failed (HTTP ${response.status})` };
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let sep: number;
+          while ((sep = buffer.indexOf('\n\n')) !== -1) {
+            const block = buffer.slice(0, sep);
+            buffer = buffer.slice(sep + 2);
+            const payload = block
+              .split('\n')
+              .filter((line) => line.startsWith('data:'))
+              .map((line) => line.slice(5).trimStart())
+              .join('\n');
+            if (!payload) continue;
+            try {
+              const data = JSON.parse(payload);
+              if (data.status === 'downloading' && api._ipfsProgressCallback) {
+                api._ipfsProgressCallback(data.progress);
+              } else if (data.status === 'complete') {
+                if (api._ipfsProgressCallback) api._ipfsProgressCallback(100);
+                reader.cancel().catch(() => {});
+                return { success: true };
+              } else if (data.status === 'error') {
+                reader.cancel().catch(() => {});
+                return { success: false, error: data.error };
+              }
+            } catch (err) {
+              console.error('[API] SSE parse error:', err);
             }
-          } catch (err) {
-            console.error('[API] SSE parse error:', err);
           }
-        };
-
-        eventSource.onerror = () => {
-          eventSource.close();
-          resolve({ success: false, error: 'Download connection failed' });
-        };
-      });
+        }
+        return { success: false, error: 'Download connection closed' };
+      } catch {
+        return { success: false, error: 'Download connection failed' };
+      }
     }
     return _originalElectronAPI.downloadIPFSBinary();
   },
